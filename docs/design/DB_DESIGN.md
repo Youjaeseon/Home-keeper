@@ -4,13 +4,13 @@
 
 ## 문서 범위
 
-아래 구현 확정 사항은 현재 마이그레이션에 반영된 내용이다. 진단과 요청문 등 후속 기능의 저장 컬럼도 준비되어 있으며, 해당 기능의 처리 API는 후속 구현 대상이다. 적용 SQL은 [마이그레이션](../../migrations/), 실행 방법은 [README](../../README.md)를 따른다.
+아래 구현 확정 사항은 현재 마이그레이션에 반영된 내용이다. 진단과 요청문 등 후속 기능의 저장 컬럼도 준비되어 있으며, 해당 기능의 처리 API는 후속 구현 대상이다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행 방법은 [README](../../README.md)를 따른다.
 
 ## 구현 확정 사항
 
 2026년 11월 19일 MVP 구현에서 아래를 확정했다.
 
-- `migrations/*.sql`과 `app/migrate.py`가 마이그레이션을 담당한다. 적용 이력은 `schema_migrations`에 남는다.
+- `apps/api/migrations/*.sql`과 `apps/api/app/migrate.py`가 마이그레이션을 담당한다. 적용 이력은 `schema_migrations`에 남는다.
 - `records.owner_id`는 `auth.users(id)`를 외래키로 참조한다. 로컬 빈 DB에서는 `auth.users(id)` 스텁을 만들고, Supabase에서는 기존 테이블이 그대로 쓰인다.
 - 질문·메시지 순서는 `records.conversation_sequence`에서 함께 발급한다. 각 테이블의 `(record_id, sequence)` 유일 제약은 유지하고, 두 테이블 사이의 순서는 기록 행 잠금과 같은 트랜잭션에서 조정한다.
 - `messages`는 `(record_id, question_id)` 복합 외래키로 같은 기록의 질문만 참조한다. `sender = 'user'`인 행은 `client_message_id`가 필수다.

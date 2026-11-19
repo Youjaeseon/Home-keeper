@@ -1,8 +1,8 @@
-# Career Pair 백엔드 (MVP)
+# Career Pair (MVP)
 
-하자 기록과 대화 메시지를 사용자별로 저장하는 FastAPI + PostgreSQL 백엔드입니다. 인증은 Supabase Auth 액세스 토큰을 사용합니다.
+하자 기록과 대화 메시지를 저장하는 FastAPI + PostgreSQL 백엔드와 Expo 모바일 앱을 한 저장소에서 관리합니다. 인증은 Supabase Auth 액세스 토큰을 사용합니다.
 
-구현된 API는 `POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`, `POST /records/{record_id}/messages`, `PUT /records/{record_id}/messages/{message_id}` 다섯 개입니다. 사진 분석, 다음 질문·진단·요청문 생성, 업체 검색, 앱 화면은 이번 범위가 아니며 DB 컬럼만 준비되어 있습니다.
+백엔드는 `POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`, `POST /records/{record_id}/messages`, `PUT /records/{record_id}/messages/{message_id}` 다섯 개 API를 제공합니다. 모바일 앱은 현재 로그인과 백엔드 연결 확인 화면까지 구현되어 있습니다. 사진 분석, 다음 질문·진단·요청문 생성, 업체 검색은 이번 범위가 아니며 DB 컬럼만 준비되어 있습니다.
 
 ## 문서 안내
 
@@ -18,54 +18,88 @@
 | [프로젝트 계획](docs/plans/PROJECT_PLAN.md) | 제출 요건, 전체 일정, 검증표와 결정 이력 |
 | [AI 아이디어 비교](docs/ideas/AI_IDEAS.md) | 후속 기능 후보와 검토 근거 |
 
-현재 구현은 기록·메시지 API와 DB 기반입니다. 설계 문서에 있는 사진 분석, 질문·진단·요청문 생성, 업체 검색은 후속 구현 대상입니다. 실행·환경 설정은 이 README를, 적용된 DB 구조는 [마이그레이션](migrations/)을 함께 확인합니다.
+현재 구현은 기록·메시지 API, DB, 모바일 로그인·연결 확인 화면입니다. 설계 문서에 있는 사진 분석, 질문·진단·요청문 생성, 업체 검색은 후속 구현 대상입니다. 실행·환경 설정은 이 README를, 적용된 DB 구조는 [마이그레이션](apps/api/migrations/)을 함께 확인합니다.
 
 ## 구조
 
 ```text
-pyproject.toml     uv 프로젝트와 의존성
-uv.lock            잠금 파일
-.python-version    Python 3.13
-app/
-  main.py          FastAPI 앱, 오류 응답
-  auth.py          Supabase JWT 검증
-  records.py       기록·메시지 API
-  schemas.py       요청·응답 모델
-  db.py            요청별 DB 트랜잭션
-  migrate.py       SQL 마이그레이션 실행기
-  config.py        환경변수
-migrations/        순서대로 적용하는 SQL 마이그레이션
-tests/             실제 PostgreSQL 통합 테스트
+package.json       npm workspaces와 공통 실행 스크립트
+apps/
+  api/
+    pyproject.toml uv 프로젝트와 의존성
+    uv.lock        잠금 파일
+    .python-version Python 3.13
+    app/
+      main.py      FastAPI 앱, 오류 응답
+      auth.py      Supabase JWT 검증
+      records.py   기록·메시지 API
+      schemas.py   요청·응답 모델
+      db.py        요청별 DB 트랜잭션
+      migrate.py   SQL 마이그레이션 실행기
+      config.py    환경변수
+    migrations/    순서대로 적용하는 SQL 마이그레이션
+    tests/         실제 PostgreSQL 통합 테스트
+    .env.example
+  mobile/
+    app.json       Expo 설정
+    src/app/       Expo Router 화면
+    src/lib/       Supabase·FastAPI 클라이언트
+    .env.example
 docs/
   plans/           MVP·프로젝트 계획
   design/          백엔드·DB·API 설계
   ideas/           AI 기능 후보 비교
-.env.example
 ```
 
-이 저장소는 uv 프로젝트입니다. 의존성은 `pyproject.toml`, 잠금은 `uv.lock`이 관리하며, 아래 명령은 모두 저장소 루트에서 실행합니다.
+Python 의존성은 `apps/api/pyproject.toml`과 `uv.lock`이, JavaScript 의존성은 루트 `package.json`과 `package-lock.json`이 관리합니다. 명령은 저장소 루트에서 실행합니다. npm workspace에는 `apps/mobile`만 등록되어 있고, `apps/api`는 uv 프로젝트로 따로 동작합니다.
 
 ## 준비
 
 - Python 3.11 이상, [uv](https://docs.astral.sh/uv/)
+- Node.js 20 이상, npm
 - PostgreSQL 16 이상
 - Supabase 프로젝트(인증용) 또는 로컬 테스트용 JWT
 
 ```bash
-uv sync
-cp .env.example .env
+npm install
+uv sync --directory apps/api
+cp apps/api/.env.example apps/api/.env
+cp apps/mobile/.env.example apps/mobile/.env
 ```
 
-`uv`가 `.python-version`(3.13)의 Python과 `.venv`를 관리합니다. 잠금 파일 기준으로 정확히 설치하려면 `uv sync --locked`를 사용합니다.
+`uv`가 `apps/api/.python-version`(3.13)의 Python과 `apps/api/.venv`를 관리합니다. 잠금 파일 기준으로 정확히 설치하려면 `uv sync --locked --directory apps/api`를 사용합니다.
 
-- 의존성 추가: `uv add <package>`
-- 개발 의존성 추가: `uv add --dev <package>`
-- 잠금 갱신: `uv lock`
-- 명령 실행: `uv run <command>`
+- Python 의존성 추가: `uv add --directory apps/api <package>`
+- Python 개발 의존성 추가: `uv add --dev --directory apps/api <package>`
+- Python 잠금 갱신: `uv lock --directory apps/api`
+- JavaScript 의존성 추가: `npm install <package> --workspace @career-pair/mobile`
+- Expo 패키지 추가: `cd apps/mobile && npx expo install <package>`
 
-`.venv/`와 `.env`는 생성물이므로 커밋하지 않습니다.
+`apps/api/.venv/`, `node_modules/`, `.env`는 생성물이므로 커밋하지 않습니다.
 
-### 환경변수
+## 실행
+
+```bash
+npm run api       # FastAPI, 0.0.0.0:8000
+npm run mobile    # Expo 개발 서버
+```
+
+- 상태 확인: `GET http://127.0.0.1:8000/health`
+- API 문서: `http://127.0.0.1:8000/docs` (Scalar)
+
+`npm run api`는 실제 기기에서 접근할 수 있도록 `0.0.0.0`에 바인딩합니다. 신뢰하는 네트워크에서만 실행하고, 인증은 그대로 필요합니다. 서버는 요청 본문, 비밀번호, 액세스 토큰을 로그에 남기지 않습니다. 기본 uvicorn 액세스 로그에는 메서드와 경로만 남습니다.
+
+모바일 앱은 Expo Go 또는 시뮬레이터에서 실행합니다. `apps/mobile/.env`의 `EXPO_PUBLIC_API_URL`은 실행 대상에 맞춰야 합니다.
+
+| 실행 대상 | `EXPO_PUBLIC_API_URL` |
+| --- | --- |
+| iOS Simulator | `http://127.0.0.1:8000` |
+| Android Emulator | `http://10.0.2.2:8000` |
+| 실제 기기 + Expo Go | `http://<Mac LAN IP>:8000` |
+
+실제 기기는 Mac과 같은 Wi-Fi에 연결해야 합니다. Supabase 설정은 API의 `apps/api/.env`와 앱의 `apps/mobile/.env`가 같은 프로젝트를 가리켜야 하며, 앱에는 publishable/anon key만 넣고 service role 키는 넣지 않습니다.
+
+## 백엔드 환경변수
 
 | 변수 | 필수 | 설명 |
 | --- | --- | --- |
@@ -76,7 +110,17 @@ cp .env.example .env
 | `SUPABASE_JWT_AUDIENCE` | 아니오 | 기본 `authenticated` |
 | `SUPABASE_JWT_ISSUER` | 아니오 | 기본 `SUPABASE_URL + /auth/v1`. 로컬 Supabase 등에서 재정의 |
 
-`.env`는 커밋하지 않습니다.
+`apps/api/.env`는 커밋하지 않습니다.
+
+### 모바일 환경변수
+
+`apps/mobile/.env`에 설정합니다. `EXPO_PUBLIC_` 값은 앱 번들에 포함되므로 공개 값만 넣습니다.
+
+| 변수 | 설명 |
+| --- | --- |
+| `EXPO_PUBLIC_API_URL` | FastAPI 주소. 실제 기기에서는 Mac의 LAN IP |
+| `EXPO_PUBLIC_SUPABASE_URL` | API의 `SUPABASE_URL`과 같은 Supabase 프로젝트 URL |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase publishable key 또는 기존 anon key. service role 키는 금지 |
 
 ## 로컬 PostgreSQL 설정
 
@@ -84,14 +128,14 @@ cp .env.example .env
 createdb career_pair
 
 MIGRATION_DATABASE_URL=postgresql://localhost:5432/career_pair \
-  uv run python -m app.migrate
+  uv run --directory apps/api python -m app.migrate
 
 # 마이그레이션이 만든 런타임 역할에 로그인 비밀번호를 지정한다.
 psql postgresql://localhost:5432/career_pair \
   -c "ALTER ROLE career_pair_runtime LOGIN PASSWORD 'change-me'"
 ```
 
-`.env`의 `DATABASE_URL`을 `postgresql://career_pair_runtime:change-me@localhost:5432/career_pair`로 맞춥니다.
+`apps/api/.env`의 `DATABASE_URL`을 `postgresql://career_pair_runtime:change-me@localhost:5432/career_pair`로 맞춥니다.
 
 마이그레이션은 `schema_migrations`에 적용 이력을 남기므로 다시 실행해도 완료된 파일은 건너뜁니다. 관리자 연결은 테이블과 역할을 만들고, 런타임 연결은 이번 API에 필요한 권한만 가집니다: 기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 업체·지역·작업 참조 테이블 `SELECT`. 런타임 역할은 `auth.users`를 읽거나 DDL을 실행할 수 없습니다. 새 기능이 더 많은 권한을 필요로 하면 새 마이그레이션에서 명시적으로 부여합니다.
 
@@ -100,7 +144,7 @@ psql postgresql://localhost:5432/career_pair \
 1. Supabase의 **direct connection**(풀러가 아닌 5432 포트) 관리자 자격증명으로 마이그레이션을 실행합니다.
    ```bash
    MIGRATION_DATABASE_URL='postgresql://postgres:...@db.<ref>.supabase.co:5432/postgres' \
-     uv run python -m app.migrate
+     uv run --directory apps/api python -m app.migrate
    ```
    Supabase에는 이미 `auth.users`가 있으므로 `auth` 스키마에 DDL을 실행하지 않고, `records.owner_id` 외래키만 추가됩니다.
 2. 런타임 역할의 비밀번호를 설정하고 `DATABASE_URL`에 Supabase 연결 문자열(`sslmode=require` 권장)을 넣습니다.
@@ -113,23 +157,12 @@ psql postgresql://localhost:5432/career_pair \
 
 IPv4 네트워크에서는 대시보드 **Connect → Session pooler**의 호스트와 5432 포트를 사용합니다. 전용 역할의 풀러 사용자 이름은 `career_pair_runtime.<project-ref>`이며 `sslmode=require`를 붙입니다. 호스트의 `aws-0`/`aws-1` 부분은 프로젝트 연결 정보에 맞춰야 합니다. [공식 연결 문서](https://supabase.com/docs/guides/database/connecting-to-postgres)를 참고하세요.
 
-현재 개발 환경은 **Home Keeper** (`lprqztpobrlhetbjkcks`, Sydney)에 연결되어 있습니다. 초기 마이그레이션 001–004와 런타임 로그인 설정은 적용 완료했으며, `.env`에 실제 런타임 연결을 저장했습니다. 인증은 ES256/JWKS를 사용하므로 `SUPABASE_JWT_SECRET`은 비워 둡니다. 관리자 비밀번호는 저장하지 않았으므로 후속 마이그레이션을 CLI로 실행하려면 `MIGRATION_DATABASE_URL`을 별도로 설정해야 합니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
-
-## 실행
-
-```bash
-uv run uvicorn app.main:app --reload --env-file .env
-```
-
-- 상태 확인: `GET http://127.0.0.1:8000/health`
-- API 문서: `http://127.0.0.1:8000/docs` (Scalar)
-
-서버는 요청 본문, 비밀번호, 액세스 토큰을 로그에 남기지 않습니다. 기본 uvicorn 액세스 로그에는 메서드와 경로만 남습니다.
+현재 개발 환경은 **Home Keeper** (`lprqztpobrlhetbjkcks`, Sydney)에 연결되어 있습니다. 초기 마이그레이션 001–004와 런타임 로그인 설정은 적용 완료했으며, `apps/api/.env`에 실제 런타임 연결을 저장했습니다. 인증은 ES256/JWKS를 사용하므로 `SUPABASE_JWT_SECRET`은 비워 둡니다. 관리자 비밀번호는 저장하지 않았으므로 후속 마이그레이션을 CLI로 실행하려면 `MIGRATION_DATABASE_URL`을 별도로 설정해야 합니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
 
 ## 테스트
 
 ```bash
-uv run pytest
+npm run api:test
 ```
 
 테스트는 실제 PostgreSQL을 사용합니다. 기본값은 `postgresql://localhost:5432/postgres`에 현재 OS 사용자로 접속해 `career_pair_test` 데이터베이스를 **삭제 후 재생성**하고, 빈 DB에 마이그레이션을 적용한 뒤 런타임 역할로 API를 호출합니다. 다음 권한이 필요합니다.
@@ -142,7 +175,7 @@ uv run pytest
 ```bash
 TEST_ADMIN_DATABASE_URL=postgresql://user:pass@localhost:5432/postgres \
 TEST_DATABASE_NAME=career_pair_ci_test \
-  uv run pytest
+  npm run api:test
 ```
 
 `TEST_DATABASE_NAME`은 `_test`로 끝나야 하며, 운영 DB를 가리키는 이름은 거부합니다. 테스트는 클러스터의 `career_pair_runtime` 역할 비밀번호를 테스트 값으로 변경하므로 로컬 개발 클러스터에서만 실행하세요. 테스트는 실제 Supabase에 연결하지 않고 로컬에서 서명한 HS256 토큰을 사용합니다. 인증 경계는 FastAPI의 `app.dependency_overrides`로 대체할 수 있지만, 운영 코드에는 인증 우회 경로가 없습니다.
@@ -180,7 +213,7 @@ USER_ID=11111111-1111-1111-1111-111111111111
 psql "$MIGRATION_DATABASE_URL" \
   -c "INSERT INTO auth.users (id) VALUES ('$USER_ID') ON CONFLICT DO NOTHING"
 
-ACCESS_TOKEN=$(uv run python - <<PY
+ACCESS_TOKEN=$(uv run --directory apps/api python - <<PY
 import jwt
 from datetime import datetime, timedelta, timezone
 now = datetime.now(timezone.utc)
@@ -196,7 +229,7 @@ PY
 )
 ```
 
-위 토큰은 `.env`의 `SUPABASE_URL=http://127.0.0.1:54321`, `SUPABASE_JWT_SECRET=change-me-jwt-secret`로 서버를 띄웠을 때만 유효합니다. 실제 Supabase에서는 로그인 응답의 `access_token`을 사용합니다.
+위 토큰은 `apps/api/.env`의 `SUPABASE_URL=http://127.0.0.1:54321`, `SUPABASE_JWT_SECRET=change-me-jwt-secret`로 서버를 띄웠을 때만 유효합니다. 실제 Supabase에서는 로그인 응답의 `access_token`을 사용합니다.
 
 ```bash
 RECORD_ID=$(curl -s -X POST http://127.0.0.1:8000/records \
@@ -228,7 +261,7 @@ curl -s "http://127.0.0.1:8000/records/$RECORD_ID" \
 
 같은 `client_message_id`와 같은 내용을 다시 보내면 기존 메시지를 반환합니다. 같은 ID에 다른 내용(또는 다른 질문·선택지)을 보내면 409입니다. 비교에는 최초 POST의 선택지 ID와 직접 입력을 사용하므로 같은 label의 다른 선택지와 직접 입력도 구분합니다. PUT으로 수정한 뒤 원래 POST를 재전송하면 수정된 현재 메시지를 반환합니다. `002_message_submission.sql` 이전 메시지는 최초 제출 방식을 복원할 수 없어 재전송 시 409를 반환하므로 기록을 다시 조회해야 합니다.
 
-테스트 fixture가 아닌 공개 질문 생성 API는 없습니다. 이번 범위에서 질문·선택지는 `tests/conftest.py`의 `question_factory`처럼 DB에 직접 준비합니다.
+테스트 fixture가 아닌 공개 질문 생성 API는 없습니다. 이번 범위에서 질문·선택지는 `apps/api/tests/conftest.py`의 `question_factory`처럼 DB에 직접 준비합니다.
 
 ## 구현 메모와 한계
 
@@ -240,3 +273,4 @@ curl -s "http://127.0.0.1:8000/records/$RECORD_ID" \
 - 마이그레이션은 로컬 개발을 위해 `auth.users(id)` 스텁을 만들 수 있게 했습니다. Supabase에서는 기존 테이블이 그대로 쓰입니다.
 - Supabase의 런타임 DB 연결·RLS·Data API 권한 회수와 ES256 JWKS 조회를 확인했습니다. 실제 사용자 로그인 토큰을 이용한 전체 인증 흐름은 아직 검증하지 않았습니다. 통합 테스트는 로컬 PostgreSQL과 HS256 토큰으로 실행합니다.
 - 사진 원본·표시 좌표·스토리지, 샘플 업체 저장, 질문/진단/요청문 생성, 업체 검색은 구현하지 않았습니다.
+- 모바일 앱은 로그인, `/health` 확인, 기록 생성·조회 화면까지만 구현했습니다. 실제 기기에서의 Supabase 로그인과 API 호출은 시연 전에 함께 확인해야 합니다. 사진·질문·결과·업체 화면은 후속 구현 대상입니다.
