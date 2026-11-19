@@ -1,0 +1,14 @@
+{
+  "name": "career-pair",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": ["apps/mobile"],
+  "scripts": {
+    "api": "uv run --directory apps/api uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --env-file .env",
+    "api:migrate": "uv run --directory apps/api python -m app.migrate",
+    "api:test": "uv run --directory apps/api pytest",
+    "mobile": "npm run start --workspace @career-pair/mobile",
+    "mobile:ios": "npm run ios --workspace @career-pair/mobile",
+    "mobile:android": "npm run android --workspace @career-pair/mobile"
+  }
+}

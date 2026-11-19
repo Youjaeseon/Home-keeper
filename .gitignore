@@ -4,6 +4,8 @@
 *.pem
 *.key
 .venv/
+node_modules/
+.expo/
 __pycache__/
 .pytest_cache/
 .mypy_cache/
