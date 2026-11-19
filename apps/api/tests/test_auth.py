@@ -1,0 +1,89 @@
+from datetime import datetime, timedelta, timezone
+
+import jwt
+
+from conftest import auth_headers
+
+
+def test_missing_and_malformed_tokens_are_rejected(client):
+    for headers in ({}, {"Authorization": "Bearer not-a-jwt"}):
+        response = client.post("/records", headers=headers)
+        assert response.status_code == 401
+        assert response.json()["code"] == "unauthorized"
+
+
+def test_unsigned_token_is_rejected(client, user_factory):
+    user_id = user_factory()
+    now = datetime.now(timezone.utc)
+    token = jwt.encode(
+        {
+            "sub": str(user_id),
+            "aud": "authenticated",
+            "iss": "http://127.0.0.1:54321/auth/v1",
+            "iat": now,
+            "exp": now + timedelta(minutes=5),
+        },
+        key=None,
+        algorithm="none",
+    )
+    response = client.post("/records", headers=auth_headers(token))
+    assert response.status_code == 401
+
+
+def test_expired_token_is_rejected(client, user_factory, token_for):
+    user_id = user_factory()
+    response = client.post(
+        "/records", headers=auth_headers(token_for(user_id, expires_in=-60))
+    )
+    assert response.status_code == 401
+
+
+def test_wrong_signature_is_rejected(client, user_factory, token_for):
+    user_id = user_factory()
+    response = client.post(
+        "/records",
+        headers=auth_headers(token_for(user_id, secret="wrong-secret-long-enough-for-hs256-signing")),
+    )
+    assert response.status_code == 401
+
+
+def test_wrong_audience_or_issuer_is_rejected(client, user_factory, token_for):
+    user_id = user_factory()
+    wrong_audience = token_for(user_id, audience="other")
+    wrong_issuer = token_for(user_id, issuer="http://evil.example/auth/v1")
+    for token in (wrong_audience, wrong_issuer):
+        response = client.post("/records", headers=auth_headers(token))
+        assert response.status_code == 401
+
+
+def test_non_uuid_subject_is_rejected(client, user_factory, token_for):
+    response = client.post(
+        "/records", headers=auth_headers(token_for("not-a-uuid"))
+    )
+    assert response.status_code == 401
+
+
+def test_valid_token_creates_record_for_subject(client, user_factory, token_for):
+    user_id = user_factory()
+    response = client.post("/records", headers=auth_headers(token_for(user_id)))
+    assert response.status_code == 201
+    body = response.json()
+    assert body["input_revision"] == 0
+
+    detail = client.get(
+        f"/records/{body['record_id']}", headers=auth_headers(token_for(user_id))
+    )
+    assert detail.status_code == 200
+
+
+def test_auth_boundary_can_be_overridden_in_tests(client, user_factory):
+    from app.auth import get_current_user
+    from app.main import app
+
+    user_id = user_factory()
+    app.dependency_overrides[get_current_user] = lambda: user_id
+    try:
+        response = client.post("/records")
+        assert response.status_code == 201
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
