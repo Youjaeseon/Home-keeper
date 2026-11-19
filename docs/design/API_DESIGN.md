@@ -4,120 +4,179 @@
 
 ## 문서 범위
 
-현재 구현된 기록·메시지 API와 시연용 다음 질문 API의 계약은 아래 구현 확정 사항을 따른다. 사진 분석, 실제 LLM 질문, 진단·요청문 생성, 업체 검색 경로는 후속 구현을 위한 설계다. 실행과 호출 절차는 [README](../../README.md)를 따른다.
+현재 코드에 구현된 기록 API(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`)의 계약은 아래 구현 확정 사항을 따른다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
+
+회원 프로필, 소식지, 일괄 분석·진단, 내 기록 목록, 요청문 생성, 업체 검색과 1:1 채팅 경로는 2026년 11월 20일 변경 사항을 반영한 후속 구현 설계다. 실행과 호출 절차는 [README](../../README.md)를 따른다.
 
 ## 구현 확정 사항
 
 2026년 11월 19일 MVP 구현에서 아래를 확정했다.
 
 - `POST /records`는 201과 `record_id`, `input_revision`(최초 0)을 반환한다.
-- `GET /records/{record_id}`는 `questions`와 `messages`를 각각 `sequence` 순으로 반환한다. 두 테이블은 기록별 공용 순번(`records.conversation_sequence`)을 함께 사용하므로 두 배열을 합쳐 정렬하면 대화 순서가 유지된다. `diagnosis`, `next_question`, `drafts`에는 생성 당시 버전과 `is_current`를 포함한다.
-- `PATCH /records/{record_id}`는 `location`·`symptoms`만 받고 `input_revision`을 요구하지 않는다. 실제 값이 바뀔 때만 버전을 올리며, 명시한 `null`은 값을 지운다.
-- 메시지 저장 응답은 `{ "message": {...}, "input_revision": <현재 기록 버전> }`이다. 재전송 시 `message`는 기존 메시지의 현재 저장본이고 `input_revision`은 현재 기록 버전이다. PUT으로 편집된 내용은 되돌리지 않는다.
-- 재전송 확인은 기록 소유권 확인 뒤, 버전 검사 전에 한다. 같은 `client_message_id`에 내용·질문·선택지가 다르면 409다.
-- `PUT`은 기록 소유권 확인 → `input_revision` 검사 → 수정 대상 메시지 조회 순서로 처리한다. 오래된 버전이면 대상 메시지가 없어도 최신 버전을 포함한 409를 반환하고, 버전이 일치할 때 대상이 없으면 404다. 내용이 같으면 삭제·버전 증가 없이 200을 반환하고, 내용이 다르면 그 `sequence`보다 뒤의 메시지·질문을 삭제하고 버전을 올린다.
-- 다른 기록의 질문, 없는 질문은 404다. 질문은 있지만 없는 선택지를 보내면 422다. 없는 메시지, 다른 사용자 메시지, `assistant` 메시지 수정은 404다.
+- `GET /records/{record_id}`는 저장된 기록 상세와 `diagnosis`, `drafts`의 생성 당시 버전 및 `is_current`를 반환한다. *(구현본에는 레거시 `questions`, `messages`, `next_question` 필드도 함께 포함된다.)*
+- `PATCH /records/{record_id}`는 현재 `location`·`symptoms`를 받고 `input_revision`을 요구하지 않는다. 실제 값이 바뀔 때만 버전을 올리며, 명시한 `null`은 값을 지운다. *(후속 구현에서 `material` 필드를 추가할 예정이다.)*
 - 공통 오류 형식은 `{ "code", "message", "input_revision"? }`이다. 처리하지 못한 서버·DB 오류는 내용을 노출하지 않고 500 `internal_error`로 반환한다.
+- *(MVP 미사용/보류)* `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`의 구현 확정 사항은 문서 하단 레거시 섹션에 유지한다.
 
-## 인증과 버전
+## 회원가입과 프로필 (구현 예정)
 
-로그인 후 앱은 FastAPI 요청에 `Authorization: Bearer <access_token>`을 보낸다. 모든 API는 인증을 확인하고, 기록 관련 API는 기록 소유권을 확인한다. 소유자 ID는 검증한 토큰에서 결정한다.
-
-`input_revision`은 기록 입력의 버전이다. 사용자 메시지 저장과 수정은 앱이 확인한 버전을 보낸다. 입력 변경은 버전 증가와 함께 원자적으로 처리하고, 생성 결과는 사용한 입력 버전이 현재 버전과 일치할 때 저장한다. 버전 충돌은 `409`로 반환한다.
-
-## 기본 순서
-
-1. `POST /records`로 기록을 만든다.
-2. 사진 선택 후 `POST /records/{record_id}/photo-analysis`에 사진 한 장 또는 두 장을 함께 보낸다. 분석 상태와 관찰 결과를 받는다.
-3. `POST /records/{record_id}/next-question`으로 첫 질문을 받는다.
-4. `POST /records/{record_id}/messages`로 사용자 답변을 저장한다.
-5. `POST /records/{record_id}/next-question`으로 AI 응답과 필요한 질문을 받는다. 이미 저장된 같은 입력 버전의 응답은 재사용한다.
-6. 추가 질문이 없거나 사용자가 현재 정보로 결과 보기를 선택하면 `POST /records/{record_id}/diagnosis`를 호출한다.
-7. 필요에 따라 요청문을 생성하거나 업체를 검색한다.
-
-분석에서 사용할 결과가 없으면 `PATCH /records/{record_id}`로 위치와 증상을 저장하고 질문을 진행한다.
-
-## 선택지와 사용자 메시지
-
-질문 응답에는 다음 정보를 담는다.
-
-```json
-{
-  "input_revision": 1,
-  "reply": null,
-  "question": {
-    "id": "<question UUID>",
-    "content": "닦은 뒤 같은 흔적이 다시 생겼나요?",
-    "options": [
-      { "id": "recurred", "label": "다시 생겼어요" },
-      { "id": "first_seen", "label": "처음 발견했어요" },
-      { "id": "unknown", "label": "잘 모르겠어요" }
-    ]
-  },
-  "ready_for_diagnosis": false,
-  "source": "sample"
-}
-```
-
-질문은 한 번에 하나를 반환한다. 질문이 필요 없으면 `question`은 null이고 `ready_for_diagnosis`는 true다. 선택지가 없는 질문에는 빈 배열을 반환한다. 자유 입력에 대한 AI의 짧은 반응은 `reply`에 담는다. 서버는 종료 상태를 포함한 성공 응답 전체를 입력 버전과 함께 저장한다. 응답이 유실되어 재요청하면 같은 버전의 저장 응답을 반환하며, 질문이나 응답이 모두 null이어도 추가 생성 호출(모델 또는 샘플 함수)을 하지 않는다. 실패한 호출은 성공 응답으로 저장하지 않는다.
-
-## 시연용 다음 질문
-
-`POST /records/{record_id}/next-question`은 현재 저장된 위치·증상과 대화를 읽고 다음 질문을 결정한다. 요청 본문은 없으며, 클라이언트는 사용자 ID나 대화 전체를 보내지 않는다. 인증된 사용자와 기록 소유권만 확인한다. 응답의 `source`는 항상 `sample`이고 OpenAPI에도 샘플 규칙임을 설명한다.
-
-| 순서 | 질문 | 선택지 ID |
-| --- | --- | --- |
-| 1 | 닦은 뒤 같은 흔적이 다시 생겼나요? | `recurred`, `first_seen`, `unknown` |
-| 2 | 이미 어떤 조치를 했나요? | `wiped`, `ventilated`, `none`, `unknown` |
-
-- 선택 답변은 기존 메시지 API가 저장한 선택지 `label`을 기준으로 판정한다.
-- 직접 입력은 `다시 생겼`·`또 생겼`·`다시 나타났`·`또 나타났`·`재발`, `처음 발견`·`처음 생`·`처음 봤`, `닦아봤`·`닦았`, `환기했`·`환기를 했`, `아무것도`·`아무 조치`, `모르`만 규칙으로 처리한다. 그 밖의 문장은 관련 없는 메시지로 보고 `answered`를 바꾸지 않으며, 짧은 `reply`와 같은 질문을 반환한다.
-- `unknown`은 질문을 닫는 답변으로만 처리한다. 확인된 사실로 저장하지 않으며, 같은 질문을 끝없이 재질문하지 않는다.
-- 이미 확인한 질문은 다시 묻지 않는다. 기존 미응답 질문을 이어야 하면 같은 질문 ID를 반환하고, 새 질문이 필요하면 `questions`에 새 행을 만든다.
-- 추가 질문이 없으면 `question=null`, `ready_for_diagnosis=true`를 반환한다. `reply=null`, `question=null`인 완료 응답도 `next_question_result`와 `next_question_revision`에 저장한다.
-- 같은 `input_revision`의 저장 결과가 있으면 샘플 함수를 다시 실행하지 않고 그대로 반환한다. 생성 중 입력이 바뀌면 저장 없이 409(`revision_conflict`)와 현재 버전을 반환한다. 질문·AI 메시지·`answered` 변경·완료 응답은 같은 트랜잭션에 저장하며 `input_revision`은 증가시키지 않는다.
-- 과거 메시지를 수정하면 기존 규칙대로 이후 메시지·질문을 삭제하고, 해당 답변의 질문을 `answered=false`로 되돌리며 `next_question` 캐시를 지운다. 다음 호출은 남은 대화로 다시 판단하므로 삭제된 질문 ID나 이전 완료 응답을 재사용하지 않는다.
-
-이 규칙은 곰팡이 의심 창가 얼룩 사례의 두 질문만 지원하는 임시 시연 범위다. 지원 하자 유형 전체를 확정하지 않는다. 실제 LLM 연동 시 `apps/api/app/sample_questions.py`의 결정 함수를 교체하고, 위 저장·버전·트랜잭션 규칙은 재사용한다.
-
-선택 버튼을 누르면 다음 요청을 보낸다.
-
-```json
-{
-  "client_message_id": "<client UUID>",
-  "question_id": "<question UUID>",
-  "selected_option_id": "recurred",
-  "input_revision": 1
-}
-```
-
-직접 입력이면 `selected_option_id` 대신 `content`를 보낸다. 서버는 둘 중 정확히 하나만 받는다. 선택지 ID는 해당 질문에 속하는지 확인하고, 저장된 표시 문구를 사용자 메시지로 저장한다. 직접 입력 메시지도 같은 저장 구조를 사용한다.
-
-저장 응답에는 메시지 ID, 저장한 문구, 순서, 변경된 `input_revision`을 포함한다. 같은 `client_message_id`와 같은 요청을 다시 보내면 기존 메시지를 반환한다. 다른 내용이면 `409`로 거부한다.
-
-재전송은 최초 POST의 `question_id`, `selected_option_id`, 직접 입력 `content`를 비교하며 `input_revision`은 비교에서 제외한다. 같은 label의 다른 선택지와 선택 답변·직접 입력도 구분한다. 최초 선택지 ID와 직접 입력은 응답에 노출하지 않는 내부 컬럼에 보존하고 PUT으로 변경하지 않는다. 마이그레이션 이전 메시지는 최초 제출 방식을 복원할 수 없어 같은 ID의 POST에 409 `message_conflict`를 반환한다. 앱은 기록을 다시 조회해 현재 메시지를 확인한다.
-
-과거 메시지 수정은 `PUT /records/{record_id}/messages/{message_id}`에 새 `content`와 편집 시작 시 확인한 `input_revision`을 보낸다. 앱은 후속 대화 삭제 경고를 먼저 보여준다. 실제 변경 시 이후 메시지와 질문을 삭제하고 결과를 이전 입력의 결과로 취급한다.
-
-## 진단과 요청문
-
-진단 응답은 결과에 사용한 `input_revision`, `diagnosis_generation`과 `diagnosis`를 담는다. 진단 JSON의 필드와 허용값은 백엔드 설계의 진단 응답 표를 따른다. 기본 생성 요청은 현재 버전 결과를 재사용한다. `regenerate=true`일 때 새로 생성한다.
-
-요청문 종류는 `landlord` 또는 `provider`로 구분한다.
+일반 회원가입은 `요청인` 전용이다. 앱에서 Supabase Auth로 **이메일·비밀번호** 계정을 만들고, 회원가입 과정에서 `닉네임`, `거주 지역`(필수), `등록 주소`(선택), `거주 형태`(`월세`, `전세`, `반전세`, `자가`, `기타`)를 입력받는다. 인증 가능한 세션을 얻은 뒤 FastAPI에 프로필을 저장한다. 이메일 확인이 필요한 환경은 확인 후 동일 계정으로 프로필 등록을 완료한다. 계정 생성 후 프로필 저장에 실패하면 프로필 저장만 재시도한다. 시연용 `업체` 계정은 Supabase Auth와 `profiles`(`role="provider"`)에 사전 등록한다.
 
 | API | 동작 |
 | --- | --- |
-| `POST /records/{record_id}/drafts/{kind}` | 현재 입력과 진단을 바탕으로 생성한다. 입력 버전과 진단 생성 번호가 모두 현재 값과 일치하는 요청문이 있으면 반환한다. |
+| `GET /me/profile` | 인증된 본인의 `nickname`, `role`, `region_id`, `address`, `housing_type`을 조회한다. 미등록이면 프로필이 없음을 반환(`404`)해 등록 화면으로 이어간다. |
+| `PUT /me/profile` | `nickname`, `region_id`, `address`(선택/null 가능), `housing_type`을 받아 인증된 본인의 프로필을 등록·수정한다. `user_id`는 토큰에서 결정하고 `role`은 클라이언트가 변경할 수 없다. |
+
+`housing_type` 허용값은 `monthly_rent`(월세), `jeonse`(전세), `semi_jeonse`(반전세), `owned`(자가), `other`(기타)다.
+
+주소·지역이 필요한 화면(임대인 점검 요청, 업체 찾기)에서 앱은 등록 주소와 거주 지역을 보여주고 맞는지 확인한다. 다르면 위 프로필 저장 API로 수정한 뒤 사용한다. 프로필 미등록 상태에서도 기존 계정의 로그인과 기록 조회는 가능하며, 프로필이 필요한 행동에서 등록을 안내한다.
+
+소식지와 업체 검색에는 확인한 `region_id`를 보낸다. 임대인 점검 요청문에 상세 주소가 필요하면 앱에서 생성된 초안에 확인한 주소를 반영한다. 상세 `address`는 진단·요청문 생성 API의 모델 입력에 자동으로 포함하지 않는다. 요청문 편집본 저장 API는 추가하지 않는다.
+
+## 인증과 버전
+
+로그인 후 앱은 FastAPI 요청에 `Authorization: Bearer <access_token>`을 보낸다. 모든 API(`GET /health` 제외)는 인증을 확인하고, 기록·채팅 API는 소유권 또는 참여 권한을 확인한다. 사용자 ID는 검증한 토큰(`sub`)에서 결정한다.
+
+`input_revision`은 기록 입력의 버전이다. 입력(`location`, `material`, `symptoms`, `photo_observations`) 변경은 버전 증가와 함께 원자적으로 처리하고, 생성 결과는 사용한 입력 버전이 현재 버전과 일치할 때 저장한다. 버전 충돌은 `409`로 반환한다.
+
+## 기본 순서 (요청인 앱 4개 탭 기준)
+
+로그인 후 요청인 앱은 **`소식지` · `분석`(기본 탭) · `채팅` · `내 정보`** 4개 탭을 제공한다.
+
+1. 회원가입 후 프로필 저장을 완료하거나 기존 계정으로 로그인한다.
+2. **소식지 탭**: `GET /support-programs`로 사용자 거주 지역 + 전국 주거 지원 사업을 조회한다. 마감 공고는 `마감` 배지·흐림 처리와 하단 정렬로 표시하고, 카드 클릭 시 `GET /support-programs/{program_id}` 상세 요약과 외부 원문 URL을 연다.
+3. **분석 탭**: `POST /records`로 기록을 만들고, 한 화면에서 사진 1~2장(1장 필수) + 위치 + 재질 + 선택 증상 메모를 입력해 `POST /records/{record_id}/analyze`를 호출한다. 서버가 1차 사진 분석과 최종 진단을 연속 처리해 결과를 반환한다(사진 분석 실패 시에도 위치·재질·증상만으로 결과 생성).
+4. **분석 결과 페이지**: 심각도(`0~100%` 또는 `판단 보류`), `추정 원인`(AI 추정 안내·미확인 정보 포함), `해결방안`, `재발 방지책`을 확인한다.
+   - `자가`가 아닌 거주 형태라면 필요 시 `POST /records/{record_id}/drafts/landlord`로 임대인 점검 요청문을 생성·복사한다.
+   - 업체 상담이 필요하면 `GET /providers`로 업체를 조회한 뒤 실제 업체의 `채팅하기`로 `POST /chat/rooms`를 호출해 1:1 채팅방을 열고 하자 분석 요약을 자동 공유한다.
+5. **채팅 탭**: `GET /chat/rooms`로 채팅 목록을 보고 `GET/POST /chat/rooms/{room_id}/messages`로 대화를 이어간다.
+6. **내 정보 탭**: `GET/PUT /me/profile`로 프로필을 조회·수정하고, `GET /records`로 내 하자 분석 기록 목록을 불러와 과거 기록의 결과 페이지를 다시 연다.
+
+## 내 정보와 하자 분석 기록 목록 (`GET /records`, 구현 예정)
+
+`내 정보` 페이지의 **내 하자 분석 기록 목록**을 조회한다. 본인이 소유한 기록만 `updated_at` 내림차순으로 반환한다.
+
+- 항목 필드: `record_id`, `location`, `material`, `symptoms`, `suspected_types`(예: `["곰팡이"]`), `severity_score`, `severity_level`, `updated_at`.
+- 목록에서 항목을 선택하면 기존 `GET /records/{record_id}`로 전체 상세를 불러와 분석 결과 페이지를 다시 표시한다.
+
+## 일괄 분석과 진단 (`POST /records/{record_id}/analyze`, 구현 예정)
+
+분석 페이지에서 채팅 없이 사진(1~2장)과 위치·재질·선택 증상 메모를 한 번에 제출해 사진 분석과 최종 진단을 연속 처리한다.
+
+- **요청 (`multipart/form-data`)**:
+  - `photos`: 이미지 파일 1~2장 (첫 번째 필수, 두 번째 선택)
+  - `photo_roles`: 각 사진의 역할 (`overview` | `closeup`)
+  - `external_analysis_consent`: 외부 비전 분석 전송 동의 여부 (`boolean`)
+  - `location`: 하자 발견 위치 (필수 문자열, 대표 선택지 또는 직접 입력)
+  - `material`: 표면 재질 (필수 문자열, 대표 선택지 또는 직접 입력)
+  - `symptoms`: 선택 증상 메모 (`string | null`)
+- **응답 예시 (`200 OK`)**:
+
+```json
+{
+  "record_id": "<record UUID>",
+  "input_revision": 1,
+  "diagnosis_generation": 1,
+  "photo_analysis": {
+    "applied": true,
+    "notice": null,
+    "photos": [
+      {
+        "role": "overview",
+        "status": "detected",
+        "source": "yolo",
+        "detections": [
+          {
+            "defect_type": "mold",
+            "label": "곰팡이",
+            "confidence": 0.86,
+            "bbox": { "x": 120, "y": 80, "width": 240, "height": 180 },
+            "image_width": 1080,
+            "image_height": 1440
+          }
+        ]
+      }
+    ]
+  },
+  "diagnosis": {
+    "observations": "안방 창틀 실리콘 주변에서 검은 변색과 포자 의심 흔적이 관찰됩니다.",
+    "severity_score": 68,
+    "severity_level": "medium",
+    "reason": "곰팡이 의심 흔적이 창틀 실리콘 경계에 퍼져 있어 표면 닦기만으로는 재발 가능성이 높습니다.",
+    "causes": [
+      "실내외 온도 차로 인한 창가 결로 수분 축적",
+      "노후 실리콘 틈새의 습기 잔류 가능성"
+    ],
+    "estimation_notice": "이 결과는 사진과 입력 정보를 바탕으로 한 AI 추정이며, 정확한 원인은 현장 점검이 필요합니다.",
+    "recommended_action": "inspection",
+    "care_steps": [
+      "환기를 충분히 유지한 뒤 마른 천으로 표면 습기를 제거하세요.",
+      "실리콘 내부까지 번진 경우 단순 표백제 처리만으로는 재발할 수 있어 점검이 필요합니다."
+    ],
+    "supplies": ["마스크", "고무장갑", "마른 천", "중성 세정제 또는 곰팡이 제거제"],
+    "prevention_tips": [
+      "아침·저녁 10분 이상 맞통풍 환기를 유지하세요.",
+      "결로가 맺히는 날에는 창틀 물기를 바로 닦아 습기를 남기지 마세요."
+    ],
+    "unknowns": [
+      "이전에 닦은 뒤 다시 생겼는지(재발 여부)",
+      "외벽 누수 또는 단열재 손상 동반 여부"
+    ],
+    "work_type_id": "<work_type UUID>",
+    "work_type_reason": "창틀 실리콘 틈새 곰팡이 의심 흔적으로 방수·실리콘 보수 및 원인 점검이 적합합니다."
+  }
+}
+```
+
+- **사진 분석 실패·미탐지 폴백**: 업로드한 사진 모두에서 의심 영역을 찾지 못했거나 YOLO·비전 LLM 호출이 실패·거절(`external_analysis_consent=false`)되어도 API는 실패하지 않고 `photo_analysis.applied = false`(사유는 `photo_analysis.notice` 및 각 사진 `status`)로 둔 채 입력한 `location`·`material`·`symptoms`만으로 `diagnosis`를 생성해 반환한다.
+- **정보 부족 시 판단 보류**: 사진과 위치·재질만으로 심각도를 가늠하기 어렵다면 `diagnosis.severity_score = null`, `diagnosis.severity_level = "undetermined"`(`판단 보류`)를 반환한다.
+- **명시적 진단 재생성**: `POST /records/{record_id}/diagnosis?regenerate=true`로 현재 저장된 입력과 관찰 결과 기준 진단을 다시 생성할 수 있다. 기본 호출(`regenerate=false`)은 현재 `input_revision`의 기존 진단을 재사용한다.
+
+## 요청문 (`landlord`, `provider`, 구현 예정)
+
+요청문 종류는 `landlord`(임대인 점검 요청문) 또는 `provider`(업체 견적 요청문)로 구분한다.
+
+| API | 동작 |
+| --- | --- |
+| `POST /records/{record_id}/drafts/{kind}` | 현재 입력과 진단을 바탕으로 생성한다. 입력 버전과 진단 생성 번호가 모두 현재 값과 일치하는 요청문이 있으면 재사용한다. |
 | `POST /records/{record_id}/drafts/{kind}?regenerate=true` | 새로 생성하며 성공했을 때 최신본을 교체한다. |
-| `GET /records/{record_id}/drafts/{kind}/template` | 현재 입력의 확인된 사실을 채운 기본 양식을 반환한다. 모델을 호출하지 않는다. |
+| `GET /records/{record_id}/drafts/{kind}/template` | 현재 입력의 확인된 사실(위치·재질·증상·심각도)을 채운 기본 양식을 반환한다. 모델을 호출하지 않는다. |
 
-요청문 생성 응답은 `text`, `input_revision`, 생성에 사용한 `diagnosis_generation`을 담는다. 기본 양식은 현재 입력만 사용하므로 진단 생성 번호를 요구하지 않는다. 진단 재생성 성공 시 이전 요청문의 복사를 막고 새 진단으로 다시 생성한다. 요청문 생성 중 진단이 교체되면 저장 없이 `409`를 반환한다. 사용자가 편집한 문구는 앱 화면에서 유지하며 저장 API로 보내지 않는다.
+요청문 생성 응답은 `text`, `input_revision`, 생성에 사용한 `diagnosis_generation`을 담는다. `자가` 거주 형태(`housing_type="owned"`)인 요청인에게는 앱 UI에서 `landlord` 요청문 버튼을 기본 숨김 처리한다. `provider` 견적 요청문은 업체 채팅 입력창의 첫 문의 초안·복사 용도로 재활용한다.
 
-## 업체 조회
+진단 재생성 성공 시 이전 요청문의 복사를 막고 새 진단으로 다시 생성한다. 요청문 생성 중 진단이 교체되면 저장 없이 `409`를 반환한다. 사용자가 편집한 문구는 앱 화면에서 유지하며 저장 API로 보내지 않는다.
 
-`GET /regions`는 지역 ID와 시·군·구가 포함된 표시 이름을 반환한다. `GET /work-types`는 작업 ID와 이름을 반환한다. 앱은 진단의 추천 작업을 미리 선택한다.
+## 소식지 조회 (`GET /support-programs`, 구현 예정)
 
-`GET /providers?region_id=<UUID>&work_type_id=<UUID>`는 출장 가능 지역과 작업이 모두 맞는 업체를 반환한다. 응답에는 후보 목록과 `is_sample`을 담는다. 업체에는 업체명과 연락처를 포함한다. 검색이 성공했고 실제 후보가 없을 때만 샘플을 반환한다. 샘플 연락 버튼은 시연 안내를 표시한다.
+- `GET /support-programs?region_id=<UUID>&status=<all|active>`:
+  - `region_id`가 생략되면 로그인한 사용자의 프로필 `region_id`를 사용한다.
+  - 해당 지자체(`region_scope="local"`) 사업과 전국(`region_scope="national"`) 사업을 함께 반환하며, `status=active`이면 마감 공고를 제외하고 기본(`all`)이면 전체를 반환한다.
+  - 정렬 순서: **진행중(`is_closed=false`) 먼저 + 사용자 `housing_type` 일치 사업 우선 → 마감(`is_closed=true`) 하단 배치**.
+  - 항목 필드: `id`, `title`, `summary`, `organization_name`, `region_scope`, `region_name`, `target_housing_types`, `housing_type_matched`, `deadline_text`, `deadline_date`, `is_closed`, `source_attribution`, `detail_url`.
+- `GET /support-programs/{program_id}`:
+  - 소식지 상세 요약 페이지에 필요한 지원 내용, 선정 기준·대상 거주 형태, 신청기한(`deadline_text`, `is_closed`), `apply_method`, `detail_url`(외부 브라우저 열기용), `source_attribution`을 반환한다.
+
+## 업체 조회 (`GET /regions`, `GET /work-types`, `GET /providers`, 구현 예정)
+
+`GET /regions`는 회원 프로필의 거주 지역 선택과 소식지·업체 검색에 사용할 지역 ID와 시·군·구가 포함된 표시 이름을 반환한다. `GET /work-types`는 작업 ID와 이름을 반환한다. 앱은 진단의 추천 작업을 미리 선택한다.
+
+업체 검색 전 앱은 등록 주소·거주 지역이 맞는지 확인하고 확인한 거주 지역 ID를 사용한다. `GET /providers?region_id=<UUID>&work_type_id=<UUID>`는 출장 가능 지역과 작업이 모두 맞는 업체를 반환한다.
+
+- 응답에는 후보 목록과 `is_sample`을 담는다. 각 업체 항목에는 `provider_id`, `name`, `phone`, `chat_available`(`boolean`), `is_sample`을 포함한다.
+- 검색이 성공했고 실제 후보가 없을 때만 샘플을 반환한다. 실제 업체 카드의 주 버튼은 `채팅하기`, 보조 버튼은 `전화하기`이며, `샘플` 업체 연락 버튼은 시연 안내를 표시한다.
+
+## 업체–요청인 1:1 채팅 (`/chat/*`, 구현 예정)
+
+기본 방 생성·이력 조회·메시지 저장은 FastAPI REST API로 정의한다. **실시간 메시지 수신 방식(FastAPI REST 폴링 vs FastAPI WebSocket vs Supabase Realtime)과 시연용 업체 계정 화면 세부 구성은 팀원 협의 후 확정(보류)**한다.
+
+| API | 동작 |
+| --- | --- |
+| `GET /chat/rooms` | 로그인한 요청인 또는 업체 계정이 참여 중인 채팅방 목록을 `last_message_at` 내림차순으로 조회한다. 상대방 이름, 최근 메시지 미리보기, 최근 연결 기록 요약을 포함한다. |
+| `POST /chat/rooms` | 요청인이 `{ "provider_id": "<UUID>", "record_id": "<UUID>?" }`를 보내 `(requester_id, provider_id)` 채팅방을 생성하거나 기존 방을 반환한다. `record_id`가 전달되면 해당 기록의 하자 요약(`record_summary`) 메시지를 자동 등록한다(직전 메시지와 동일 기록 요약이면 중복 방지). |
+| `GET /chat/rooms/{room_id}/messages` | 참여자 권한을 확인한 뒤 채팅방의 메시지 목록을 시간순으로 반환한다. (`since` 등 증분 조회 파라미터는 전송 방식 확정 시 추가) |
+| `POST /chat/rooms/{room_id}/messages` | `{ "client_message_id": "<UUID>", "content": "..." }`를 받아 참여자 확인 및 멱등성 검사 후 메시지를 저장하고 반환한다. |
+
+- `샘플` 업체(`is_sample=true`)는 DB에 실제 업체·계정이 없으므로 `POST /chat/rooms`를 호출하지 않고 앱에서 시연 안내를 띄운다.
 
 ## 오류 응답 초안
 
@@ -126,14 +185,24 @@
 | 상황 | 상태 코드 |
 | --- | --- |
 | 인증 실패 또는 만료 | 401 |
-| 기록이나 질문·메시지를 찾지 못했거나 다른 사용자 소유 | 404 |
-| 입력 버전 충돌 또는 동일 메시지 ID의 내용 충돌 | 409 |
-| 요청 필드·선택지·검색 코드가 유효하지 않음 | 422 |
-| 외부 모델 호출·응답 형식 오류 | 502 |
-| 외부 모델 응답 제한 시간 초과 | 504 |
+| 기록·프로필·지원 사업·채팅방을 찾지 못했거나 접근 권한 없음 | 404 |
+| 입력 버전 충돌, 진단 교체 충돌, 동일 메시지 ID의 내용 충돌 | 409 |
+| 요청 필드·거주 형태·검색 코드·업로드 파일이 유효하지 않음 | 422 |
+| 외부 모델 또는 공공 API 호출·응답 형식 오류 | 502 |
+| 외부 모델 또는 공공 API 응답 제한 시간 초과 | 504 |
 
-사진별 분석 성공·실패는 분석 응답 안에서 구분한다. 전체 요청 처리 실패는 오류 응답으로 반환한다. 질문과 요청문 생성 실패 시 기존 입력과 결과를 유지한다. 진단 생성 실패는 정보 부족에 따른 판단 보류와 구분한다.
+일괄 분석 내 사진별 분석 성공·실패는 분석 응답의 `photo_analysis` 안에서 구분한다. 전체 요청 처리 실패는 오류 응답으로 반환한다. 진단·요청문 생성 실패 시 기존 입력과 유효 결과를 유지한다. 진단 생성 실패는 정보 부족에 따른 판단 보류(`severity_score=null`)와 구분한다.
+
+## 기존 구현 · MVP 미사용(보류): AI 추가 질문 대화 API
+
+아래 엔드포인트는 현재 저장소(`apps/api/app/records.py`, `apps/api/app/sample_questions.py`)에 구현·테스트되어 있으나, 분석 페이지 채팅창 제거 결정에 따라 **현재 MVP 흐름에서는 호출하지 않는다**. 추후 설문/객관식 추가 질문을 도입하기로 결정할 경우 참고·재사용하기 위해 기존 확정 계약을 기록해 둔다.
+
+- **`POST /records/{record_id}/messages`**: `client_message_id`, `question_id?`, `selected_option_id` 또는 `content`, `input_revision`을 받아 사용자 메시지를 저장하고 `input_revision`을 1 올린다. `(record_id, client_message_id)` 멱등성 및 내용 충돌 시 409(`message_conflict`)를 반환한다.
+- **`PUT /records/{record_id}/messages/{message_id}`**: `content`, `input_revision`을 받아 과거 사용자 메시지를 수정한다. 내용이 다르면 이후 대화·질문을 삭제하고 `input_revision`을 올린다.
+- **`POST /records/{record_id}/next-question`**: 요청 본문 없이 현재 기록과 대화를 읽어 `sample_questions.py`의 시연 규칙(`source="sample"`, 창가 얼룩 2문항: `recurred`·`wiped`)을 반환하고 `next_question_result`에 캐시한다.
 
 ## 남은 연동 확인
 
-사진별 역할과 임시 표시 좌표를 포함하는 multipart 세부 필드, 업로드 크기·파일 형식 제한, 모델·배포 환경의 제한 시간, YOLO API의 인증과 좌표 형식은 담당자와 확인한 뒤 고정한다.
+- 사진별 역할과 임시 표시 좌표를 포함하는 `POST /records/{record_id}/analyze` multipart 세부 필드, 업로드 크기·파일 형식 제한, 모델·배포 환경의 제한 시간, YOLO API의 인증과 좌표 형식
+- 채팅 실시간 수신 방식(`REST 폴링` / `WebSocket` / `Supabase Realtime`)과 `GET /chat/rooms/{room_id}/messages` 증분 조회 파라미터
+- 보조금24 API(`gov24/v3/serviceList`) 연동 시 주거 필터 키워드 및 동기화 주기

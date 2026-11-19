@@ -1,8 +1,14 @@
 # Career Pair (MVP)
 
-하자 기록과 대화 메시지를 저장하는 FastAPI + PostgreSQL 백엔드와 Expo 모바일 앱을 한 저장소에서 관리합니다. 인증은 Supabase Auth 액세스 토큰을 사용합니다.
+하자 기록을 저장하는 FastAPI + PostgreSQL 백엔드와 Expo 모바일 앱을 한 저장소에서 관리합니다. 인증은 Supabase Auth(이메일·비밀번호) 액세스 토큰을 사용합니다.
 
-백엔드는 `POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`, `POST /records/{record_id}/messages`, `PUT /records/{record_id}/messages/{message_id}`, `POST /records/{record_id}/next-question` 여섯 개 API를 제공합니다. 모바일 앱은 현재 로그인과 백엔드 연결 확인 화면까지 구현되어 있습니다. 다음 질문은 실제 LLM 대신 시연용 샘플 규칙으로 동작하며, 사진 분석·진단·요청문 생성·업체 검색은 이번 범위가 아니고 DB 컬럼만 준비되어 있습니다.
+현재 백엔드 코드에는 `POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`, `POST /records/{record_id}/messages`, `PUT /records/{record_id}/messages/{message_id}`, `POST /records/{record_id}/next-question` 여섯 개 API가 구현되어 있고, 모바일 앱은 로그인·연결 확인·기록 생성 조회 화면까지 구현되어 있습니다.
+
+2026년 11월 20일 팀 회의 변경에 따라 MVP 목표 설계를 아래 내용으로 갱신했습니다(신규 기능은 후속 구현 예정이며, 기존 `messages`·`next-question` API는 현재 MVP 흐름에서 미사용/보류 레거시 상태로 유지합니다):
+- **회원가입·프로필**: 닉네임, ID(이메일), PW, 거주 지역(필수), 등록 주소(선택), 거주 형태(`월세·전세·반전세·자가·기타`)
+- **소식지 페이지**: 공공데이터포털 보조금24 Open API 동기화 + 검증된 시드 폴백으로 주거 지원 사업 제공, 마감 공고 흐림·하단 정렬
+- **분석·결과 페이지**: 지원 하자 유형 `크랙·벗겨짐·곰팡이`, 시연 지역 `용인`. 분석 채팅창 없이 사진(1~2장)+위치+재질을 일괄 입력해 심각도(`0~100%` / `판단 보류`), `추정 원인`(AI 추정 안내·미확인 정보), `해결방안`, `재발 방지책` 표시(`자가`는 임대인 요청문 숨김)
+- **업체 1:1 채팅·내 정보**: 하단 4개 탭(`소식지`·`분석`·`채팅`·`내 정보`), 요청인–업체 1:1 채팅(실시간 전송 방식은 팀원 협의 보류), `내 정보`의 프로필 수정·과거 기록 열람
 
 ## 문서 안내
 
@@ -10,15 +16,16 @@
 
 | 문서 | 확인할 내용 |
 | --- | --- |
+| [백엔드 구현 체크리스트](docs/plans/BACKEND_CHECKLIST.md) | 구현된 기능, 남은 MVP 작업과 통합 검증 |
 | [MVP 계획](docs/plans/MVP_PLAN.md) | 사용자 흐름, 역할, 시연 범위와 남은 제품 결정 |
-| [백엔드 설계](docs/design/BACKEND_DESIGN.md) | 인증, 기록·대화 처리, 버전 검사와 모델 연동 규칙 |
+| [백엔드 설계](docs/design/BACKEND_DESIGN.md) | 인증, 기록·일괄 분석·소식지·채팅 처리 규칙 |
 | [DB 설계](docs/design/DB_DESIGN.md) | 테이블·제약·인덱스와 실제 마이그레이션에서 확정한 내용 |
 | [API 설계](docs/design/API_DESIGN.md) | 현재 API 계약과 후속 API 계획, 요청·응답 예시 |
-| [용어집](GLOSSARY.md) | 하자 기록, 점검 요청, 견적 요청문의 의미 |
+| [용어집](GLOSSARY.md) | 요청인, 업체, 거주 형태, 소식지, 주거 지원 사업, 하자 기록 등의 의미 |
 | [프로젝트 계획](docs/plans/PROJECT_PLAN.md) | 제출 요건, 전체 일정, 검증표와 결정 이력 |
 | [AI 아이디어 비교](docs/ideas/AI_IDEAS.md) | 후속 기능 후보와 검토 근거 |
 
-현재 구현은 기록·메시지 API, 시연용 다음 질문 API, DB, 모바일 로그인·연결 확인 화면입니다. 설계 문서에 있는 사진 분석, 진단·요청문 생성, 업체 검색은 후속 구현 대상입니다. 실행·환경 설정은 이 README를, 적용된 DB 구조는 [마이그레이션](apps/api/migrations/)을 함께 확인합니다.
+현재 구현은 기록·메시지 API(레거시/보류), 시연용 다음 질문 API(레거시/보류), DB(`001`–`005`), 모바일 로그인·연결 확인 화면입니다. 설계 문서에 있는 회원 프로필, 소식지, 일괄 분석·진단, 내 기록 목록, 요청문 생성, 업체 검색과 1:1 채팅은 후속 구현 대상입니다. 실행·환경 설정은 이 README를, 적용된 DB 구조는 [마이그레이션](apps/api/migrations/)을 함께 확인합니다.
 
 ## 구조
 
@@ -110,6 +117,7 @@ npm run mobile    # Expo 개발 서버
 | `SUPABASE_JWT_SECRET` | HS256 토큰만 | 기존 Supabase JWT secret. 비대칭 서명 키를 쓰면 비워 둔다 |
 | `SUPABASE_JWT_AUDIENCE` | 아니오 | 기본 `authenticated` |
 | `SUPABASE_JWT_ISSUER` | 아니오 | 기본 `SUPABASE_URL + /auth/v1`. 로컬 Supabase 등에서 재정의 |
+| `GOV24_API_KEY` | 아니오 | 소식지(공공데이터포털 보조금24 Open API) 동기화용 인증키. 후속 구현 예정이며 미설정 시 DB 시드 폴백 사용 |
 
 `apps/api/.env`는 커밋하지 않습니다.
 
@@ -264,7 +272,9 @@ curl -s "http://127.0.0.1:8000/records/$RECORD_ID" \
 
 `POST /records/{record_id}/next-question`는 현재 서버의 입력과 대화만 사용하며, 클라이언트가 사용자 ID나 대화 전체를 다시 보내지 않습니다. 질문·선택지는 서버가 `source="sample"`로 표시해 반환합니다. 실제 LLM이 아니라 아래 두 질문을 사용하는 시연 규칙입니다.
 
-### 시연용 다음 질문 흐름
+### 시연용 다음 질문 흐름 (현재 코드 · MVP 미사용/보류 레거시)
+
+> 참고: 2026년 11월 20일 변경으로 분석 페이지의 AI 채팅창이 제거되어 현재 MVP 흐름에서는 아래 `messages`·`next-question` API를 호출하지 않습니다. 현재 저장소에 구현·테스트된 레거시/보류 동작을 확인하기 위한 예시입니다.
 
 기록 생성 → 위치·증상 저장 → 첫 질문 → 답변 → 다음 질문 → 종료 순서입니다. 아래 예시는 `location`·`symptoms`를 먼저 저장하고 첫 질문을 받습니다.
 
@@ -338,5 +348,5 @@ curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/next-question" \
 - `PATCH /records/{record_id}`는 [API 설계](docs/design/API_DESIGN.md)대로 `input_revision`을 받지 않습니다. 실제 값이 바뀔 때만 버전을 올리고, 명시한 `null`은 값을 지웁니다.
 - 마이그레이션은 로컬 개발을 위해 `auth.users(id)` 스텁을 만들 수 있게 했습니다. Supabase에서는 기존 테이블이 그대로 쓰입니다.
 - Supabase의 런타임 DB 연결·RLS·Data API 권한 회수와 ES256 JWKS 조회를 확인했습니다. 실제 사용자 로그인 토큰을 이용한 전체 인증 흐름은 아직 검증하지 않았습니다. 통합 테스트는 로컬 PostgreSQL과 HS256 토큰으로 실행합니다. `005_next_question_grants.sql`은 Home Keeper에 적용했고 적용 이력과 질문 INSERT/UPDATE 권한을 확인했습니다.
-- 사진 원본·표시 좌표·스토리지, 샘플 업체 저장, 실제 LLM 질문 생성, 진단·요청문 생성, 업체 검색은 구현하지 않았습니다. 다음 질문의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 지원하며 지원 하자 유형 전체를 확정하지 않습니다.
-- 모바일 앱은 로그인, `/health` 확인, 기록 생성·조회 화면까지만 구현했습니다. 실제 기기에서의 Supabase 로그인과 API 호출은 시연 전에 함께 확인해야 합니다. 사진·질문·결과·업체 화면은 후속 구현 대상입니다.
+- 회원 프로필·거주 형태 저장, 소식지(보조금24 동기화·시드), 사진 원본·표시 좌표·스토리지, 일괄 분석·진단·요청문 생성, 내 기록 목록, 업체 검색·1:1 채팅은 아직 구현하지 않았습니다. 현재 `next-question` 코드의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 처리하는 레거시/보류 구현이며, 변경된 MVP의 지원 하자 유형은 `크랙·벗겨짐·곰팡이`, 시연 지역은 `용인`입니다.
+- 모바일 앱은 이메일 로그인, `/health` 확인, 기록 생성·조회 화면까지만 구현했습니다. 실제 기기에서의 Supabase 로그인과 API 호출은 시연 전에 함께 확인해야 합니다. 회원가입·소식지·일괄 분석·결과·업체 채팅·내 정보 화면은 후속 구현 대상입니다.
