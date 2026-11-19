@@ -4,7 +4,7 @@
 
 ## 문서 범위
 
-아래 구현 확정 사항은 현재 마이그레이션에 반영된 내용이다. 진단과 요청문 등 후속 기능의 저장 컬럼도 준비되어 있으며, 해당 기능의 처리 API는 후속 구현 대상이다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행 방법은 [README](../../README.md)를 따른다.
+아래 구현 확정 사항은 현재 마이그레이션에 반영된 내용이다. 시연용 다음 질문은 기존 컬럼을 사용하고, 진단과 요청문 등 후속 기능의 저장 컬럼도 준비되어 있으며 해당 생성 API는 후속 구현 대상이다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행 방법은 [README](../../README.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -15,8 +15,8 @@
 - 질문·메시지 순서는 `records.conversation_sequence`에서 함께 발급한다. 각 테이블의 `(record_id, sequence)` 유일 제약은 유지하고, 두 테이블 사이의 순서는 기록 행 잠금과 같은 트랜잭션에서 조정한다.
 - `messages`는 `(record_id, question_id)` 복합 외래키로 같은 기록의 질문만 참조한다. `sender = 'user'`인 행은 `client_message_id`가 필수다.
 - `messages.input_revision`은 그 메시지가 반영된 뒤의 기록 입력 버전이다. 과거 메시지를 수정하면 수정된 메시지의 버전도 새 기록 버전으로 바꾼다.
-- 런타임 역할 `career_pair_runtime`은 마이그레이션이 `NOLOGIN`으로 만들고 이번 API에 필요한 DML만 부여한다(기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 업체·지역·작업 참조 테이블 `SELECT`). 로그인 비밀번호는 관리자가 별도로 설정한다. 새 기능이 더 많은 권한을 필요로 하면 새 마이그레이션에서 부여한다. Supabase Data API 역할(`anon`, `authenticated`, `service_role`)이 있으면 앱 테이블 권한과 향후 테이블 기본 권한을 회수한다.
-- 앱 테이블에는 RLS 정책을 두지 않는다. Data API 노출은 권한 회수로 막고, 사용자별 접근 제어는 FastAPI의 소유권 검사로 수행한다.
+- 런타임 역할 `career_pair_runtime`은 마이그레이션이 `NOLOGIN`으로 만들고 이번 API에 필요한 DML만 부여한다(기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 업체·지역·작업 참조 테이블 `SELECT`). 질문 INSERT/UPDATE는 `005_next_question_grants.sql`에서 추가한다. 로그인 비밀번호는 관리자가 별도로 설정한다. 새 기능이 더 많은 권한을 필요로 하면 새 마이그레이션에서 부여한다. Supabase Data API 역할(`anon`, `authenticated`, `service_role`)이 있으면 앱 테이블 권한과 향후 테이블 기본 권한을 회수한다.
+- 앱 테이블에는 `003_backend_rls.sql`이 RLS를 켜고 `career_pair_runtime`만 통과시키는 정책을 둔다. Data API 역할은 권한 회수로 막고, 사용자별 접근 제어는 FastAPI의 소유권 검사로 수행한다.
 
 ## 테이블
 
@@ -49,7 +49,9 @@
 
 진단의 최신 여부는 생성에 사용한 입력 버전으로 판단한다. 진단 저장 성공 시 `diagnosis_generation`을 증가시킨다. 요청문은 생성에 사용한 입력 버전과 진단 생성 번호가 모두 현재 값과 일치해야 최신이다. 요청문 저장 직전에도 두 값을 트랜잭션에서 검사한다. 진단 재생성 실패 시 생성 번호와 기존 결과를 유지한다. 현재 버전 결과는 재사용하며, 명시적인 재생성만 모델을 다시 호출한다. 실패한 생성으로 기존 값을 덮어쓰지 않는다.
 
-다음 질문 API의 성공 응답 전체를 `next_question_result`에, 사용한 입력 버전을 `next_question_revision`에 저장한다. 질문과 짧은 응답이 모두 null인 종료 응답도 저장한다. 질문·메시지 행과 완료 응답은 같은 입력 버전 검사와 트랜잭션에서 저장한다. 현재 버전과 저장 버전이 같으면 그대로 재사용한다. 호출 실패는 완료 응답으로 저장하지 않는다.
+다음 질문 API의 성공 응답 전체를 `next_question_result`에, 사용한 입력 버전을 `next_question_revision`에 저장한다. 응답에는 `source="sample"`과 질문·선택지·짧은 AI 응답이 포함된다. 질문과 짧은 응답이 모두 null인 종료 응답도 저장한다. 질문·메시지 행과 완료 응답은 같은 입력 버전 검사와 트랜잭션에서 저장한다. 현재 버전과 저장 버전이 같으면 그대로 재사용한다. 호출 실패는 완료 응답으로 저장하지 않는다.
+
+다음 질문을 저장할 때 새 질문과 AI 응답에는 생성에 사용한 현재 `input_revision`을 기록하지만 기록의 입력 버전은 올리지 않는다. 인식한 답변의 질문은 `answered=true`로 닫고, 관련 없는 메시지는 `answered`를 바꾸지 않는다. `unknown` 답변은 질문을 닫는 데만 사용하고 확인된 사실로 저장하지 않는다. 과거 메시지를 수정하면 그 답변의 질문을 `answered=false`로 되돌리고 `next_question_result`·`next_question_revision`을 NULL로 지워, 삭제된 질문을 담은 이전 응답을 조회하거나 재사용하지 않게 한다. 시연용 다음 질문은 기존 컬럼만 사용하며 스키마 변경 마이그레이션은 없다. `005_next_question_grants.sql`은 런타임 역할의 questions INSERT/UPDATE 권한만 추가한다.
 
 샘플 업체는 실제 업체 테이블에 섞어 넣지 않고 검색 API가 빈 결과일 때 반환한다. 수정한 요청문은 앱의 현재 화면에서만 유지한다.
 

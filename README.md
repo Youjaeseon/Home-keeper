@@ -2,7 +2,7 @@
 
 하자 기록과 대화 메시지를 저장하는 FastAPI + PostgreSQL 백엔드와 Expo 모바일 앱을 한 저장소에서 관리합니다. 인증은 Supabase Auth 액세스 토큰을 사용합니다.
 
-백엔드는 `POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`, `POST /records/{record_id}/messages`, `PUT /records/{record_id}/messages/{message_id}` 다섯 개 API를 제공합니다. 모바일 앱은 현재 로그인과 백엔드 연결 확인 화면까지 구현되어 있습니다. 사진 분석, 다음 질문·진단·요청문 생성, 업체 검색은 이번 범위가 아니며 DB 컬럼만 준비되어 있습니다.
+백엔드는 `POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`, `POST /records/{record_id}/messages`, `PUT /records/{record_id}/messages/{message_id}`, `POST /records/{record_id}/next-question` 여섯 개 API를 제공합니다. 모바일 앱은 현재 로그인과 백엔드 연결 확인 화면까지 구현되어 있습니다. 다음 질문은 실제 LLM 대신 시연용 샘플 규칙으로 동작하며, 사진 분석·진단·요청문 생성·업체 검색은 이번 범위가 아니고 DB 컬럼만 준비되어 있습니다.
 
 ## 문서 안내
 
@@ -18,7 +18,7 @@
 | [프로젝트 계획](docs/plans/PROJECT_PLAN.md) | 제출 요건, 전체 일정, 검증표와 결정 이력 |
 | [AI 아이디어 비교](docs/ideas/AI_IDEAS.md) | 후속 기능 후보와 검토 근거 |
 
-현재 구현은 기록·메시지 API, DB, 모바일 로그인·연결 확인 화면입니다. 설계 문서에 있는 사진 분석, 질문·진단·요청문 생성, 업체 검색은 후속 구현 대상입니다. 실행·환경 설정은 이 README를, 적용된 DB 구조는 [마이그레이션](apps/api/migrations/)을 함께 확인합니다.
+현재 구현은 기록·메시지 API, 시연용 다음 질문 API, DB, 모바일 로그인·연결 확인 화면입니다. 설계 문서에 있는 사진 분석, 진단·요청문 생성, 업체 검색은 후속 구현 대상입니다. 실행·환경 설정은 이 README를, 적용된 DB 구조는 [마이그레이션](apps/api/migrations/)을 함께 확인합니다.
 
 ## 구조
 
@@ -32,7 +32,8 @@ apps/
     app/
       main.py      FastAPI 앱, 오류 응답
       auth.py      Supabase JWT 검증
-      records.py   기록·메시지 API
+      records.py   기록·메시지·다음 질문 API
+      sample_questions.py 시연용 질문 규칙과 결정 함수
       schemas.py   요청·응답 모델
       db.py        요청별 DB 트랜잭션
       migrate.py   SQL 마이그레이션 실행기
@@ -137,7 +138,7 @@ psql postgresql://localhost:5432/career_pair \
 
 `apps/api/.env`의 `DATABASE_URL`을 `postgresql://career_pair_runtime:change-me@localhost:5432/career_pair`로 맞춥니다.
 
-마이그레이션은 `schema_migrations`에 적용 이력을 남기므로 다시 실행해도 완료된 파일은 건너뜁니다. 관리자 연결은 테이블과 역할을 만들고, 런타임 연결은 이번 API에 필요한 권한만 가집니다: 기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 업체·지역·작업 참조 테이블 `SELECT`. 런타임 역할은 `auth.users`를 읽거나 DDL을 실행할 수 없습니다. 새 기능이 더 많은 권한을 필요로 하면 새 마이그레이션에서 명시적으로 부여합니다.
+마이그레이션은 `schema_migrations`에 적용 이력을 남기므로 다시 실행해도 완료된 파일은 건너뜁니다. 관리자 연결은 테이블과 역할을 만들고, 런타임 연결은 이번 API에 필요한 권한만 가집니다: 기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 업체·지역·작업 참조 테이블 `SELECT`. 질문 INSERT/UPDATE 권한은 `005_next_question_grants.sql`에서 추가합니다. 런타임 역할은 `auth.users`를 읽거나 DDL을 실행할 수 없습니다. 새 기능이 더 많은 권한을 필요로 하면 새 마이그레이션에서 명시적으로 부여합니다.
 
 ### Supabase 사용 시
 
@@ -153,11 +154,11 @@ psql postgresql://localhost:5432/career_pair \
    ```
 3. `SUPABASE_URL`과 JWT 설정을 채웁니다. 새 프로젝트가 비대칭 서명 키(`RS256`/`ES256`)를 쓰면 `SUPABASE_JWT_SECRET` 없이 JWKS(`/auth/v1/.well-known/jwks.json`)로 검증합니다. 기존 HS256 토큰이면 secret을 설정합니다.
 4. 앱 테이블은 마이그레이션에서 Supabase Data API 역할(`anon`, `authenticated`, `service_role`)의 권한을 회수합니다. Supabase 대시보드의 Data API 노출 스키마에 별도 권한을 추가하지 마세요. 앱은 테이블을 직접 노출하지 않고 FastAPI를 통해서만 접근합니다.
-5. `003_backend_rls.sql`은 앱 테이블의 RLS를 켜고 전용 `career_pair_runtime` 역할만 통과시킵니다. 사용자별 소유권 검사는 FastAPI가 담당하므로 이 DB 계정은 서버에서만 사용합니다. `schema_migrations`는 관리자만 접근합니다. `004_protect_rls_trigger.sql`은 Supabase 내부 RLS 이벤트 트리거가 있을 때 공개 실행 권한을 회수합니다.
+5. `003_backend_rls.sql`은 앱 테이블의 RLS를 켜고 전용 `career_pair_runtime` 역할만 통과시킵니다. 사용자별 소유권 검사는 FastAPI가 담당하므로 이 DB 계정은 서버에서만 사용합니다. `schema_migrations`는 관리자만 접근합니다. `004_protect_rls_trigger.sql`은 Supabase 내부 RLS 이벤트 트리거가 있을 때 공개 실행 권한을 회수합니다. `005_next_question_grants.sql`은 다음 질문 API가 질문을 생성·갱신할 수 있도록 런타임 역할에 `questions` INSERT/UPDATE를 부여합니다.
 
 IPv4 네트워크에서는 대시보드 **Connect → Session pooler**의 호스트와 5432 포트를 사용합니다. 전용 역할의 풀러 사용자 이름은 `career_pair_runtime.<project-ref>`이며 `sslmode=require`를 붙입니다. 호스트의 `aws-0`/`aws-1` 부분은 프로젝트 연결 정보에 맞춰야 합니다. [공식 연결 문서](https://supabase.com/docs/guides/database/connecting-to-postgres)를 참고하세요.
 
-현재 개발 환경은 **Home Keeper** (`lprqztpobrlhetbjkcks`, Sydney)에 연결되어 있습니다. 초기 마이그레이션 001–004와 런타임 로그인 설정은 적용 완료했으며, `apps/api/.env`에 실제 런타임 연결을 저장했습니다. 인증은 ES256/JWKS를 사용하므로 `SUPABASE_JWT_SECRET`은 비워 둡니다. 관리자 비밀번호는 저장하지 않았으므로 후속 마이그레이션을 CLI로 실행하려면 `MIGRATION_DATABASE_URL`을 별도로 설정해야 합니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
+현재 개발 환경은 **Home Keeper** (`lprqztpobrlhetbjkcks`, Sydney)에 연결되어 있습니다. 마이그레이션 001–005와 런타임 로그인 설정은 적용 완료했으며, `apps/api/.env`에 실제 런타임 연결을 저장했습니다. 인증은 ES256/JWKS를 사용하므로 `SUPABASE_JWT_SECRET`은 비워 둡니다. `005_next_question_grants.sql`은 Supabase 연결 도구로 적용했으며, 적용 이력과 런타임 역할의 `questions` INSERT/UPDATE 권한을 실제 DB에서 확인했습니다. 관리자 비밀번호는 저장하지 않았습니다. 로컬 테스트 DB에는 005가 적용되어 전체 흐름을 검증했습니다. 후속 마이그레이션을 CLI로 실행하려면 `MIGRATION_DATABASE_URL`을 별도로 설정해야 합니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
 
 ## 테스트
 
@@ -168,7 +169,7 @@ npm run api:test
 테스트는 실제 PostgreSQL을 사용합니다. 기본값은 `postgresql://localhost:5432/postgres`에 현재 OS 사용자로 접속해 `career_pair_test` 데이터베이스를 **삭제 후 재생성**하고, 빈 DB에 마이그레이션을 적용한 뒤 런타임 역할로 API를 호출합니다. 다음 권한이 필요합니다.
 
 - `CREATE DATABASE`, `DROP DATABASE`
-- 역할 비밀번호 변경(`ALTER ROLE`)
+- `CREATE ROLE`(마이그레이션이 런타임 역할 생성), 역할 비밀번호 변경(`ALTER ROLE`)
 
 다른 서버를 쓰려면:
 
@@ -180,7 +181,7 @@ TEST_DATABASE_NAME=career_pair_ci_test \
 
 `TEST_DATABASE_NAME`은 `_test`로 끝나야 하며, 운영 DB를 가리키는 이름은 거부합니다. 테스트는 클러스터의 `career_pair_runtime` 역할 비밀번호를 테스트 값으로 변경하므로 로컬 개발 클러스터에서만 실행하세요. 테스트는 실제 Supabase에 연결하지 않고 로컬에서 서명한 HS256 토큰을 사용합니다. 인증 경계는 FastAPI의 `app.dependency_overrides`로 대체할 수 있지만, 운영 코드에는 인증 우회 경로가 없습니다.
 
-검증 항목: 빈 DB 마이그레이션, 서명·만료·발급자·대상 검증, 소유권 격리, 다른 기록 질문 거부, 선택지/직접 입력 저장, 메시지 재전송 멱등성, 동일 ID 내용 충돌, 오래된 버전 거부, 과거 메시지 수정 시 후속 대화 삭제, 동일 내용 수정 무변경, 동시 요청 중복·순서 방지, 수정 실패 시 롤백, DB 제약과 런타임 권한.
+검증 항목: 빈 DB 마이그레이션, 서명·만료·발급자·대상 검증, 소유권 격리, 다른 기록 질문 거부, 선택지/직접 입력 저장, 메시지 재전송 멱등성, 동일 ID 내용 충돌, 오래된 버전 거부, 과거 메시지 수정 시 후속 대화 삭제, 동일 내용 수정 무변경, 동시 요청 중복·순서 방지, 수정 실패 시 롤백, DB 제약과 런타임 권한. 다음 질문은 첫 질문·선택지, 선택/직접 입력 진행, 관련 없는 메시지 미확정, 모름 답변 종료, 같은 버전 재사용, 종료 응답 재사용, 동시 생성 중복 방지, 생성 중 입력 변경 409, 생성 실패 무저장, 과거 답변 수정 후 오래된 질문·캐시 미재사용을 검증합니다.
 
 ## API 동작
 
@@ -261,16 +262,81 @@ curl -s "http://127.0.0.1:8000/records/$RECORD_ID" \
 
 같은 `client_message_id`와 같은 내용을 다시 보내면 기존 메시지를 반환합니다. 같은 ID에 다른 내용(또는 다른 질문·선택지)을 보내면 409입니다. 비교에는 최초 POST의 선택지 ID와 직접 입력을 사용하므로 같은 label의 다른 선택지와 직접 입력도 구분합니다. PUT으로 수정한 뒤 원래 POST를 재전송하면 수정된 현재 메시지를 반환합니다. `002_message_submission.sql` 이전 메시지는 최초 제출 방식을 복원할 수 없어 재전송 시 409를 반환하므로 기록을 다시 조회해야 합니다.
 
-테스트 fixture가 아닌 공개 질문 생성 API는 없습니다. 이번 범위에서 질문·선택지는 `apps/api/tests/conftest.py`의 `question_factory`처럼 DB에 직접 준비합니다.
+`POST /records/{record_id}/next-question`는 현재 서버의 입력과 대화만 사용하며, 클라이언트가 사용자 ID나 대화 전체를 다시 보내지 않습니다. 질문·선택지는 서버가 `source="sample"`로 표시해 반환합니다. 실제 LLM이 아니라 아래 두 질문을 사용하는 시연 규칙입니다.
+
+### 시연용 다음 질문 흐름
+
+기록 생성 → 위치·증상 저장 → 첫 질문 → 답변 → 다음 질문 → 종료 순서입니다. 아래 예시는 `location`·`symptoms`를 먼저 저장하고 첫 질문을 받습니다.
+
+```bash
+RECORD_ID=$(curl -s -X POST http://127.0.0.1:8000/records \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r .record_id)
+
+curl -s -X PATCH "http://127.0.0.1:8000/records/$RECORD_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"location":"안방 창틀 아래","symptoms":"검은 곰팡이 의심 얼룩"}'
+
+FIRST=$(curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/next-question" \
+  -H "Authorization: Bearer $ACCESS_TOKEN")
+echo "$FIRST"   # source=sample, 첫 질문, input_revision=1
+Q1_ID=$(echo "$FIRST" | jq -r .question.id)
+
+curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/messages" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"client_message_id\": \"$(uuidgen | tr 'A-Z' 'a-z')\",
+    \"question_id\": \"$Q1_ID\",
+    \"selected_option_id\": \"recurred\",
+    \"input_revision\": 1
+  }"
+
+SECOND=$(curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/next-question" \
+  -H "Authorization: Bearer $ACCESS_TOKEN")
+echo "$SECOND"  # 두 번째 질문, input_revision=2
+Q2_ID=$(echo "$SECOND" | jq -r .question.id)
+
+curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/messages" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "{
+    \"client_message_id\": \"$(uuidgen | tr 'A-Z' 'a-z')\",
+    \"question_id\": \"$Q2_ID\",
+    \"selected_option_id\": \"ventilated\",
+    \"input_revision\": 2
+  }"
+
+curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/next-question" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+# question=null, ready_for_diagnosis=true, source="sample", input_revision=3
+```
+
+시연 질문은 곰팡이 의심 창가 얼룩 사례의 두 가지 정보만 확인합니다. 지원 하자 유형 전체를 확정한 규칙이 아닙니다.
+
+| 순서 | 질문 | 선택지 ID |
+| --- | --- | --- |
+| 1 | 닦은 뒤 같은 흔적이 다시 생겼나요? | `recurred`, `first_seen`, `unknown` |
+| 2 | 이미 어떤 조치를 했나요? | `wiped`, `ventilated`, `none`, `unknown` |
+
+직접 입력은 명확히 대응할 수 있는 문구만 규칙으로 처리합니다.
+
+- 1번: `다시 생겼`, `또 생겼`, `다시 나타났`, `또 나타났`, `재발` → `recurred`; `처음 발견`, `처음 생`, `처음 봤` → `first_seen`; `모르` → `unknown`
+- 2번: `닦아봤`, `닦았` → `wiped`; `환기했`, `환기를 했` → `ventilated`; `아무것도`, `아무 조치` → `none`; `모르` → `unknown`
+- 그 밖의 문장은 답변으로 확정하지 않고 짧은 반응과 함께 같은 질문을 다시 반환합니다.
+- `unknown`은 “질문을 닫았다”는 뜻으로만 `answered=true`가 되며, 확인된 사실로 사용하지 않습니다. 새 질문이 없으면 같은 입력 버전의 완료 응답을 재사용하고, `reply=null`, `question=null`인 종료 응답도 저장합니다.
+
+질문 생성은 실제 모델 호출이 아니라 `apps/api/app/sample_questions.py`의 작은 결정 함수입니다. 이후 LLM으로 교체할 지점은 이 함수이며, 나머지 질문·메시지 저장과 버전 검사는 그대로 재사용합니다. 테스트 fixture의 질문은 기존 메시지 API 회귀 테스트에만 사용합니다.
 
 ## 구현 메모와 한계
 
 - JWT는 PyJWT로 서명, `exp`, `iat`, `iss`, `aud`, `sub`(UUID)를 검증합니다. 디코딩만 한 토큰의 사용자 ID는 신뢰하지 않습니다. `sub`가 소유자입니다.
 - 쓰기 요청은 기록 행을 `FOR UPDATE`로 잠가 한 기록의 버전·순서 갱신을 직렬화합니다. 조회는 `REPEATABLE READ` 스냅샷을 사용합니다.
 - 메시지 재전송은 소유권 확인 뒤, 버전 확인 전에 기존 `client_message_id`를 조회합니다. 최초 저장으로 버전이 올라간 뒤에도 재전송이 성공합니다.
-- 과거 메시지 수정은 기록 소유권 확인 후, 대상 메시지 조회보다 먼저 `input_revision`을 검사합니다. 오래된 버전이면 메시지가 없어도 최신 버전을 포함한 409를 반환하며, 버전이 일치할 때 대상이 없으면 404입니다. 내용이 같으면 삭제와 버전 증가 없이 성공을 반환하고, 내용이 달라질 때만 이후 메시지·질문을 삭제합니다.
+- 과거 메시지 수정은 기록 소유권 확인 후, 대상 메시지 조회보다 먼저 `input_revision`을 검사합니다. 오래된 버전이면 메시지가 없어도 최신 버전을 포함한 409를 반환하며, 버전이 일치할 때 대상이 없으면 404입니다. 내용이 같으면 삭제와 버전 증가 없이 성공을 반환하고, 내용이 달라질 때만 이후 메시지·질문을 삭제합니다. 이때 수정한 답변의 질문은 `answered=false`로 되돌리고 `next_question` 캐시도 지웁니다.
+- `POST /records/{record_id}/next-question`은 실제 LLM 없이 `app/sample_questions.py`의 두 질문 규칙으로 동작합니다. 입력 스냅샷으로 결정하고, 저장 직전에 기록 행을 다시 잠가 `input_revision`과 기존 완료 응답을 재확인합니다. 질문·AI 응답·`answered` 변경·완료 응답은 한 트랜잭션에 저장하며 `input_revision`은 올리지 않습니다. 같은 버전의 저장 응답은 재생성하지 않고 반환합니다.
 - `PATCH /records/{record_id}`는 [API 설계](docs/design/API_DESIGN.md)대로 `input_revision`을 받지 않습니다. 실제 값이 바뀔 때만 버전을 올리고, 명시한 `null`은 값을 지웁니다.
 - 마이그레이션은 로컬 개발을 위해 `auth.users(id)` 스텁을 만들 수 있게 했습니다. Supabase에서는 기존 테이블이 그대로 쓰입니다.
-- Supabase의 런타임 DB 연결·RLS·Data API 권한 회수와 ES256 JWKS 조회를 확인했습니다. 실제 사용자 로그인 토큰을 이용한 전체 인증 흐름은 아직 검증하지 않았습니다. 통합 테스트는 로컬 PostgreSQL과 HS256 토큰으로 실행합니다.
-- 사진 원본·표시 좌표·스토리지, 샘플 업체 저장, 질문/진단/요청문 생성, 업체 검색은 구현하지 않았습니다.
+- Supabase의 런타임 DB 연결·RLS·Data API 권한 회수와 ES256 JWKS 조회를 확인했습니다. 실제 사용자 로그인 토큰을 이용한 전체 인증 흐름은 아직 검증하지 않았습니다. 통합 테스트는 로컬 PostgreSQL과 HS256 토큰으로 실행합니다. `005_next_question_grants.sql`은 Home Keeper에 적용했고 적용 이력과 질문 INSERT/UPDATE 권한을 확인했습니다.
+- 사진 원본·표시 좌표·스토리지, 샘플 업체 저장, 실제 LLM 질문 생성, 진단·요청문 생성, 업체 검색은 구현하지 않았습니다. 다음 질문의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 지원하며 지원 하자 유형 전체를 확정하지 않습니다.
 - 모바일 앱은 로그인, `/health` 확인, 기록 생성·조회 화면까지만 구현했습니다. 실제 기기에서의 Supabase 로그인과 API 호출은 시연 전에 함께 확인해야 합니다. 사진·질문·결과·업체 화면은 후속 구현 대상입니다.
