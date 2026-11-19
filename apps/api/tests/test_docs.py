@@ -58,6 +58,13 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
             "409",
             "422",
         },
+        ("/records/{record_id}/next-question", "post"): {
+            "200",
+            "401",
+            "404",
+            "409",
+            "422",
+        },
     }
 
     actual_operations = set()

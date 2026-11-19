@@ -2,16 +2,19 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Path
+from psycopg.types.json import Jsonb
 
 from app.auth import get_current_user
 from app.db import read_transaction, transaction
 from app.errors import invalid_request, message_conflict, not_found, revision_conflict
+from app.sample_questions import SOURCE, build_sample_decision
 from app.schemas import (
     ConflictErrorResponse,
     ErrorResponse,
     MessageCreateRequest,
     MessageSaveResponse,
     MessageUpdateRequest,
+    NextQuestionResponse,
     RecordCreateResponse,
     RecordOut,
     RecordPatchRequest,
@@ -174,6 +177,21 @@ _MESSAGE_PUT_CONFLICT_RESPONSE = _error_response(
     },
 )
 
+_NEXT_QUESTION_CONFLICT_RESPONSE = _error_response(
+    ConflictErrorResponse,
+    "질문 생성 중 기록 입력 버전이 변경됨",
+    {
+        "revision_conflict": {
+            "summary": "입력 변경으로 생성 결과를 저장하지 않음",
+            "value": {
+                "code": "revision_conflict",
+                "message": "입력이 변경되었습니다. 최신 기록을 확인한 뒤 다시 시도해 주십시오.",
+                "input_revision": 2,
+            },
+        }
+    },
+)
+
 router = APIRouter(
     prefix="/records",
     tags=["records"],
@@ -248,6 +266,47 @@ def _draft_out(
         "diagnosis_generation": generation,
         "is_current": revision == current_revision and generation == current_generation,
     }
+
+
+def _current_next_question_result(record: dict) -> dict | None:
+    if (
+        record["next_question_result"] is not None
+        and record["next_question_revision"] == record["input_revision"]
+    ):
+        return record["next_question_result"]
+    return None
+
+
+def _load_next_question_state(conn, record_id: UUID) -> dict:
+    questions = conn.execute(
+        """
+        SELECT id, sequence, content, options, answered
+        FROM questions WHERE record_id = %s ORDER BY sequence
+        """,
+        (record_id,),
+    ).fetchall()
+    messages = conn.execute(
+        """
+        SELECT id, question_id, sequence, sender, content
+        FROM messages WHERE record_id = %s ORDER BY sequence
+        """,
+        (record_id,),
+    ).fetchall()
+    return {"questions": questions, "messages": messages}
+
+
+def _allocate_conversation_sequence(conn, record_id: UUID) -> int:
+    allocated = conn.execute(
+        """
+        UPDATE records
+        SET conversation_sequence = conversation_sequence + 1,
+            updated_at = now()
+        WHERE id = %s
+        RETURNING conversation_sequence
+        """,
+        (record_id,),
+    ).fetchone()
+    return allocated["conversation_sequence"]
 
 
 @router.post(
@@ -423,6 +482,132 @@ def update_record(
 
 
 @router.post(
+    "/{record_id}/next-question",
+    response_model=NextQuestionResponse,
+    summary="시연용 다음 질문 조회",
+    description=(
+        "현재 서버에 저장된 위치·증상과 대화로 다음 시연 질문을 결정합니다.\n\n"
+        "- 클라이언트는 사용자 ID나 대화 전체를 보내지 않습니다. 인증 토큰의 사용자와 기록 소유권만 확인합니다.\n"
+        "- 실제 LLM이 아니라 곰팡이 의심 창가 얼룩 사례의 두 질문을 사용하는 시연 규칙이며, 응답의 `source`는 항상 `sample`입니다.\n"
+        "- 같은 `input_revision`의 완료 응답이 있으면 질문·AI 메시지를 다시 만들지 않고 저장 결과를 반환합니다. 생성 중 입력이 바뀌면 `409`를 반환하고 아무것도 저장하지 않습니다.\n"
+        "- 질문과 AI 응답을 저장해도 `input_revision`은 증가하지 않습니다."
+    ),
+    response_description="다음 질문 또는 종료 응답과 사용한 입력 버전",
+    responses={
+        404: _RECORD_NOT_FOUND_RESPONSE,
+        409: _NEXT_QUESTION_CONFLICT_RESPONSE,
+        422: _VALIDATION_ERROR_RESPONSE,
+    },
+)
+def next_question(
+    record_id: Annotated[
+        UUID,
+        Path(description="다음 질문을 조회할 하자 기록의 UUID."),
+    ],
+    owner_id: UUID = Depends(get_current_user),
+):
+    with transaction() as conn:
+        record = _lock_record(conn, record_id, owner_id)
+        cached = _current_next_question_result(record)
+        if cached is not None:
+            return cached
+
+        snapshot_revision = record["input_revision"]
+        state = {
+            "input_revision": snapshot_revision,
+            "location": record["location"],
+            "symptoms": record["symptoms"],
+            **_load_next_question_state(conn, record_id),
+        }
+    # The row lock ends here; the sample decision is computed from a snapshot,
+    # and the final version check below prevents stale results from being saved.
+
+    decision = build_sample_decision(state)
+
+    with transaction() as conn:
+        record = _lock_record(conn, record_id, owner_id)
+        if record["input_revision"] != snapshot_revision:
+            raise revision_conflict(record["input_revision"])
+
+        cached = _current_next_question_result(record)
+        if cached is not None:
+            return cached
+
+        for question_id in decision.answered_question_ids:
+            conn.execute(
+                """
+                UPDATE questions SET answered = TRUE
+                WHERE id = %s AND record_id = %s
+                """,
+                (question_id, record_id),
+            )
+
+        if decision.reply is not None:
+            reply_sequence = _allocate_conversation_sequence(conn, record_id)
+            conn.execute(
+                """
+                INSERT INTO messages
+                    (record_id, question_id, sequence, sender, content,
+                     input_revision)
+                VALUES (%s, %s, %s, 'assistant', %s, %s)
+                """,
+                (
+                    record_id,
+                    decision.reply_question_id,
+                    reply_sequence,
+                    decision.reply,
+                    snapshot_revision,
+                ),
+            )
+
+        question = decision.question
+        if question is not None and question["id"] is None:
+            question_sequence = _allocate_conversation_sequence(conn, record_id)
+            question = conn.execute(
+                """
+                INSERT INTO questions
+                    (record_id, sequence, content, options, answered, input_revision)
+                VALUES (%s, %s, %s, %s, FALSE, %s)
+                RETURNING id, content, options
+                """,
+                (
+                    record_id,
+                    question_sequence,
+                    question["content"],
+                    Jsonb(question["options"]),
+                    snapshot_revision,
+                ),
+            ).fetchone()
+
+        result = {
+            "input_revision": snapshot_revision,
+            "reply": decision.reply,
+            "question": (
+                {
+                    "id": str(question["id"]),
+                    "content": question["content"],
+                    "options": question["options"],
+                }
+                if question is not None
+                else None
+            ),
+            "ready_for_diagnosis": decision.ready_for_diagnosis,
+            "source": SOURCE,
+        }
+        conn.execute(
+            """
+            UPDATE records
+            SET next_question_result = %s,
+                next_question_revision = %s,
+                updated_at = now()
+            WHERE id = %s
+            """,
+            (Jsonb(result), snapshot_revision, record_id),
+        )
+    return result
+
+
+@router.post(
     "/{record_id}/messages",
     response_model=MessageSaveResponse,
     summary="사용자 메시지(답변) 저장",
@@ -589,10 +774,21 @@ def update_message(
             "DELETE FROM questions WHERE record_id = %s AND sequence > %s",
             (record_id, message["sequence"]),
         )
+        if message["question_id"] is not None:
+            conn.execute(
+                """
+                UPDATE questions SET answered = FALSE
+                WHERE id = %s AND record_id = %s
+                """,
+                (message["question_id"], record_id),
+            )
         new_revision = conn.execute(
             """
             UPDATE records
-            SET input_revision = input_revision + 1, updated_at = now()
+            SET input_revision = input_revision + 1,
+                next_question_result = NULL,
+                next_question_revision = NULL,
+                updated_at = now()
             WHERE id = %s
             RETURNING input_revision
             """,

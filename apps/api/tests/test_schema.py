@@ -258,10 +258,17 @@ def test_runtime_role_has_only_required_privileges():
         assert conn.execute("SELECT count(*) FROM messages").fetchone() is not None
         assert conn.execute("SELECT count(*) FROM providers").fetchone() is not None
 
+        for table, privilege in (
+            ("questions", "INSERT"),
+            ("questions", "UPDATE"),
+        ):
+            assert conn.execute(
+                "SELECT has_table_privilege(current_user, %s, %s)",
+                (table, privilege),
+            ).fetchone()[0]
+
         for statement in (
             "DELETE FROM records",
-            "INSERT INTO questions (record_id, sequence, content, input_revision) "
-            "VALUES (gen_random_uuid(), 1, '질문', 0)",
             "INSERT INTO providers (name, phone) VALUES ('업체', '000')",
         ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):

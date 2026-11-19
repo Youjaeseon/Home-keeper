@@ -208,6 +208,48 @@ class NextQuestionOut(BaseModel):
     )
 
 
+class NextQuestionOption(BaseModel):
+    """시연용 다음 질문의 선택지."""
+
+    id: str = Field(
+        description="선택지 식별 ID. 사용자 메시지 저장 시 `selected_option_id`로 전달합니다."
+    )
+    label: str = Field(
+        description="화면에 표시되며 선택 시 사용자 메시지 `content`로 저장되는 문구."
+    )
+
+
+class NextQuestionQuestion(BaseModel):
+    """다음 질문 조회 응답에 포함되는 질문."""
+
+    id: UUID = Field(description="질문의 고유 UUID.")
+    content: str = Field(description="사용자에게 제시하는 질문 문구.")
+    options: list[NextQuestionOption] = Field(
+        description="질문에 제시되는 선택지 목록. 선택지는 질문 안에서 고유한 ID를 가집니다."
+    )
+
+
+class NextQuestionResponse(BaseModel):
+    """시연용 다음 질문 조회 응답."""
+
+    input_revision: int = Field(
+        description="이 응답을 생성할 때 사용한 기록 입력 버전. 질문·응답 저장만으로는 증가하지 않습니다."
+    )
+    reply: str | None = Field(
+        description="AI의 짧은 반응. 없으면 `null`입니다."
+    )
+    question: NextQuestionQuestion | None = Field(
+        description="다음 질문. 추가 질문이 없으면 `null`입니다."
+    )
+    ready_for_diagnosis: bool = Field(
+        description="더 확인할 질문이 없으면 `true`, 다음 질문이 있으면 `false`입니다."
+    )
+    source: Literal["sample"] = Field(
+        description="실제 LLM이나 자연어 이해가 아닌 시연용 샘플 규칙으로 생성된 응답임을 표시합니다. 값은 항상 `sample`입니다.",
+        examples=["sample"],
+    )
+
+
 class DiagnosisOut(BaseModel):
     """저장된 하자 진단 결과."""
 

@@ -24,6 +24,10 @@ _API_DESCRIPTION = """
 - 위치·증상 변경, 사용자 메시지 추가, 과거 사용자 메시지 내용 변경처럼 실제 입력이 바뀔 때만 `1`씩 증가합니다.
 - `POST /records/{record_id}/messages`와 `PUT /records/{record_id}/messages/{message_id}`는 요청 본문에 `input_revision`이 필요하며, 서버 최신 버전과 다르면 `409 Conflict`(`revision_conflict`)와 현재 `input_revision`을 반환합니다.
 
+### 시연용 다음 질문
+- `POST /records/{record_id}/next-question`은 현재 저장된 입력과 대화로 다음 질문을 결정하며, 같은 `input_revision`의 저장 결과는 재생성하지 않고 반환합니다.
+- 실제 LLM이 아니라 곰팡이 의심 창가 얼룩 사례의 두 질문을 사용하는 샘플 규칙이며, 응답의 `source`는 항상 `sample`입니다.
+
 ### 공통 오류 형식
 - 모든 오류는 `{ "code": string, "message": string, "input_revision"?: number }` 형식으로 반환됩니다.
 """.strip()
@@ -31,7 +35,7 @@ _API_DESCRIPTION = """
 _OPENAPI_TAGS = [
     {
         "name": "records",
-        "description": "하자 기록 생성·조회·수정 및 사용자 대화 메시지 저장·편집 API. 모든 요청에 Supabase Auth Bearer JWT 인증과 기록 소유권 검증이 필요합니다.",
+        "description": "하자 기록 생성·조회·수정, 사용자 대화 메시지 저장·편집, 시연용 다음 질문 조회 API. 모든 요청에 Supabase Auth Bearer JWT 인증과 기록 소유권 검증이 필요합니다.",
     },
     {
         "name": "health",
