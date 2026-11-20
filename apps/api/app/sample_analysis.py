@@ -149,6 +149,7 @@ def build_sample_analysis(
             f"사진 분석은 수행되지 않았습니다. 입력한 위치({location}), 재질({material}), "
             f"{symptoms_label}을 기준으로 만든 샘플 관찰 요약입니다."
         ),
+        "suspected_types": defects,
         "severity_score": score,
         "severity_level": level,
         "reason": (

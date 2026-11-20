@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+HousingType = Literal["monthly_rent", "jeonse", "semi_jeonse", "owned", "other"]
 
 
 class HealthResponse(BaseModel):
@@ -335,6 +337,9 @@ class AnalyzeDiagnosisOut(BaseModel):
     observations: str = Field(
         description="입력값을 바탕으로 한 관찰 요약. 샘플 모드에서는 사진 분석 미수행을 명시합니다."
     )
+    suspected_types: list[str] = Field(
+        description="입력에서 의심한 하자 유형 목록(예: `곰팡이`, `균열`, `벗겨짐`). 목록 API 요약에 사용합니다."
+    )
     severity_score: int | None = Field(
         ge=0,
         le=100,
@@ -381,6 +386,73 @@ class AnalyzeResponse(BaseModel):
     source: Literal["sample"] = Field(
         description="샘플 결과 표시. 실제 YOLO·비전 LLM·텍스트 LLM 호출 없이 만든 결과임을 나타냅니다."
     )
+
+
+class ProfileOut(BaseModel):
+    """로그인한 사용자의 주거 프로필."""
+
+    nickname: str = Field(description="서비스에서 표시할 닉네임.")
+    role: Literal["requester", "provider"] = Field(
+        description="계정 역할. 일반 사용자는 `requester`이며 클라이언트가 변경할 수 없습니다."
+    )
+    region_id: UUID = Field(description="거주 지역의 UUID.")
+    address: str | None = Field(description="선택 등록 주소. 없으면 `null`입니다.")
+    housing_type: HousingType = Field(description="거주 형태 코드.")
+
+
+class ProfileUpsertRequest(BaseModel):
+    """프로필 최초 등록·수정 요청."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nickname: str = Field(
+        min_length=1,
+        max_length=80,
+        description="닉네임. 공백만 입력할 수 없습니다.",
+    )
+    region_id: UUID = Field(description="`GET /regions`에서 확인한 거주 지역 UUID.")
+    address: str | None = Field(
+        default=None,
+        description="선택 등록 주소. 없으면 생략하거나 `null`을 보냅니다.",
+    )
+    housing_type: HousingType = Field(
+        description="거주 형태. `monthly_rent`, `jeonse`, `semi_jeonse`, `owned`, `other` 중 하나입니다."
+    )
+
+    @field_validator("nickname")
+    @classmethod
+    def nickname_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("닉네임은 공백일 수 없어요.")
+        return value
+
+
+class RegionOut(BaseModel):
+    """프로필에서 선택할 수 있는 지역."""
+
+    region_id: UUID = Field(description="지역 UUID.")
+    name: str = Field(description="지역 식별 이름(예: `yongin`).")
+    display_name: str = Field(description="화면에 표시할 지역 이름(시·군·구 포함).")
+
+
+class RecordListItem(BaseModel):
+    """내 정보의 하자 분석 기록 목록 항목."""
+
+    record_id: UUID = Field(description="하자 기록의 UUID.")
+    location: str | None = Field(description="하자 발견 위치(미입력 시 `null`).")
+    material: str | None = Field(description="표면 재질(미입력 시 `null`).")
+    symptoms: str | None = Field(description="증상 메모(미입력 시 `null`).")
+    suspected_types: list[str] = Field(
+        description="저장된 진단의 의심 하자 유형 목록. 진단이 없으면 빈 배열입니다."
+    )
+    severity_score: int | None = Field(
+        description="저장된 진단의 심각도 퍼센트. 진단이 없거나 판단 보류면 `null`입니다."
+    )
+    severity_level: Literal["low", "medium", "high", "undetermined"] | None = Field(
+        description="저장된 진단의 심각도 단계. 진단이 없으면 `null`입니다."
+    )
+    created_at: datetime = Field(description="기록 생성 시각(UTC).")
+    updated_at: datetime = Field(description="기록 마지막 수정 시각(UTC).")
 
 
 class RecordOut(BaseModel):

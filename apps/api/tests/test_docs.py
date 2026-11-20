@@ -4,6 +4,7 @@ from app.main import app
 from app.schemas import (
     MessageCreateRequest,
     MessageUpdateRequest,
+    ProfileUpsertRequest,
     RecordPatchRequest,
 )
 
@@ -34,8 +35,8 @@ def test_openapi_metadata_tags_and_security():
     assert spec["info"]["description"].strip()
 
     tags = {tag["name"]: tag for tag in spec["tags"]}
-    assert {"records", "health"} <= set(tags)
-    for name in ("records", "health"):
+    assert {"records", "profile", "health"} <= set(tags)
+    for name in ("records", "profile", "health"):
         assert tags[name]["description"].strip()
 
     bearer = spec["components"]["securitySchemes"]["HTTPBearer"]
@@ -48,6 +49,10 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
     expected_statuses = {
         ("/health", "get"): {"200"},
         ("/records", "post"): {"201", "401"},
+        ("/records", "get"): {"200", "401"},
+        ("/me/profile", "get"): {"200", "401", "404"},
+        ("/me/profile", "put"): {"200", "401", "422"},
+        ("/regions", "get"): {"200", "401"},
         ("/records/{record_id}", "get"): {"200", "401", "404", "422"},
         ("/records/{record_id}", "patch"): {"200", "401", "404", "422"},
         ("/records/{record_id}/messages", "post"): {"200", "401", "404", "409", "422"},
@@ -126,6 +131,7 @@ def test_openapi_request_examples_validate_and_schemas_are_documented():
         ("/records/{record_id}", "patch"): RecordPatchRequest,
         ("/records/{record_id}/messages", "post"): MessageCreateRequest,
         ("/records/{record_id}/messages/{message_id}", "put"): MessageUpdateRequest,
+        ("/me/profile", "put"): ProfileUpsertRequest,
     }
     for (path, method), model in request_models.items():
         examples = spec["paths"][path][method]["requestBody"]["content"][

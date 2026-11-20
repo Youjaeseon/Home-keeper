@@ -15,6 +15,7 @@ APP_TABLES = {
     "work_types",
     "provider_regions",
     "provider_work_types",
+    "profiles",
 }
 
 
@@ -50,6 +51,7 @@ def test_initial_migration_is_recorded(admin):
     assert "004_protect_rls_trigger.sql" in versions
     assert "005_next_question_grants.sql" in versions
     assert "006_records_material.sql" in versions
+    assert "007_profiles_and_regions.sql" in versions
 
 
 def test_records_material_column(admin):
@@ -231,6 +233,36 @@ def test_reverse_provider_indexes_exist(admin):
     assert "provider_regions_region_id_idx" in names
     assert "provider_work_types_work_type_id_idx" in names
     assert "records_owner_id_idx" in names
+    assert "records_owner_id_updated_at_idx" in names
+    assert "profiles_region_id_idx" in names
+
+
+def test_profiles_table_and_seeded_demo_region(admin):
+    columns = {
+        row["column_name"]
+        for row in admin.execute(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'profiles'
+            """
+        ).fetchall()
+    }
+    assert {
+        "user_id",
+        "nickname",
+        "role",
+        "region_id",
+        "address",
+        "housing_type",
+        "created_at",
+        "updated_at",
+    } <= columns
+
+    region = admin.execute(
+        "SELECT id, display_name FROM regions WHERE name = 'yongin'"
+    ).fetchone()
+    assert region is not None
+    assert region["display_name"] == "경기도 용인시"
 
 
 def test_photo_files_and_coordinates_are_not_stored(admin):
@@ -272,10 +304,13 @@ def test_runtime_role_has_only_required_privileges():
         assert conn.execute("SELECT count(*) FROM questions").fetchone() is not None
         assert conn.execute("SELECT count(*) FROM messages").fetchone() is not None
         assert conn.execute("SELECT count(*) FROM providers").fetchone() is not None
+        assert conn.execute("SELECT count(*) FROM profiles").fetchone() is not None
 
         for table, privilege in (
             ("questions", "INSERT"),
             ("questions", "UPDATE"),
+            ("profiles", "INSERT"),
+            ("profiles", "UPDATE"),
         ):
             assert conn.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
@@ -284,6 +319,7 @@ def test_runtime_role_has_only_required_privileges():
 
         for statement in (
             "DELETE FROM records",
+            "DELETE FROM profiles",
             "INSERT INTO providers (name, phone) VALUES ('업체', '000')",
         ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):

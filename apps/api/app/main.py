@@ -7,6 +7,7 @@ from scalar_fastapi import add_scalar_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.errors import ApiError
+from app.profile import router as profile_router
 from app.records import router as records_router
 from app.schemas import HealthResponse
 
@@ -16,8 +17,13 @@ _API_DESCRIPTION = """
 임차 주택 하자 대응을 위한 하자 기록과 대화 메시지를 관리하는 MVP 백엔드 API입니다.
 
 ### 인증과 소유권
-- `GET /health`를 제외한 모든 `/records` 엔드포인트는 `Authorization: Bearer <access_token>` 헤더(Supabase Auth JWT)가 필요합니다.
+- `GET /health`를 제외한 `/records`, `/me/profile`, `/regions` 엔드포인트는 `Authorization: Bearer <access_token>` 헤더(Supabase Auth JWT)가 필요합니다.
 - 토큰의 `sub` 클레임(UUID)이 요청 사용자로 식별되며, 본인이 소유한 하자 기록에만 접근할 수 있습니다. 다른 사용자의 기록이나 존재하지 않는 리소스는 `404`로 응답합니다.
+
+### 프로필과 내 기록
+- `GET`·`PUT /me/profile`은 검증된 사용자 ID로 본인 프로필만 조회·저장합니다. 새 프로필의 역할은 서버가 `requester`로 정하며 요청에서 역할을 바꿀 수 없습니다.
+- `GET /regions`는 프로필의 거주 지역 선택에 사용할 지역 목록을 반환합니다.
+- `GET /records`는 본인 소유 기록을 최근 수정 순으로 요약해 반환합니다. 다른 사용자의 기록은 포함하지 않습니다.
 
 ### 입력 버전(`input_revision`) 낙관적 동시성
 - 새 하자 기록의 `input_revision`은 `0`에서 시작합니다.
@@ -39,7 +45,11 @@ _API_DESCRIPTION = """
 _OPENAPI_TAGS = [
     {
         "name": "records",
-        "description": "하자 기록 생성·조회·수정, 사진·위치·재질 일괄 분석, 사용자 대화 메시지 저장·편집, 시연용 다음 질문 조회 API. 모든 요청에 Supabase Auth Bearer JWT 인증과 기록 소유권 검증이 필요합니다.",
+        "description": "하자 기록 생성·목록·조회·수정, 사진·위치·재질 일괄 분석, 사용자 대화 메시지 저장·편집, 시연용 다음 질문 조회 API. 모든 요청에 Supabase Auth Bearer JWT 인증과 기록 소유권 검증이 필요합니다.",
+    },
+    {
+        "name": "profile",
+        "description": "로그인 사용자의 주거 프로필 조회·등록·수정과 지역 목록 조회 API. 역할은 서버가 정하며 클라이언트가 변경할 수 없습니다.",
     },
     {
         "name": "health",
@@ -56,6 +66,7 @@ app = FastAPI(
     redoc_url=None,
 )
 app.include_router(records_router)
+app.include_router(profile_router)
 add_scalar_reference(app, route="/docs")
 
 

@@ -23,6 +23,7 @@ from app.schemas import (
     MessageUpdateRequest,
     NextQuestionResponse,
     RecordCreateResponse,
+    RecordListItem,
     RecordOut,
     RecordPatchRequest,
     RecordPatchResponse,
@@ -387,6 +388,47 @@ def create_record(owner_id: UUID = Depends(get_current_user)):
             (owner_id,),
         ).fetchone()
     return {"record_id": record["id"], "input_revision": record["input_revision"]}
+
+
+@router.get(
+    "",
+    response_model=list[RecordListItem],
+    summary="내 하자 기록 목록",
+    description=(
+        "검증된 액세스 토큰의 사용자 ID로 본인 소유의 하자 기록을 최근 수정 순으로 조회합니다.\n\n"
+        "- 전체 진단·대화 내용은 포함하지 않고, 목록 화면에 필요한 위치·증상·의심 유형·심각도만 요약합니다.\n"
+        "- 진단이 아직 없으면 `suspected_types`는 빈 배열, `severity_score`와 `severity_level`은 `null`입니다.\n"
+        "- 다른 사용자의 기록은 결과에 포함하지 않습니다."
+    ),
+    response_description="최근 수정 순으로 정렬된 내 하자 기록 요약 목록",
+)
+def list_records(owner_id: UUID = Depends(get_current_user)):
+    with read_transaction() as conn:
+        return conn.execute(
+            """
+            SELECT
+                id AS record_id,
+                location,
+                material,
+                symptoms,
+                CASE
+                    WHEN jsonb_typeof(diagnosis -> 'suspected_types') = 'array'
+                    THEN diagnosis -> 'suspected_types'
+                    ELSE '[]'::jsonb
+                END AS suspected_types,
+                CASE
+                    WHEN jsonb_typeof(diagnosis -> 'severity_score') = 'number'
+                    THEN (diagnosis ->> 'severity_score')::int
+                END AS severity_score,
+                diagnosis ->> 'severity_level' AS severity_level,
+                created_at,
+                updated_at
+            FROM records
+            WHERE owner_id = %s
+            ORDER BY updated_at DESC, created_at DESC, id DESC
+            """,
+            (owner_id,),
+        ).fetchall()
 
 
 @router.get(
