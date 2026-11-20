@@ -8,6 +8,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.chat import router as chat_router
 from app.drafts import router as drafts_router
+from app.docs_auth import router as docs_auth_router
 from app.errors import ApiError
 from app.profile import router as profile_router
 from app.providers import router as providers_router
@@ -21,6 +22,7 @@ _API_DESCRIPTION = """
 임차 주택 하자 대응을 위한 하자 기록과 대화 메시지를 관리하는 MVP 백엔드 API입니다.
 
 ### 인증과 소유권
+- Scalar의 Authentication에서 `SupabaseLogin`을 선택하고 Username(이메일)·Password를 입력해 토큰을 발급받으면 요청에 자동 적용됩니다. Client ID·Client Secret은 비워 둡니다. 기존 `HTTPBearer` 토큰 직접 입력도 가능합니다.
 - `GET /health`를 제외한 `/records`, `/me/profile`, `/regions`, `/support-programs` 엔드포인트는 `Authorization: Bearer <access_token>` 헤더(Supabase Auth JWT)가 필요합니다.
 - 토큰의 `sub` 클레임(UUID)이 요청 사용자로 식별되며, 본인이 소유한 하자 기록에만 접근할 수 있습니다. 다른 사용자의 기록이나 존재하지 않는 리소스는 `404`로 응답합니다.
 
@@ -106,7 +108,10 @@ app.include_router(support_programs_router)
 app.include_router(drafts_router)
 app.include_router(providers_router)
 app.include_router(chat_router)
-add_scalar_reference(app, route="/docs")
+app.include_router(docs_auth_router)
+add_scalar_reference(
+    app, route="/docs", authentication={"preferredSecurityScheme": "SupabaseLogin"}
+)
 
 
 _original_openapi = app.openapi
@@ -116,6 +121,15 @@ def _openapi_with_multipart_descriptions():
     if app.openapi_schema:
         return app.openapi_schema
     schema = _original_openapi()
+    schema["components"]["securitySchemes"]["SupabaseLogin"] = {
+        "type": "oauth2",
+        "description": "Username에 Supabase 계정 이메일을 입력하고 로그인하세요. Client ID와 Client Secret은 비워 둡니다.",
+        "flows": {"password": {"tokenUrl": "/auth/token", "scopes": {}}},
+    }
+    for path in schema["paths"].values():
+        for operation in path.values():
+            if isinstance(operation, dict) and {"HTTPBearer": []} in operation.get("security", []):
+                operation["security"].insert(0, {"SupabaseLogin": []})
     for name, component in schema.get("components", {}).get("schemas", {}).items():
         if name.startswith("Body_") and not component.get("description"):
             component["description"] = (
