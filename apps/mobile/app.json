@@ -33,7 +33,13 @@
           "imageWidth": 76
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "하자 사진을 선택하려면 사진 보관함 접근이 필요합니다."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

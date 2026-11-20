@@ -19,18 +19,95 @@ export class ApiError extends Error {
   }
 }
 
+export function messageOf(error: unknown): string {
+  if (error instanceof ApiError) {
+    const revision =
+      error.inputRevision === undefined
+        ? ''
+        : ` (input_revision ${error.inputRevision})`;
+    return `${error.message}${revision}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
 export type RecordSummary = {
   record_id: string;
   input_revision: number;
 };
 
+export type SeverityLevel = 'low' | 'medium' | 'high' | 'undetermined';
+export type RecommendedAction = 'self_care' | 'inspection' | 'provider_consult';
+
+export type DiagnosisResult = {
+  observations: string;
+  severity_score: number | null;
+  severity_level: SeverityLevel;
+  reason: string;
+  causes: string[];
+  estimation_notice: string;
+  recommended_action: RecommendedAction;
+  care_steps: string[];
+  supplies: string[];
+  prevention_tips: string[];
+  unknowns: string[];
+  work_type_id: string | null;
+  work_type_reason: string;
+  source: 'sample';
+};
+
+export type AnalyzePhoto = {
+  role: 'overview' | 'closeup';
+  status: 'not_analyzed';
+  source: 'sample';
+  detections: unknown[];
+};
+
+export type PhotoAnalysis = {
+  applied: boolean;
+  notice: string | null;
+  photos: AnalyzePhoto[];
+  source: 'sample';
+};
+
+export type AnalyzeResponse = {
+  record_id: string;
+  input_revision: number;
+  diagnosis_generation: number;
+  photo_analysis: PhotoAnalysis;
+  diagnosis: DiagnosisResult;
+  source: 'sample';
+};
+
 export type RecordDetail = {
   record_id: string;
   location: string | null;
+  material: string | null;
   symptoms: string | null;
+  photo_observations: PhotoAnalysis | null;
   input_revision: number;
   questions: unknown[];
   messages: unknown[];
+  diagnosis: {
+    diagnosis: DiagnosisResult;
+    input_revision: number | null;
+    generation: number;
+    is_current: boolean;
+  } | null;
+};
+
+export type AnalyzePhotoInput = {
+  uri: string;
+  name: string;
+  type: string;
+  role: 'overview' | 'closeup';
+};
+
+export type AnalyzeInput = {
+  photos: AnalyzePhotoInput[];
+  location: string;
+  material: string;
+  symptoms: string;
+  externalAnalysisConsent: boolean;
 };
 
 async function parseError(response: Response): Promise<never> {
@@ -59,7 +136,7 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${session.access_token}`);
-  if (init.body !== undefined) {
+  if (init.body !== undefined && !(init.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
 
@@ -85,4 +162,38 @@ export function createRecord(): Promise<RecordSummary> {
 
 export function getRecord(recordId: string): Promise<RecordDetail> {
   return apiRequest<RecordDetail>(`/records/${recordId}`);
+}
+
+export function analyzeRecord(
+  recordId: string,
+  input: AnalyzeInput,
+): Promise<AnalyzeResponse> {
+  const form = new FormData();
+  for (const photo of input.photos) {
+    form.append(
+      'photos',
+      {
+        uri: photo.uri,
+        name: photo.name,
+        type: photo.type,
+      } as unknown as Blob,
+    );
+  }
+  for (const photo of input.photos) {
+    form.append('photo_roles', photo.role);
+  }
+  form.append(
+    'external_analysis_consent',
+    input.externalAnalysisConsent ? 'true' : 'false',
+  );
+  form.append('location', input.location.trim());
+  form.append('material', input.material.trim());
+  if (input.symptoms.trim()) {
+    form.append('symptoms', input.symptoms.trim());
+  }
+
+  return apiRequest<AnalyzeResponse>(`/records/${recordId}/analyze`, {
+    method: 'POST',
+    body: form,
+  });
 }

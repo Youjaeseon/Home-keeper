@@ -1,4 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,25 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import {
-  ApiError,
-  type RecordDetail,
-  type RecordSummary,
-  checkHealth,
-  createRecord,
-  getRecord,
-} from '@/lib/api';
-import { apiBaseUrl } from '@/lib/env';
 import { supabase } from '@/lib/supabase';
-
-function messageOf(error: unknown): string {
-  if (error instanceof ApiError) {
-    const revision =
-      error.inputRevision === undefined ? '' : ` (input_revision ${error.inputRevision})`;
-    return `${error.status} ${error.code}: ${error.message}${revision}`;
-  }
-  return error instanceof Error ? error.message : String(error);
-}
 
 export default function IndexScreen() {
   const [session, setSession] = useState<Session | null>(null);
@@ -56,7 +39,7 @@ export default function IndexScreen() {
     );
   }
 
-  return session ? <Workspace session={session} /> : <LoginScreen />;
+  return session ? <HomeScreen session={session} /> : <LoginScreen />;
 }
 
 function LoginScreen() {
@@ -131,23 +114,14 @@ function LoginScreen() {
   );
 }
 
-function Workspace({ session }: { session: Session }) {
-  const [health, setHealth] = useState<string | null>(null);
-  const [record, setRecord] = useState<RecordSummary | null>(null);
-  const [detail, setDetail] = useState<RecordDetail | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+function HomeScreen({ session }: { session: Session }) {
+  const router = useRouter();
 
-  async function run(label: string, action: () => Promise<void>) {
-    setBusy(label);
-    setError(null);
-    try {
-      await action();
-    } catch (actionError) {
-      setError(messageOf(actionError));
-    } finally {
-      setBusy(null);
-    }
+  function startAnalysis() {
+    router.push({
+      pathname: '/analyze',
+      params: { session: Date.now().toString() },
+    });
   }
 
   return (
@@ -155,7 +129,7 @@ function Workspace({ session }: { session: Session }) {
       <ScrollView contentContainerStyle={styles.form}>
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
-            <Text style={styles.title}>연결 확인</Text>
+            <Text style={styles.title}>하자 분석</Text>
             <Text style={styles.subtitle}>{session.user.email}</Text>
           </View>
           <Pressable
@@ -167,93 +141,25 @@ function Workspace({ session }: { session: Session }) {
           </Pressable>
         </View>
 
-        <Text style={styles.meta}>API {apiBaseUrl}</Text>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>사진으로 하자 상태를 확인해요</Text>
+          <Text style={styles.bodyText}>
+            같은 하자의 전체 사진과 근접 사진을 1~2장 선택하고, 발견 위치와 표면
+            재질을 입력해 주세요. 증상 메모는 선택입니다.
+          </Text>
+          <Text style={styles.bodyText}>
+            현재는 실제 사진 분석 모델 없이 입력값으로 만든 샘플 결과를
+            보여드려요. 결과 화면의 샘플 안내를 꼭 확인해 주세요.
+          </Text>
+        </View>
 
         <Pressable
           accessibilityRole="button"
-          disabled={busy !== null}
-          onPress={() =>
-            run('health', async () => {
-              setHealth(await checkHealth());
-            })
-          }
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            busy !== null && styles.disabled,
-            pressed && styles.pressed,
-          ]}
+          onPress={startAnalysis}
+          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
         >
-          <Text style={styles.secondaryButtonText}>
-            {busy === 'health' ? '확인 중…' : '서버 확인'}
-          </Text>
+          <Text style={styles.primaryButtonText}>새 분석 시작</Text>
         </Pressable>
-
-        {health ? (
-          <Text style={styles.success}>GET /health → {health}</Text>
-        ) : null}
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy !== null}
-          onPress={() =>
-            run('create', async () => {
-              const created = await createRecord();
-              setRecord(created);
-              setDetail(null);
-            })
-          }
-          style={({ pressed }) => [
-            styles.primaryButton,
-            busy !== null && styles.disabled,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.primaryButtonText}>
-            {busy === 'create' ? '만드는 중…' : '새 기록 만들기'}
-          </Text>
-        </Pressable>
-
-        {record ? (
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>record_id</Text>
-            <Text selectable style={styles.mono}>
-              {record.record_id}
-            </Text>
-            <Text style={styles.meta}>input_revision {detail?.input_revision ?? record.input_revision}</Text>
-
-            <Pressable
-              accessibilityRole="button"
-              disabled={busy !== null}
-              onPress={() =>
-                run('detail', async () => {
-                  setDetail(await getRecord(record.record_id));
-                })
-              }
-              style={({ pressed }) => [
-                styles.secondaryButton,
-                busy !== null && styles.disabled,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.secondaryButtonText}>
-                {busy === 'detail' ? '조회 중…' : '기록 조회'}
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        {detail ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>GET /records/{detail.record_id.slice(0, 8)}…</Text>
-            <Text style={styles.meta}>위치: {detail.location ?? '미입력'}</Text>
-            <Text style={styles.meta}>증상: {detail.symptoms ?? '미입력'}</Text>
-            <Text style={styles.meta}>
-              질문 {detail.questions.length}개 · 메시지 {detail.messages.length}개
-            </Text>
-          </View>
-        ) : null}
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -313,84 +219,56 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#15171A',
   },
+  card: {
+    borderWidth: 1,
+    borderColor: '#E2E4E8',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    gap: 8,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#15171A',
+  },
+  bodyText: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#4E535C',
+  },
   primaryButton: {
     marginTop: 8,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 10,
-    backgroundColor: '#1F6FEB',
-    paddingVertical: 14,
-    minHeight: 48,
+    backgroundColor: '#208AEF',
+    minHeight: 50,
+    paddingHorizontal: 16,
   },
   primaryButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#C9CDD4',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    minHeight: 46,
-  },
-  secondaryButtonText: {
-    color: '#15171A',
-    fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   textButton: {
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 4,
   },
   textButtonLabel: {
-    color: '#1F6FEB',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
+    color: '#208AEF',
   },
   disabled: {
-    opacity: 0.5,
+    opacity: 0.45,
   },
   pressed: {
-    opacity: 0.7,
-  },
-  card: {
-    gap: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E1E3E7',
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#15171A',
-  },
-  cardLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#60646C',
-    textTransform: 'uppercase',
-  },
-  mono: {
-    fontFamily: 'monospace',
-    fontSize: 13,
-    color: '#15171A',
-  },
-  meta: {
-    fontSize: 13,
-    color: '#60646C',
-  },
-  success: {
-    fontSize: 13,
-    color: '#1A7F37',
+    opacity: 0.75,
   },
   error: {
-    fontSize: 13,
-    color: '#C62828',
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#C0392B',
   },
 });
