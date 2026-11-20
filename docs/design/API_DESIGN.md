@@ -4,17 +4,18 @@
 
 ## 문서 범위
 
-현재 코드에 구현된 기록 API(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`)의 계약은 아래 구현 확정 사항을 따른다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
+현재 코드에 구현된 기록 API(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`)와 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`)의 계약은 아래 구현 확정 사항과 일괄 분석 섹션을 따른다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
 
-회원 프로필, 소식지, 일괄 분석·진단, 내 기록 목록, 요청문 생성, 업체 검색과 1:1 채팅 경로는 2026년 11월 20일 변경 사항을 반영한 후속 구현 설계다. 실행과 호출 절차는 [README](../../README.md)를 따른다.
+회원 프로필, 소식지, 실제 모델 기반 일괄 분석·진단, 내 기록 목록, 요청문 생성, 업체 검색과 1:1 채팅 경로는 2026년 11월 20일 변경 사항을 반영한 후속 구현 설계다. 실행과 호출 절차는 [README](../../README.md)를 따른다.
 
 ## 구현 확정 사항
 
 2026년 11월 19일 MVP 구현에서 아래를 확정했다.
 
 - `POST /records`는 201과 `record_id`, `input_revision`(최초 0)을 반환한다.
-- `GET /records/{record_id}`는 저장된 기록 상세와 `diagnosis`, `drafts`의 생성 당시 버전 및 `is_current`를 반환한다. *(구현본에는 레거시 `questions`, `messages`, `next_question` 필드도 함께 포함된다.)*
-- `PATCH /records/{record_id}`는 현재 `location`·`symptoms`를 받고 `input_revision`을 요구하지 않는다. 실제 값이 바뀔 때만 버전을 올리며, 명시한 `null`은 값을 지운다. *(후속 구현에서 `material` 필드를 추가할 예정이다.)*
+- `GET /records/{record_id}`는 저장된 입력(`location`, `material`, `symptoms`, `photo_observations`)과 `diagnosis`, `drafts`의 생성 당시 버전 및 `is_current`를 반환한다. *(구현본에는 레거시 `questions`, `messages`, `next_question` 필드도 함께 포함된다.)*
+- `PATCH /records/{record_id}`는 `location`·`material`·`symptoms`를 받고 `input_revision`을 요구하지 않는다. 실제 값이 바뀔 때만 버전을 올리며, 명시한 `null`은 값을 지운다.
+- `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·외부 분석 동의를 multipart로 받아 입력값 기반 샘플 진단을 저장한다. 자세한 계약은 아래 일괄 분석 섹션을 따른다.
 - 공통 오류 형식은 `{ "code", "message", "input_revision"? }`이다. 처리하지 못한 서버·DB 오류는 내용을 노출하지 않고 500 `internal_error`로 반환한다.
 - *(MVP 미사용/보류)* `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`의 구현 확정 사항은 문서 하단 레거시 섹션에 유지한다.
 
@@ -45,7 +46,7 @@
 
 1. 회원가입 후 프로필 저장을 완료하거나 기존 계정으로 로그인한다.
 2. **소식지 탭**: `GET /support-programs`로 사용자 거주 지역 + 전국 주거 지원 사업을 조회한다. 마감 공고는 `마감` 배지·흐림 처리와 하단 정렬로 표시하고, 카드 클릭 시 `GET /support-programs/{program_id}` 상세 요약과 외부 원문 URL을 연다.
-3. **분석 탭**: `POST /records`로 기록을 만들고, 한 화면에서 사진 1~2장(1장 필수) + 위치 + 재질 + 선택 증상 메모를 입력해 `POST /records/{record_id}/analyze`를 호출한다. 서버가 1차 사진 분석과 최종 진단을 연속 처리해 결과를 반환한다(사진 분석 실패 시에도 위치·재질·증상만으로 결과 생성).
+3. **분석 탭**: `POST /records`로 기록을 만들고, 한 화면에서 사진 1~2장(1장 필수) + 위치 + 재질 + 선택 증상 메모를 입력해 `POST /records/{record_id}/analyze`를 호출한다. 현재 서버는 실제 사진/LLM 호출 없이 입력값 기반 샘플 결과를 저장·반환하며 `source=sample`로 표시한다(실제 모델 연동은 후속).
 4. **분석 결과 페이지**: 심각도(`0~100%` 또는 `판단 보류`), `추정 원인`(AI 추정 안내·미확인 정보 포함), `해결방안`, `재발 방지책`을 확인한다.
    - `자가`가 아닌 거주 형태라면 필요 시 `POST /records/{record_id}/drafts/landlord`로 임대인 점검 요청문을 생성·복사한다.
    - 업체 상담이 필요하면 `GET /providers`로 업체를 조회한 뒤 실제 업체의 `채팅하기`로 `POST /chat/rooms`를 호출해 1:1 채팅방을 열고 하자 분석 요약을 자동 공유한다.
@@ -59,18 +60,19 @@
 - 항목 필드: `record_id`, `location`, `material`, `symptoms`, `suspected_types`(예: `["곰팡이"]`), `severity_score`, `severity_level`, `updated_at`.
 - 목록에서 항목을 선택하면 기존 `GET /records/{record_id}`로 전체 상세를 불러와 분석 결과 페이지를 다시 표시한다.
 
-## 일괄 분석과 진단 (`POST /records/{record_id}/analyze`, 구현 예정)
+## 일괄 분석과 진단 (`POST /records/{record_id}/analyze`, 샘플 구현 완료)
 
-분석 페이지에서 채팅 없이 사진(1~2장)과 위치·재질·선택 증상 메모를 한 번에 제출해 사진 분석과 최종 진단을 연속 처리한다.
+분석 페이지에서 채팅 없이 사진(1~2장)과 위치·재질·선택 증상 메모를 한 번에 제출한다. 2026년 11월 20일 MVP 흐름에 맞춰 현재는 실제 YOLO·비전 LLM·텍스트 LLM을 호출하지 않고, 입력값만 사용한 **결정적 샘플 결과**를 저장·반환한다. 응답의 `source`와 진단의 `source`는 `sample`이다.
 
 - **요청 (`multipart/form-data`)**:
   - `photos`: 이미지 파일 1~2장 (첫 번째 필수, 두 번째 선택)
-  - `photo_roles`: 각 사진의 역할 (`overview` | `closeup`)
-  - `external_analysis_consent`: 외부 비전 분석 전송 동의 여부 (`boolean`)
-  - `location`: 하자 발견 위치 (필수 문자열, 대표 선택지 또는 직접 입력)
-  - `material`: 표면 재질 (필수 문자열, 대표 선택지 또는 직접 입력)
+  - `photo_roles`: 각 사진의 역할 (`overview` | `closeup`). 사진 수와 같아야 하며 서로 달라야 한다.
+  - `external_analysis_consent`: 외부 비전 분석 전송 동의 여부 (`boolean`). 샘플 모드에서는 실제 외부 전송을 하지 않는다.
+  - `location`: 하자 발견 위치 (필수 문자열, 공백만 불가)
+  - `material`: 표면 재질 (필수 문자열, 공백만 불가)
   - `symptoms`: 선택 증상 메모 (`string | null`)
-- **응답 예시 (`200 OK`)**:
+  - 파일은 JPEG·PNG·HEIC·HEIF, 한 장당 10MB 이하만 허용한다. 업로드 파일은 성공·실패 모두 닫고 원본을 저장하지 않는다.
+- **샘플 응답 예시 (`200 OK`)**:
 
 ```json
 {
@@ -78,59 +80,56 @@
   "input_revision": 1,
   "diagnosis_generation": 1,
   "photo_analysis": {
-    "applied": true,
-    "notice": null,
+    "applied": false,
+    "notice": "샘플 결과입니다. 실제 사진 분석과 외부 AI 호출은 수행하지 않았습니다. 입력한 위치·재질·증상만 사용했습니다.",
     "photos": [
       {
         "role": "overview",
-        "status": "detected",
-        "source": "yolo",
-        "detections": [
-          {
-            "defect_type": "mold",
-            "label": "곰팡이",
-            "confidence": 0.86,
-            "bbox": { "x": 120, "y": 80, "width": 240, "height": 180 },
-            "image_width": 1080,
-            "image_height": 1440
-          }
-        ]
+        "status": "not_analyzed",
+        "source": "sample",
+        "detections": []
       }
-    ]
+    ],
+    "source": "sample"
   },
   "diagnosis": {
-    "observations": "안방 창틀 실리콘 주변에서 검은 변색과 포자 의심 흔적이 관찰됩니다.",
-    "severity_score": 68,
-    "severity_level": "medium",
-    "reason": "곰팡이 의심 흔적이 창틀 실리콘 경계에 퍼져 있어 표면 닦기만으로는 재발 가능성이 높습니다.",
+    "observations": "사진 분석은 수행되지 않았습니다. 입력한 위치(안방 창틀 아래), 재질(실리콘), 검은 곰팡이 의심 얼룩을 기준으로 만든 샘플 관찰 요약입니다.",
+    "severity_score": 75,
+    "severity_level": "high",
+    "reason": "입력값 기준 샘플 심각도 75%(high)입니다. 곰팡이 관련 입력이 있었지만 실제 사진 분석 없이 만든 참고용 수치입니다.",
     "causes": [
-      "실내외 온도 차로 인한 창가 결로 수분 축적",
-      "노후 실리콘 틈새의 습기 잔류 가능성"
+      "창가 결로로 인한 표면 습기 축적 가능성",
+      "실리콘·창틀 틈새의 습기 잔류 가능성"
     ],
-    "estimation_notice": "이 결과는 사진과 입력 정보를 바탕으로 한 AI 추정이며, 정확한 원인은 현장 점검이 필요합니다.",
+    "estimation_notice": "이 결과는 사진을 실제로 분석하지 않고 입력한 위치·재질·증상만으로 만든 샘플입니다. 실제 AI 진단이나 현장 점검 결과가 아니며, 정확한 원인은 현장 확인이 필요합니다.",
     "recommended_action": "inspection",
     "care_steps": [
-      "환기를 충분히 유지한 뒤 마른 천으로 표면 습기를 제거하세요.",
-      "실리콘 내부까지 번진 경우 단순 표백제 처리만으로는 재발할 수 있어 점검이 필요합니다."
+      "표면을 무리하게 긁거나 뜯지 말고 현재 상태를 유지하세요.",
+      "누수·결로가 의심되면 임대인이나 관리실에 점검을 요청하세요."
     ],
-    "supplies": ["마스크", "고무장갑", "마른 천", "중성 세정제 또는 곰팡이 제거제"],
+    "supplies": ["마스크", "고무장갑", "마른 천", "곰팡이 제거제"],
     "prevention_tips": [
-      "아침·저녁 10분 이상 맞통풍 환기를 유지하세요.",
-      "결로가 맺히는 날에는 창틀 물기를 바로 닦아 습기를 남기지 마세요."
+      "아침·저녁 짧게라도 맞통풍 환기를 유지하세요.",
+      "결로가 맺히면 바로 물기를 닦아 습기를 남기지 마세요.",
+      "같은 증상이 반복되면 원인 점검을 받으세요."
     ],
     "unknowns": [
-      "이전에 닦은 뒤 다시 생겼는지(재발 여부)",
-      "외벽 누수 또는 단열재 손상 동반 여부"
+      "사진에서 확인할 흔적의 범위와 정도(사진 분석 미수행)",
+      "누수·결로 등 실제 원인",
+      "이전 조치와 재발 여부"
     ],
-    "work_type_id": "<work_type UUID>",
-    "work_type_reason": "창틀 실리콘 틈새 곰팡이 의심 흔적으로 방수·실리콘 보수 및 원인 점검이 적합합니다."
-  }
+    "work_type_id": null,
+    "work_type_reason": "곰팡이 제거와 습기 원인 점검을 함께 진행하는 것이 적합합니다.",
+    "source": "sample"
+  },
+  "source": "sample"
 }
 ```
 
-- **사진 분석 실패·미탐지 폴백**: 업로드한 사진 모두에서 의심 영역을 찾지 못했거나 YOLO·비전 LLM 호출이 실패·거절(`external_analysis_consent=false`)되어도 API는 실패하지 않고 `photo_analysis.applied = false`(사유는 `photo_analysis.notice` 및 각 사진 `status`)로 둔 채 입력한 `location`·`material`·`symptoms`만으로 `diagnosis`를 생성해 반환한다.
-- **정보 부족 시 판단 보류**: 사진과 위치·재질만으로 심각도를 가늠하기 어렵다면 `diagnosis.severity_score = null`, `diagnosis.severity_level = "undetermined"`(`판단 보류`)를 반환한다.
-- **명시적 진단 재생성**: `POST /records/{record_id}/diagnosis?regenerate=true`로 현재 저장된 입력과 관찰 결과 기준 진단을 다시 생성할 수 있다. 기본 호출(`regenerate=false`)은 현재 `input_revision`의 기존 진단을 재사용한다.
+- **샘플 모드의 의미**: 실제 사진 분석을 하지 않았으므로 `photo_analysis.applied=false`, 사진 상태 `not_analyzed`, `detections=[]`다. 탐지 좌표·신뢰도·bbox는 만들지 않는다. 관찰 요약·심각도·원인은 입력값만 사용한 참고용 샘플이며, 응답의 `source`, 진단의 `source`, 화면 안내로 실제 분석이 아님을 표시한다.
+- **입력과 버전**: 제출한 `location`·`material`·`symptoms`가 실제로 달라지면 `input_revision`을 1 올리고 `diagnosis_generation`을 증가시킨다. 같은 입력이면 버전은 유지하고 생성 번호만 증가한다. 분석 중 다른 입력 변경이 발생하면 아무것도 저장하지 않고 `409`(`revision_conflict`)와 현재 `input_revision`을 반환한다. 사진 원본·좌표·신뢰도는 DB·로그에 저장하지 않는다.
+- **정보 부족 시 판단 보류**: 실제 모델 연동 후 사진과 입력만으로 심각도를 가늠하기 어렵다면 `severity_score=null`, `severity_level="undetermined"`를 반환할 수 있다. 현재 샘플은 입력값 기준 참고 수치를 사용한다.
+- **명시적 진단 재생성**: `POST /records/{record_id}/diagnosis?regenerate=true`는 후속 구현이다. 현재 분석 결과는 `GET /records/{record_id}`의 `diagnosis`에서 재조회한다.
 
 ## 요청문 (`landlord`, `provider`, 구현 예정)
 
@@ -203,6 +202,6 @@
 
 ## 남은 연동 확인
 
-- 사진별 역할과 임시 표시 좌표를 포함하는 `POST /records/{record_id}/analyze` multipart 세부 필드, 업로드 크기·파일 형식 제한, 모델·배포 환경의 제한 시간, YOLO API의 인증과 좌표 형식
+- 실제 모델 연동 시 `POST /records/{record_id}/analyze`의 YOLO·비전 LLM·텍스트 LLM 인증·요청·응답·좌표 형식과 배포 환경 제한 시간
 - 채팅 실시간 수신 방식(`REST 폴링` / `WebSocket` / `Supabase Realtime`)과 `GET /chat/rooms/{room_id}/messages` 증분 조회 파라미터
 - 보조금24 API(`gov24/v3/serviceList`) 연동 시 주거 필터 키워드 및 동기화 주기

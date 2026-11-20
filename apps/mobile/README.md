@@ -1,12 +1,17 @@
 # Career Pair 모바일
 
-Expo SDK 58 + Expo Router 앱입니다. 현재는 로그인과 FastAPI 연결 확인 화면만 있습니다.
+Expo SDK 58 + Expo Router 앱입니다. 로그인, 사진 1~2장 선택, 위치·재질·선택 증상·외부 분석 동의 입력, 샘플 분석 제출, 결과 표시 화면이 구현되어 있습니다.
 
 ```bash
 cp .env.example .env
 npm install          # 저장소 루트에서
 npm run mobile       # 저장소 루트에서
+npm run typecheck --workspace @career-pair/mobile
 ```
+
+분석 화면은 `expo-image-picker`로 사진 보관함에서 1~2장을 선택합니다. 첫 사진은 `overview`, 두 번째는 `closeup` 역할로 전송합니다. 제출 시 기록을 먼저 생성한 뒤 `/records/{record_id}/analyze`를 multipart로 호출하고, 결과 화면은 `GET /records/{record_id}`로 저장 결과를 다시 조회합니다. FormData 요청에는 클라이언트가 `Content-Type`을 직접 지정하지 않습니다.
+
+현재 백엔드는 실제 모델 없이 입력값 기반 샘플 결과를 반환합니다. 결과 화면의 샘플 안내를 확인해야 하며, Home Keeper에는 `006_records_material.sql` 적용 전까지 실제 분석 호출이 실패합니다.
 
 `.env`의 `EXPO_PUBLIC_API_URL`은 실행 대상에 맞춘다.
 

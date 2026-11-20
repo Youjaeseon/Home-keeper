@@ -1,8 +1,8 @@
 # 백엔드 구현 체크리스트
 
-2026년 11월 20일 팀 회의 변경 사항과 현재 구현 상태를 기준으로 정리한 체크리스트다. 체크된 항목은 현재 저장소에 구현된 기능이며, 변경된 MVP 설계(회원가입·프로필, 소식지, 채팅 없는 일괄 분석·결과, 업체 1:1 채팅, 내 정보·기록 목록)는 후속 구현 대상이다. 실제 Supabase·모바일·외부 모델을 함께 연결한 검증은 별도 항목으로 관리한다.
+2026년 11월 20일 팀 회의 변경 사항과 현재 구현 상태를 기준으로 정리한 체크리스트다. 체크된 항목은 현재 저장소에 구현된 기능이며, 변경된 MVP 설계(회원가입·프로필, 소식지, 실제 모델 기반 일괄 분석·진단, 업체 1:1 채팅, 내 정보·기록 목록)는 후속 구현 대상이다. 실제 Supabase·모바일·외부 모델을 함께 연결한 검증은 별도 항목으로 관리한다.
 
-현재 코드에는 DB·인증·기록 CRUD와 **레거시/보류 상태인 AI 추가 질문 대화 API(`messages`, `next-question`)**가 구현되어 있다. 다음 핵심 작업은 회원 프로필(`GET/PUT /me/profile`), 소식지(`GET /support-programs`), 일괄 분석·진단(`POST /records/{record_id}/analyze`), 기록 목록(`GET /records`), 업체 검색·1:1 채팅 구현이다.
+현재 코드에는 DB·인증·기록 CRUD(`material` 포함), **입력값 기반 샘플 일괄 분석(`POST /records/{record_id}/analyze`)**, 사진·입력·결과 화면, 그리고 **레거시/보류 상태인 AI 추가 질문 대화 API(`messages`, `next-question`)**가 구현되어 있다. 다음 핵심 작업은 회원 프로필(`GET/PUT /me/profile`), 소식지(`GET /support-programs`), 실제 사진/LLM 기반 진단, 기록 목록(`GET /records`), 업체 검색·1:1 채팅 구현이다.
 
 ## 구현된 기반
 
@@ -62,9 +62,9 @@ Supabase Auth로 계정 생성과 로그인을 처리하고, FastAPI는 회원 �
 
 - [x] `POST /records` — 새 하자 기록 생성
 - [x] `GET /records/{record_id}` — 입력·생성 결과와 최신 여부 조회
-- [x] `PATCH /records/{record_id}` — 위치·증상 수정 (구현 완료; `material` 추가 예정)
+- [x] `PATCH /records/{record_id}` — 위치·재질·증상 수정
 - [ ] `GET /records` — `내 정보` 페이지용 내 하자 분석 기록 목록 조회 (항목 클릭 시 결과 재열람)
-- [ ] `records.material` 컬럼 추가 및 `PATCH /records/{record_id}`의 `material` 수정 반영
+- [x] `records.material` 컬럼 추가 및 `PATCH /records/{record_id}`의 `material` 수정 반영 (006 마이그레이션)
 
 ## 기존 구현 · 현재 MVP 미사용(보류/레거시): AI 추가 질문 대화
 
@@ -86,27 +86,40 @@ Supabase Auth로 계정 생성과 로그인을 처리하고, FastAPI는 회원 �
 - [ ] `GET /support-programs/{program_id}` — 상세 요약(지원대상·내용·신청기한·신청방법·출처)과 공고 원문 URL 반환
 - [ ] 프로젝트 소개서 별첨 및 응답·화면 출처(행정안전부·공공데이터포털)와 공공누리(KOGL) 조건 표기
 
-## 하자 일괄 분석 및 진단 (구현 예정)
+## 하자 일괄 분석 및 진단 (샘플 구현 완료, 실제 모델 후속)
 
-분석 페이지에서 채팅 없이 사진(1~2장) + 위치 + 재질(+ 선택 증상 메모)을 한 번에 받아 1차 사진 분석과 최종 진단을 연속 처리한다.
+분석 페이지에서 채팅 없이 사진(1~2장) + 위치 + 재질(+ 선택 증상 메모)을 한 번에 받는다. 현재는 실제 모델 대신 입력값 기반 샘플 결과를 저장하고, 실제 YOLO·비전 LLM·텍스트 LLM 연동은 후속이다.
 
-- [ ] `POST /records/{record_id}/analyze` (multipart) — 사진 1~2장(전체·근접, 1장 필수)과 위치·재질·선택 증상 메모, 외부 분석 동의 여부 일괄 처리
-- [ ] 업로드 파일 형식·크기 검증과 외부 분석 동의 처리
+- [x] `POST /records/{record_id}/analyze` (multipart) — 사진 1~2장(전체·근접, 1장 필수)과 위치·재질·선택 증상 메모, 외부 분석 동의 여부 일괄 처리
+- [x] 업로드 파일 형식(JPEG/PNG/HEIC/HEIF, magic byte)·크기(10MB)·사진 수·역할 검증과 소유권 확인
 - [ ] 이미지 담당자와 YOLO API 인증·요청·응답·좌표 형식 확정 및 연동 (`크랙`, `벗겨짐`, `곰팡이`)
 - [ ] YOLO 결과가 없거나 불명확할 때 비전 LLM 2차 분석
-- [ ] 사진별 분석 상태·후보·신뢰도·현재 화면용 표시 좌표 반환
-- [ ] 사진 일부만 성공해도 진행하고, 모든 사진 분석이 실패하거나 미탐지·미동의여도 입력한 위치·재질·증상만으로 최종 진단 생성 (`photo_analysis_applied=false` 안내)
-- [ ] 관찰 내용만 DB에 저장하고 원본 사진·표시 좌표를 영구 저장하지 않는 처리
-- [ ] 임시 파일의 성공·실패 시 삭제와 외부 AI 전송 기준 검증
-- [ ] 진단 LLM 생성 및 구조화 응답 검증·JSONB 저장:
-  - `observations` (사진·입력 기반 관찰 요약)
-  - `severity_score` (`0~100` 정수 또는 정보 부족 시 `null`), `severity_level` (`low`/`medium`/`high`/`undetermined`), `reason` (산정 근거)
+- [ ] 사진별 실제 분석 상태·후보·신뢰도·현재 화면용 표시 좌표 반환 *(샘플에서는 `not_analyzed`, `detections=[]`)*
+- [x] 샘플 모드에서 사진을 실제 분석한 것처럼 표현하지 않고 `applied=false`, `source=sample`, 샘플 안내 반환
+- [x] 입력한 위치·재질·증상으로 결정적 샘플 진단 생성
+- [x] 관찰 상태만 DB에 저장하고 원본 사진·표시 좌표·신뢰도를 영구 저장하지 않는 처리
+- [x] 업로드 임시 파일의 성공·실패 시 닫기(원본 미저장)와 외부 분석 동의 값 검증 *(샘플은 외부 호출 없음)*
+- [x] 구조화 샘플 응답 검증·JSONB 저장:
+  - `observations` (샘플은 입력 기반 관찰 요약)
+  - `severity_score` (`0~100` 정수), `severity_level` (`low`/`medium`/`high`/`undetermined`), `reason` (산정 근거)
   - `causes` (추정 원인), `estimation_notice` (AI 추정 안내 문구), `unknowns` (미확인 정보)
   - `recommended_action` (`self_care`/`inspection`/`provider_consult`), `care_steps`, `supplies` (해결방안 통합)
   - `prevention_tips` (재발 방지책)
-  - `work_type_id`, `work_type_reason` (추천 작업, 불명확 시 `원인 점검`)
-- [ ] `POST /records/{record_id}/diagnosis?regenerate=true` — 현재 입력 기준 명시적 진단 재생성, 성공 시 `diagnosis_generation` 증가 및 이전 요청문 무효화
-- [ ] 진단 생성 실패와 정보 부족에 따른 `판단 보류` 구분
+  - `work_type_id`(샘플에서 `null` 가능), `work_type_reason` (추천 작업·이유)
+  - `source` (샘플 표시)
+- [x] 입력 스냅샷 생성, 저장 직전 `input_revision` 재확인, 동시 분석·입력 변경 시 409와 부분 저장 방지
+- [ ] `POST /records/{record_id}/diagnosis?regenerate=true` — 실제 모델 기반 명시적 진단 재생성
+- [ ] 실제 모델 진단 실패와 정보 부족에 따른 `판단 보류` 구분 *(샘플은 참고 수치 사용)*
+
+### 모바일 분석 입력·결과
+
+- [x] 사진 1~2장 선택과 전체/근접 역할 자동 지정
+- [x] 위치·재질 입력, 선택 증상 메모, 외부 분석 동의 입력
+- [x] 새 기록 생성 후 `POST /records/{record_id}/analyze` 호출 및 결과 화면 이동
+- [x] `FormData` 전송 시 API 클라이언트가 `Content-Type`을 직접 지정하지 않음
+- [x] 결과 화면에 심각도·근거, `추정 원인`, `해결방안`, `재발 방지책`, 샘플 안내 표시
+- [x] 제출 중 상태, 중복 제출 방지, 오류 안내·재시도, 새 분석 시 입력/사진/결과 초기화
+- [ ] 실제 기기/시뮬레이터에서 Supabase 로그인 후 사진 선택·제출·결과 표시 흐름 검증
 
 ## 임대인·업체 요청문 (구현 예정)
 
@@ -144,15 +157,17 @@ Supabase Auth로 계정 생성과 로그인을 처리하고, FastAPI는 회원 �
 
 ## 통합·운영 검증
 
-- [x] 이전 코드 리뷰에서 일회용 PostgreSQL의 기존 백엔드 테스트 66개 통과
+- [x] 로컬 일회용 PostgreSQL에서 백엔드 전체 테스트 75개 통과(기존 회귀 + 일괄 분석·material·동시성·파일 검증)
+- [x] 모바일 TypeScript 타입 검사 통과 (`npm run typecheck --workspace @career-pair/mobile`, Expo Router 타입 생성 후)
 - [ ] 실제 Supabase 로그인 토큰으로 프로필·소식지·일괄 분석·기록 목록·업체 검색·채팅 API 전체 흐름 검증
-- [ ] 실제 휴대폰 앱에서 4개 탭(`소식지`·`분석`·`채팅`·`내 정보`) 및 요청인–업체 채팅 흐름 통합 검증
+- [ ] Home Keeper에 006 마이그레이션 적용 후 실제 사진 제출·분석·재조회 검증 (관리자 자격증명 필요)
+- [ ] 실제 휴대폰 앱에서 사진 선택·분석 제출·결과 표시 및 4개 탭 통합 검증
 - [ ] 사진 분석 실패 폴백·진단 실패·버전 충돌의 앱 복구 흐름 검증
 - [ ] 시연 서버 배포와 팀 외부 환경의 접근·실행 확인
 - [ ] 실제 모델·샘플 사용 여부와 AI 추정 안내·한계를 시연에서 표시
 - [ ] 심사 기간 동안 서버·모델 호출 한도·과금 설정 유지 확인
 
-테스트 통과 기록은 이전 리뷰 시점의 결과다. 이후 구현한 기능은 각각 필요한 회귀 테스트와 연동 검증을 수행한다. Supabase의 DB 권한·RLS·JWKS 및 마이그레이션 적용 확인은 README에 기록되어 있지만, 실제 로그인 토큰으로 전체 흐름을 검증한 것과 구분한다.
+테스트 통과 기록은 이번 구현 시점의 결과다. Home Keeper에는 006이 아직 적용되지 않아 실제 Supabase 대상 분석 호출과 실제 기기 흐름은 별도 검증이 필요하다. Supabase의 DB 권한·RLS·JWKS 및 005 적용 확인은 README에 기록되어 있지만, 실제 로그인 토큰으로 전체 흐름을 검증한 것과 구분한다.
 
 ## 구현 전에 남은 결정
 

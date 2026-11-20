@@ -2,9 +2,9 @@
 
 하자 기록을 저장하는 FastAPI + PostgreSQL 백엔드와 Expo 모바일 앱을 한 저장소에서 관리합니다. 인증은 Supabase Auth(이메일·비밀번호) 액세스 토큰을 사용합니다.
 
-현재 백엔드 코드에는 `POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`, `POST /records/{record_id}/messages`, `PUT /records/{record_id}/messages/{message_id}`, `POST /records/{record_id}/next-question` 여섯 개 API가 구현되어 있고, 모바일 앱은 로그인·연결 확인·기록 생성 조회 화면까지 구현되어 있습니다.
+현재 백엔드 코드에는 `POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`, `POST /records/{record_id}/analyze`, `POST /records/{record_id}/messages`, `PUT /records/{record_id}/messages/{message_id}`, `POST /records/{record_id}/next-question` 일곱 개 API가 구현되어 있습니다. 모바일 앱은 로그인, 사진·위치·재질 입력, 샘플 분석 제출과 결과 화면까지 구현했습니다. `messages`·`next-question`은 현재 MVP 흐름에서 미사용/보류 레거시 상태입니다.
 
-2026년 11월 20일 팀 회의 변경에 따라 MVP 목표 설계를 아래 내용으로 갱신했습니다(신규 기능은 후속 구현 예정이며, 기존 `messages`·`next-question` API는 현재 MVP 흐름에서 미사용/보류 레거시 상태로 유지합니다):
+2026년 11월 20일 팀 회의 변경에 따라 MVP 목표 설계를 아래 내용으로 갱신했습니다. 사진·위치·재질 일괄 분석은 실제 모델 없이 **샘플 결과**로 먼저 구현했고, 나머지 신규 기능은 후속 구현 예정입니다.
 - **회원가입·프로필**: 닉네임, ID(이메일), PW, 거주 지역(필수), 등록 주소(선택), 거주 형태(`월세·전세·반전세·자가·기타`)
 - **소식지 페이지**: 공공데이터포털 보조금24 Open API 동기화 + 검증된 시드 폴백으로 주거 지원 사업 제공, 마감 공고 흐림·하단 정렬
 - **분석·결과 페이지**: 지원 하자 유형 `크랙·벗겨짐·곰팡이`, 시연 지역 `용인`. 분석 채팅창 없이 사진(1~2장)+위치+재질을 일괄 입력해 심각도(`0~100%` / `판단 보류`), `추정 원인`(AI 추정 안내·미확인 정보), `해결방안`, `재발 방지책` 표시(`자가`는 임대인 요청문 숨김)
@@ -25,7 +25,7 @@
 | [프로젝트 계획](docs/plans/PROJECT_PLAN.md) | 제출 요건, 전체 일정, 검증표와 결정 이력 |
 | [AI 아이디어 비교](docs/ideas/AI_IDEAS.md) | 후속 기능 후보와 검토 근거 |
 
-현재 구현은 기록·메시지 API(레거시/보류), 시연용 다음 질문 API(레거시/보류), DB(`001`–`005`), 모바일 로그인·연결 확인 화면입니다. 설계 문서에 있는 회원 프로필, 소식지, 일괄 분석·진단, 내 기록 목록, 요청문 생성, 업체 검색과 1:1 채팅은 후속 구현 대상입니다. 실행·환경 설정은 이 README를, 적용된 DB 구조는 [마이그레이션](apps/api/migrations/)을 함께 확인합니다.
+현재 구현은 기록 API(위치·재질·증상), **사진·위치·재질 일괄 분석 샘플 API**, DB(`001`–`006`), 모바일 로그인·분석 입력·결과 화면입니다. 설계 문서에 있는 회원 프로필, 소식지, 실제 모델 기반 분석·진단, 내 기록 목록, 요청문 생성, 업체 검색과 1:1 채팅은 후속 구현 대상입니다. 실행·환경 설정은 이 README를, 적용된 DB 구조는 [마이그레이션](apps/api/migrations/)을 함께 확인합니다.
 
 ## 구조
 
@@ -39,8 +39,9 @@ apps/
     app/
       main.py      FastAPI 앱, 오류 응답
       auth.py      Supabase JWT 검증
-      records.py   기록·메시지·다음 질문 API
+      records.py   기록·메시지·다음 질문·일괄 분석 API
       sample_questions.py 시연용 질문 규칙과 결정 함수
+      sample_analysis.py 샘플 일괄 분석 결정 함수
       schemas.py   요청·응답 모델
       db.py        요청별 DB 트랜잭션
       migrate.py   SQL 마이그레이션 실행기
@@ -50,7 +51,7 @@ apps/
     .env.example
   mobile/
     app.json       Expo 설정
-    src/app/       Expo Router 화면
+    src/app/       Expo Router 로그인·분석 입력·결과 화면
     src/lib/       Supabase·FastAPI 클라이언트
     .env.example
 docs/
@@ -162,11 +163,11 @@ psql postgresql://localhost:5432/career_pair \
    ```
 3. `SUPABASE_URL`과 JWT 설정을 채웁니다. 새 프로젝트가 비대칭 서명 키(`RS256`/`ES256`)를 쓰면 `SUPABASE_JWT_SECRET` 없이 JWKS(`/auth/v1/.well-known/jwks.json`)로 검증합니다. 기존 HS256 토큰이면 secret을 설정합니다.
 4. 앱 테이블은 마이그레이션에서 Supabase Data API 역할(`anon`, `authenticated`, `service_role`)의 권한을 회수합니다. Supabase 대시보드의 Data API 노출 스키마에 별도 권한을 추가하지 마세요. 앱은 테이블을 직접 노출하지 않고 FastAPI를 통해서만 접근합니다.
-5. `003_backend_rls.sql`은 앱 테이블의 RLS를 켜고 전용 `career_pair_runtime` 역할만 통과시킵니다. 사용자별 소유권 검사는 FastAPI가 담당하므로 이 DB 계정은 서버에서만 사용합니다. `schema_migrations`는 관리자만 접근합니다. `004_protect_rls_trigger.sql`은 Supabase 내부 RLS 이벤트 트리거가 있을 때 공개 실행 권한을 회수합니다. `005_next_question_grants.sql`은 다음 질문 API가 질문을 생성·갱신할 수 있도록 런타임 역할에 `questions` INSERT/UPDATE를 부여합니다.
+5. `003_backend_rls.sql`은 앱 테이블의 RLS를 켜고 전용 `career_pair_runtime` 역할만 통과시킵니다. 사용자별 소유권 검사는 FastAPI가 담당하므로 이 DB 계정은 서버에서만 사용합니다. `schema_migrations`는 관리자만 접근합니다. `004_protect_rls_trigger.sql`은 Supabase 내부 RLS 이벤트 트리거가 있을 때 공개 실행 권한을 회수합니다. `005_next_question_grants.sql`은 다음 질문 API가 질문을 생성·갱신할 수 있도록 런타임 역할에 `questions` INSERT/UPDATE를 부여합니다. `006_records_material.sql`은 `records.material` 컬럼을 추가하며, 기존 테이블 단위 SELECT/UPDATE 권한과 RLS 정책이 새 컬럼에도 적용됩니다.
 
 IPv4 네트워크에서는 대시보드 **Connect → Session pooler**의 호스트와 5432 포트를 사용합니다. 전용 역할의 풀러 사용자 이름은 `career_pair_runtime.<project-ref>`이며 `sslmode=require`를 붙입니다. 호스트의 `aws-0`/`aws-1` 부분은 프로젝트 연결 정보에 맞춰야 합니다. [공식 연결 문서](https://supabase.com/docs/guides/database/connecting-to-postgres)를 참고하세요.
 
-현재 개발 환경은 **Home Keeper** (`lprqztpobrlhetbjkcks`, Sydney)에 연결되어 있습니다. 마이그레이션 001–005와 런타임 로그인 설정은 적용 완료했으며, `apps/api/.env`에 실제 런타임 연결을 저장했습니다. 인증은 ES256/JWKS를 사용하므로 `SUPABASE_JWT_SECRET`은 비워 둡니다. `005_next_question_grants.sql`은 Supabase 연결 도구로 적용했으며, 적용 이력과 런타임 역할의 `questions` INSERT/UPDATE 권한을 실제 DB에서 확인했습니다. 관리자 비밀번호는 저장하지 않았습니다. 로컬 테스트 DB에는 005가 적용되어 전체 흐름을 검증했습니다. 후속 마이그레이션을 CLI로 실행하려면 `MIGRATION_DATABASE_URL`을 별도로 설정해야 합니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
+현재 개발 환경은 **Home Keeper** (`lprqztpobrlhetbjkcks`, Sydney)에 연결되어 있습니다. 마이그레이션 001–005와 런타임 로그인 설정은 적용 완료했으며, 005의 `questions` INSERT/UPDATE 권한과 RLS 정책을 실제 DB에서 확인했습니다. `006_records_material.sql`은 이번 구현에 추가했지만 관리자 비밀번호가 저장되어 있지 않아 **Home Keeper에는 아직 적용하지 않았습니다.** 006 적용 전에는 `material` 컬럼을 참조하는 `GET /records/{record_id}`, `PATCH /records/{record_id}`, `POST /records/{record_id}/analyze`가 실제 Supabase에서 실패합니다. 관리자 연결로 006을 적용해야 합니다. 인증은 ES256/JWKS를 사용하므로 `SUPABASE_JWT_SECRET`은 비워 둡니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
 
 ## 테스트
 
@@ -191,6 +192,16 @@ TEST_DATABASE_NAME=career_pair_ci_test \
 
 검증 항목: 빈 DB 마이그레이션, 서명·만료·발급자·대상 검증, 소유권 격리, 다른 기록 질문 거부, 선택지/직접 입력 저장, 메시지 재전송 멱등성, 동일 ID 내용 충돌, 오래된 버전 거부, 과거 메시지 수정 시 후속 대화 삭제, 동일 내용 수정 무변경, 동시 요청 중복·순서 방지, 수정 실패 시 롤백, DB 제약과 런타임 권한. 다음 질문은 첫 질문·선택지, 선택/직접 입력 진행, 관련 없는 메시지 미확정, 모름 답변 종료, 같은 버전 재사용, 종료 응답 재사용, 동시 생성 중복 방지, 생성 중 입력 변경 409, 생성 실패 무저장, 과거 답변 수정 후 오래된 질문·캐시 미재사용을 검증합니다.
 
+일괄 분석은 사진 1·2장 정상 저장/재조회, `material` 저장, 다른 사용자 접근 404, 사진 없음·3장·잘못된 형식·10MB 초과·역할 불일치 422, 같은 입력 재분석 시 버전 유지, 분석 중 입력 변경 409, 동시 분석의 입력/진단 혼합 방지, 샘플 결과에 bbox·confidence가 없음을 검증합니다. 백엔드 전체 테스트 75개가 통과했습니다.
+
+모바일 타입 검사:
+
+```bash
+npm run typecheck --workspace @career-pair/mobile
+```
+
+Expo Router 타입 생성 후 통과했습니다. 실제 기기/시뮬레이터에서 Supabase 로그인 후 사진 선택·제출·결과 표시 흐름은 이번 환경에서 실행하지 못했습니다. Home Keeper에는 006 마이그레이션이 아직 적용되지 않아 실제 Supabase 대상 분석 호출도 검증하지 못했습니다.
+
 ## API 동작
 
 공통 오류 형식:
@@ -203,11 +214,11 @@ TEST_DATABASE_NAME=career_pair_ci_test \
 | --- | --- |
 | 인증 없음/서명·만료·발급자·대상 오류 | 401 |
 | 없는 기록, 다른 사용자 기록, 없는 질문, 없는 메시지, assistant 메시지 수정 | 404 |
-| `input_revision` 충돌, 같은 `client_message_id`의 다른 내용 | 409 |
-| 요청 형식, 없는 선택지 | 422 |
+| `input_revision` 충돌, 분석 중 입력 변경, 같은 `client_message_id`의 다른 내용 | 409 |
+| 요청 형식, 없는 선택지, 잘못된 사진 형식·개수·크기·역할 | 422 |
 | 예기치 않은 서버/DB 오류 | 500 |
 
-기록의 `input_revision`은 0에서 시작합니다. 위치·증상, 사용자 메시지 추가, 사용자 메시지 내용 수정처럼 실제 입력이 바뀔 때만 1씩 증가합니다. 같은 값을 다시 저장하거나 같은 메시지를 재전송하면 증가하지 않습니다.
+기록의 `input_revision`은 0에서 시작합니다. 위치·재질·증상, 사용자 메시지 추가, 사용자 메시지 내용 수정, 일괄 분석의 입력 변경처럼 실제 입력이 바뀔 때만 1씩 증가합니다. 같은 값을 다시 저장하거나 같은 메시지를 재전송하거나 같은 입력으로 다시 분석하면 증가하지 않습니다. 분석은 성공할 때마다 `diagnosis_generation`을 올립니다.
 
 `GET /records/{record_id}` 응답의 `diagnosis`, `next_question`, `drafts`에는 생성 당시 `input_revision`(과 요청문의 경우 `diagnosis_generation`)과 `is_current`가 들어 있습니다. 입력이 바뀐 뒤에는 `is_current`가 false이므로 앱이 이전 결과임을 표시할 수 있습니다.
 
@@ -269,6 +280,30 @@ curl -s "http://127.0.0.1:8000/records/$RECORD_ID" \
 ```
 
 같은 `client_message_id`와 같은 내용을 다시 보내면 기존 메시지를 반환합니다. 같은 ID에 다른 내용(또는 다른 질문·선택지)을 보내면 409입니다. 비교에는 최초 POST의 선택지 ID와 직접 입력을 사용하므로 같은 label의 다른 선택지와 직접 입력도 구분합니다. PUT으로 수정한 뒤 원래 POST를 재전송하면 수정된 현재 메시지를 반환합니다. `002_message_submission.sql` 이전 메시지는 최초 제출 방식을 복원할 수 없어 재전송 시 409를 반환하므로 기록을 다시 조회해야 합니다.
+
+### 사진·위치·재질 일괄 분석 (샘플)
+
+`POST /records/{record_id}/analyze`는 multipart/form-data로 사진 1~2장, 사진 역할, 위치, 재질, 선택 증상 메모, 외부 분석 동의 여부를 받습니다. 현재는 실제 사진 분석·LLM을 호출하지 않고 입력값 기반 샘플 결과를 저장합니다.
+
+```bash
+curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/analyze" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -F "photos=@/path/to/overview.jpg;type=image/jpeg" \
+  -F "photo_roles=overview" \
+  -F "external_analysis_consent=false" \
+  -F "location=안방 창틀 아래" \
+  -F "material=실리콘" \
+  -F "symptoms=닦아도 검은 얼룩이 다시 생겨요"
+
+curl -s "http://127.0.0.1:8000/records/$RECORD_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+두 장을 보낼 때는 `photos`와 `photo_roles`를 각각 두 번 보내고 역할을 `overview`, `closeup`으로 구분합니다. 사진 수와 역할 수가 같아야 하며 역할은 중복될 수 없습니다. JPEG·PNG·HEIC·HEIF, 한 장당 10MB 이하만 허용합니다.
+
+응답과 `GET /records/{record_id}`의 `photo_observations`에는 `source="sample"`, `applied=false`, 사진 상태 `not_analyzed`, `detections=[]`가 들어갑니다. 탐지 좌표·신뢰도는 만들지 않으며 원본 사진은 DB·로그에 저장하지 않습니다. 진단의 `source`도 `sample`이고, 심각도·추정 원인·해결방안·재발 방지책은 입력값만 사용한 참고용 결과입니다. 입력이 실제로 바뀌면 `input_revision`이 오르고 `diagnosis_generation`이 증가하며, 분석 중 입력이 바뀌면 409를 반환합니다.
+
+모바일은 `apps/mobile/src/app/analyze.tsx`에서 사진 선택·입력·동의를 받아 기록 생성 후 분석을 호출하고, `apps/mobile/src/app/result/[recordId].tsx`에서 저장된 결과를 다시 조회해 표시합니다. FormData 전송 시 `Content-Type`을 직접 지정하지 않아 fetch가 boundary를 설정합니다.
 
 `POST /records/{record_id}/next-question`는 현재 서버의 입력과 대화만 사용하며, 클라이언트가 사용자 ID나 대화 전체를 다시 보내지 않습니다. 질문·선택지는 서버가 `source="sample"`로 표시해 반환합니다. 실제 LLM이 아니라 아래 두 질문을 사용하는 시연 규칙입니다.
 
@@ -348,5 +383,7 @@ curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/next-question" \
 - `PATCH /records/{record_id}`는 [API 설계](docs/design/API_DESIGN.md)대로 `input_revision`을 받지 않습니다. 실제 값이 바뀔 때만 버전을 올리고, 명시한 `null`은 값을 지웁니다.
 - 마이그레이션은 로컬 개발을 위해 `auth.users(id)` 스텁을 만들 수 있게 했습니다. Supabase에서는 기존 테이블이 그대로 쓰입니다.
 - Supabase의 런타임 DB 연결·RLS·Data API 권한 회수와 ES256 JWKS 조회를 확인했습니다. 실제 사용자 로그인 토큰을 이용한 전체 인증 흐름은 아직 검증하지 않았습니다. 통합 테스트는 로컬 PostgreSQL과 HS256 토큰으로 실행합니다. `005_next_question_grants.sql`은 Home Keeper에 적용했고 적용 이력과 질문 INSERT/UPDATE 권한을 확인했습니다.
-- 회원 프로필·거주 형태 저장, 소식지(보조금24 동기화·시드), 사진 원본·표시 좌표·스토리지, 일괄 분석·진단·요청문 생성, 내 기록 목록, 업체 검색·1:1 채팅은 아직 구현하지 않았습니다. 현재 `next-question` 코드의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 처리하는 레거시/보류 구현이며, 변경된 MVP의 지원 하자 유형은 `크랙·벗겨짐·곰팡이`, 시연 지역은 `용인`입니다.
-- 모바일 앱은 이메일 로그인, `/health` 확인, 기록 생성·조회 화면까지만 구현했습니다. 실제 기기에서의 Supabase 로그인과 API 호출은 시연 전에 함께 확인해야 합니다. 회원가입·소식지·일괄 분석·결과·업체 채팅·내 정보 화면은 후속 구현 대상입니다.
+- `POST /records/{record_id}/analyze`는 사진과 입력을 multipart로 받아 샘플 결과를 저장합니다. 실제 YOLO·비전 LLM·텍스트 LLM은 호출하지 않고, 사진은 magic byte 검증만 하며 원본·좌표·신뢰도를 저장하지 않습니다. 입력 스냅샷으로 결과를 만든 뒤 저장 직전에 `input_revision`을 재확인하고, 사진 관찰 상태·진단 결과와 `diagnosis_generation`을 같은 트랜잭션에 저장합니다.
+- 회원 프로필·거주 형태 저장, 소식지(보조금24 동기화·시드), 실제 모델 기반 사진 분석·진단 재생성, 사진 원본·표시 좌표·스토리지, 요청문 생성, 내 기록 목록, 업체 검색·1:1 채팅은 아직 구현하지 않았습니다. 현재 `next-question` 코드의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 처리하는 레거시/보류 구현이며, 변경된 MVP의 지원 하자 유형은 `크랙·벗겨짐·곰팡이`, 시연 지역은 `용인`입니다.
+- `records.material`을 추가하는 `006_records_material.sql`은 로컬 테스트 DB에는 적용했지만 Home Keeper에는 관리자 자격증명이 없어 아직 적용하지 않았습니다. 006 적용 전에는 실제 Supabase에서 `material`을 참조하는 조회·수정·분석이 실패합니다.
+- 모바일 앱은 이메일 로그인, 사진 1~2장 선택, 위치·재질·증상·외부 분석 동의 입력, 기록 생성 후 샘플 분석 호출, 결과 화면(심각도·추정 원인·해결방안·재발 방지책·샘플 안내·재시도)까지 구현했습니다. 실제 기기/시뮬레이터에서 Supabase 로그인과 API 호출은 아직 검증하지 못했습니다. FormData 요청은 `Content-Type`을 직접 지정하지 않습니다.

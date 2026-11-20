@@ -1,12 +1,12 @@
 # MVP DB 설계 초안
 
-합의한 저장 규칙을 기준으로 정리한 테이블 설계다. 아래 테이블 표는 전체 설계 요약이며, 현재 실제 DB에 적용된 컬럼·타입은 초기 마이그레이션(`001`–`005`)과 구현 확정 사항을 함께 확인한다. 접근·생성·실패 처리 규칙은 [백엔드 설계](BACKEND_DESIGN.md)를 따른다.
+합의한 저장 규칙을 기준으로 정리한 테이블 설계다. 아래 테이블 표는 전체 설계 요약이며, 현재 실제 DB에 적용된 컬럼·타입은 초기 마이그레이션(`001`–`006`)과 구현 확정 사항을 함께 확인한다. 접근·생성·실패 처리 규칙은 [백엔드 설계](BACKEND_DESIGN.md)를 따른다.
 
 ## 문서 범위
 
-아래 구현 확정 사항은 현재 마이그레이션(`001`–`005`)에 반영된 내용이다.
+아래 구현 확정 사항은 현재 마이그레이션(`001`–`006`)에 반영된 내용이다.
 
-2026년 11월 20일 팀 회의 변경 사항을 반영해 `profiles`(닉네임·역할·거주 지역·선택 등록 주소·거주 형태), `records.material`, `providers.account_user_id`, `support_programs`(소식지 주거 지원 사업), `chat_rooms`, `chat_messages`(업체–요청인 1:1 채팅) 추가를 후속 마이그레이션 대상으로 설계했다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행 방법은 [README](../../README.md)를 따른다.
+2026년 11월 20일 팀 회의 변경 사항을 반영해 `records.material`과 샘플 일괄 분석 결과 저장을 구현했고, `profiles`(닉네임·역할·거주 지역·선택 등록 주소·거주 형태), `providers.account_user_id`, `support_programs`(소식지 주거 지원 사업), `chat_rooms`, `chat_messages`(업체–요청인 1:1 채팅) 추가는 후속 마이그레이션 대상으로 설계했다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행 방법은 [README](../../README.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -17,7 +17,7 @@
 - 질문·메시지 순서는 `records.conversation_sequence`에서 함께 발급한다. 각 테이블의 `(record_id, sequence)` 유일 제약은 유지하고, 두 테이블 사이의 순서는 기록 행 잠금과 같은 트랜잭션에서 조정한다. *(현재 MVP 미사용/보류)*
 - `messages`는 `(record_id, question_id)` 복합 외래키로 같은 기록의 질문만 참조한다. `sender = 'user'`인 행은 `client_message_id`가 필수다. *(현재 MVP 미사용/보류)*
 - `messages.input_revision`은 그 메시지가 반영된 뒤의 기록 입력 버전이다. *(현재 MVP 미사용/보류)*
-- 런타임 역할 `career_pair_runtime`은 마이그레이션이 `NOLOGIN`으로 만들고 현재 구현된 API에 필요한 DML만 부여한다(기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 업체·지역·작업 참조 테이블 `SELECT`). 질문 INSERT/UPDATE는 `005_next_question_grants.sql`에서 추가한다. 로그인 비밀번호는 관리자가 별도로 설정한다. 새 기능이 더 많은 권한을 필요로 하면 후속 마이그레이션에서 명시적으로 부여한다. Supabase Data API 역할(`anon`, `authenticated`, `service_role`)이 있으면 앱 테이블 권한과 향후 테이블 기본 권한을 회수한다.
+- 런타임 역할 `career_pair_runtime`은 마이그레이션이 `NOLOGIN`으로 만들고 현재 구현된 API에 필요한 DML만 부여한다(기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 업체·지역·작업 참조 테이블 `SELECT`). 질문 INSERT/UPDATE는 `005_next_question_grants.sql`에서 추가하고, `records.material`은 `006_records_material.sql`로 추가한다. 기록의 테이블 단위 SELECT/UPDATE와 RLS 정책이 새 컬럼에도 적용되므로 별도 컬럼 권한은 추가하지 않는다. 로그인 비밀번호는 관리자가 별도로 설정한다. 새 기능이 더 많은 권한을 필요로 하면 후속 마이그레이션에서 명시적으로 부여한다. Supabase Data API 역할(`anon`, `authenticated`, `service_role`)이 있으면 앱 테이블 권한과 향후 테이블 기본 권한을 회수한다.
 - 앱 테이블에는 `003_backend_rls.sql`이 RLS를 켜고 `career_pair_runtime`만 통과시키는 정책을 둔다. Data API 역할은 권한 회수로 막고, 사용자별 접근 제어는 FastAPI의 소유권/참여자 검사로 수행한다.
 
 ## 테이블
@@ -25,7 +25,7 @@
 | 테이블 | 상태 | 주요 컬럼 |
 | --- | --- | --- |
 | `profiles` | 구현 예정 | `user_id uuid PK/FK auth.users(id)`, `nickname text NOT NULL`, `role text NOT NULL`, `region_id uuid NOT NULL FK regions(id)`, `address text NULL`, `housing_type text NOT NULL`, `created_at timestamptz`, `updated_at timestamptz` |
-| `records` | 구현됨 (`material` 추가 예정) | `id uuid PK`, `owner_id uuid`, `location text`, `material text NULL` *(추가 예정)*, `symptoms text`, `photo_observations jsonb`, `input_revision bigint`, `next_question_result jsonb` *(레거시)*, `next_question_revision bigint` *(레거시)*, `diagnosis jsonb`, `diagnosis_revision bigint`, `diagnosis_generation bigint`, `landlord_draft text`, `landlord_draft_revision bigint`, `landlord_draft_diagnosis_generation bigint`, `provider_draft text`, `provider_draft_revision bigint`, `provider_draft_diagnosis_generation bigint`, `conversation_sequence bigint` *(레거시)*, `created_at timestamptz`, `updated_at timestamptz` |
+| `records` | 구현됨 (`material` 포함) | `id uuid PK`, `owner_id uuid`, `location text`, `material text NULL`, `symptoms text`, `photo_observations jsonb`, `input_revision bigint`, `next_question_result jsonb` *(레거시)*, `next_question_revision bigint` *(레거시)*, `diagnosis jsonb`, `diagnosis_revision bigint`, `diagnosis_generation bigint`, `landlord_draft text`, `landlord_draft_revision bigint`, `landlord_draft_diagnosis_generation bigint`, `provider_draft text`, `provider_draft_revision bigint`, `provider_draft_diagnosis_generation bigint`, `conversation_sequence bigint` *(레거시)*, `created_at timestamptz`, `updated_at timestamptz` |
 | `support_programs` | 구현 예정 | `id uuid PK`, `external_id text UNIQUE NULL`, `source text NOT NULL`, `title text NOT NULL`, `summary text NOT NULL`, `organization_name text NOT NULL`, `region_scope text NOT NULL`, `region_id uuid NULL FK regions(id)`, `target_housing_types text[]`, `deadline_text text NOT NULL`, `deadline_date date NULL`, `apply_method text NULL`, `detail_url text NULL`, `source_attribution text NOT NULL`, `synced_at timestamptz NULL`, `created_at timestamptz`, `updated_at timestamptz` |
 | `providers` | 구현됨 (`account_user_id` 추가 예정) | `id uuid PK`, `name text NOT NULL`, `phone text NOT NULL`, `account_user_id uuid NULL UNIQUE FK auth.users(id)` *(추가 예정)* |
 | `regions` | 구현됨 | `id uuid PK`, `name text NOT NULL UNIQUE`, `display_name text NOT NULL` |
@@ -41,7 +41,9 @@
 
 `owner_id`는 Supabase Auth의 사용자 ID를 참조한다. 새 기록에는 위치·재질·증상·분석·생성 결과가 아직 없을 수 있다. 생성 결과가 없으면 해당 값과 생성에 사용한 버전은 NULL이다. 사진 관찰 결과(`photo_observations`)에는 사진별 역할, 분석 적용 여부, 관찰한 흔적·의심 유형(`크랙`, `벗겨짐`, `곰팡이`)·대략적인 위치를 저장한다. 원본 이미지 파일과 화면 표시 좌표는 영구 저장하지 않는다.
 
-`diagnosis` JSONB는 `observations`, `severity_score`(`0`~`100` 또는 `null`), `severity_level`(`low`, `medium`, `high`, `undetermined`), `reason`, `causes`, `estimation_notice`, `recommended_action`(`self_care`, `inspection`, `provider_consult`), `care_steps`, `supplies`, `prevention_tips`, `unknowns`, `work_type_id`, `work_type_reason`을 포함한다.
+샘플 일괄 분석은 `photo_observations`에 `source="sample"`, `applied=false`, 안내 문구, 사진별 역할과 `status="not_analyzed"`만 저장한다. 탐지 후보·신뢰도·bbox/좌표는 저장하지 않는다. `diagnosis`에는 구조화 진단과 `source="sample"`을 저장하고, `diagnosis_revision`은 입력 반영 후 버전, `diagnosis_generation`은 성공할 때마다 증가한 값을 기록한다. 원본 사진은 DB에 저장하지 않으며 FastAPI의 업로드 임시 파일은 성공·실패 모두 닫는다.
+
+`diagnosis` JSONB는 `observations`, `severity_score`(`0`~`100` 또는 `null`), `severity_level`(`low`, `medium`, `high`, `undetermined`), `reason`, `causes`, `estimation_notice`, `recommended_action`(`self_care`, `inspection`, `provider_consult`), `care_steps`, `supplies`, `prevention_tips`, `unknowns`, `work_type_id`(샘플에서 `null` 가능), `work_type_reason`, `source`를 포함한다.
 
 ## 회원 프로필 추가 설계 (`profiles`, 구현 예정)
 
@@ -98,6 +100,8 @@
 ## 갱신 규칙
 
 입력(`location`, `material`, `symptoms`, 저장된 사진 관찰) 변경 시 기록 행을 잠근 트랜잭션에서 현재 입력 버전을 확인하고, 변경과 버전 증가를 함께 처리한다. 생성 결과 저장 시 생성에 사용한 버전과 현재 버전을 비교한다.
+
+샘플 일괄 분석은 입력 스냅샷으로 결과를 만든 뒤 저장 직전에 기록 행을 다시 잠근다. 입력 버전이 바뀌었으면 아무것도 저장하지 않고 409를 반환한다. 제출한 위치·재질·증상이 실제로 달라질 때만 `input_revision`을 1 올리고, `photo_observations`(샘플 상태), `diagnosis`, `diagnosis_revision`, 증가한 `diagnosis_generation`을 같은 트랜잭션에 저장한다. 같은 입력이면 버전은 유지하고 생성 번호만 올린다. 사진 원본과 표시 좌표는 어느 경로에서도 저장하지 않는다.
 
 진단의 최신 여부는 생성에 사용한 입력 버전으로 판단한다. 진단 저장 성공 시 `diagnosis_generation`을 증가시킨다. 요청문은 생성에 사용한 입력 버전과 진단 생성 번호가 모두 현재 값과 일치해야 최신이다. 요청문 저장 직전에도 두 값을 트랜잭션에서 검사한다. 진단 재생성 실패 시 생성 번호와 기존 결과를 유지한다. 현재 버전 결과는 재사용하며, 명시적인 재생성만 모델을 다시 호출한다. 실패한 생성으로 기존 값을 덮어쓰지 않는다.
 
