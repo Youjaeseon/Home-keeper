@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
-import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ApiError, getMyProfile, messageOf } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
 export default function IndexScreen() {
@@ -116,8 +117,38 @@ function LoginScreen() {
 
 function HomeScreen({ session }: { session: Session }) {
   const router = useRouter();
+  const [profileStatus, setProfileStatus] = useState<'loading' | 'ready' | 'error'>(
+    'loading',
+  );
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setProfileStatus('loading');
+      setProfileError(null);
+      getMyProfile()
+        .then(() => {
+          if (active) setProfileStatus('ready');
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
+          if (error instanceof ApiError && error.status === 404) {
+            router.replace('/profile');
+            return;
+          }
+          setProfileError(messageOf(error));
+          setProfileStatus('error');
+        });
+      return () => {
+        active = false;
+      };
+    }, [reloadKey, router, session.user.id]),
+  );
 
   function startAnalysis() {
+    if (profileStatus !== 'ready') return;
     router.push({
       pathname: '/analyze',
       params: { session: Date.now().toString() },
@@ -132,14 +163,43 @@ function HomeScreen({ session }: { session: Session }) {
             <Text style={styles.title}>하자 분석</Text>
             <Text style={styles.subtitle}>{session.user.email}</Text>
           </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => supabase.auth.signOut()}
-            style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
-          >
-            <Text style={styles.textButtonLabel}>로그아웃</Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push('/profile')}
+              style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.textButtonLabel}>내 정보</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => supabase.auth.signOut()}
+              style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.textButtonLabel}>로그아웃</Text>
+            </Pressable>
+          </View>
         </View>
+
+        {profileStatus === 'loading' ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>프로필을 확인하는 중…</Text>
+          </View>
+        ) : null}
+
+        {profileStatus === 'error' ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>프로필을 불러오지 못했어요</Text>
+            <Text style={styles.error}>{profileError}</Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setReloadKey((value) => value + 1)}
+              style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.textButtonLabel}>다시 시도</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>사진으로 하자 상태를 확인해요</Text>
@@ -155,10 +215,17 @@ function HomeScreen({ session }: { session: Session }) {
 
         <Pressable
           accessibilityRole="button"
+          disabled={profileStatus !== 'ready'}
           onPress={startAnalysis}
-          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            profileStatus !== 'ready' && styles.disabled,
+            pressed && styles.pressed,
+          ]}
         >
-          <Text style={styles.primaryButtonText}>새 분석 시작</Text>
+          <Text style={styles.primaryButtonText}>
+            {profileStatus === 'loading' ? '프로필 확인 중…' : '새 분석 시작'}
+          </Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -193,6 +260,15 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
     gap: 4,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  retryButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
   },
   title: {
     fontSize: 28,

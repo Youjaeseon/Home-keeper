@@ -37,9 +37,49 @@ export type RecordSummary = {
 
 export type SeverityLevel = 'low' | 'medium' | 'high' | 'undetermined';
 export type RecommendedAction = 'self_care' | 'inspection' | 'provider_consult';
+export type HousingType =
+  | 'monthly_rent'
+  | 'jeonse'
+  | 'semi_jeonse'
+  | 'owned'
+  | 'other';
+
+export type Profile = {
+  nickname: string;
+  role: 'requester' | 'provider';
+  region_id: string;
+  address: string | null;
+  housing_type: HousingType;
+};
+
+export type ProfileInput = {
+  nickname: string;
+  region_id: string;
+  address: string | null;
+  housing_type: HousingType;
+};
+
+export type Region = {
+  region_id: string;
+  name: string;
+  display_name: string;
+};
+
+export type RecordListItem = {
+  record_id: string;
+  location: string | null;
+  material: string | null;
+  symptoms: string | null;
+  suspected_types: string[];
+  severity_score: number | null;
+  severity_level: SeverityLevel | null;
+  created_at: string;
+  updated_at: string;
+};
 
 export type DiagnosisResult = {
   observations: string;
+  suspected_types: string[];
   severity_score: number | null;
   severity_level: SeverityLevel;
   reason: string;
@@ -158,6 +198,25 @@ export async function checkHealth(): Promise<string> {
 
 export function createRecord(): Promise<RecordSummary> {
   return apiRequest<RecordSummary>('/records', { method: 'POST' });
+}
+
+export function getRecords(): Promise<RecordListItem[]> {
+  return apiRequest<RecordListItem[]>('/records');
+}
+
+export function getMyProfile(): Promise<Profile> {
+  return apiRequest<Profile>('/me/profile');
+}
+
+export function saveMyProfile(input: ProfileInput): Promise<Profile> {
+  return apiRequest<Profile>('/me/profile', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+}
+
+export function getRegions(): Promise<Region[]> {
+  return apiRequest<Region[]>('/regions');
 }
 
 export function getRecord(recordId: string): Promise<RecordDetail> {
