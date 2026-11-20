@@ -13,11 +13,16 @@ apps/
     .python-version Python 3.13
     app/
       main.py      FastAPI 앱, 오류 응답
+      errors.py    공통 오류 응답 헬퍼
       auth.py      Supabase JWT 검증
       records.py   기록·메시지·다음 질문·일괄 분석 API
       profile.py   내 프로필·지역 목록 API
       support_programs.py 소식지 목록·상세 API
       support_sync.py 보조금24 수동 동기화
+      drafts.py    임대인·업체 요청문 생성 및 기본 양식 API
+      llm.py       OpenAI 호환 Chat Completions 호출 클라이언트
+      providers.py 작업 종류·업체 검색 API
+      chat.py      요청인–업체 1:1 채팅 REST API
       sample_questions.py 시연용 질문 규칙과 결정 함수
       sample_analysis.py 샘플 일괄 분석 결정 함수
       schemas.py   요청·응답 모델
@@ -98,7 +103,7 @@ npm run mobile    # Expo 개발 서버
 
 ### 업체 계정·시연 데이터 준비
 
-실제 업체를 검색·채팅에 쓰려면 팀이 확인한 업체명·전화번호와 Supabase Auth 업체 계정 UUID를 관리자 SQL로 연결합니다. 공개 관리 API는 없고 런타임 역할에는 `providers` SELECT만 있습니다.
+샘플 업체는 API가 빈 검색 결과에서만 반환하는 고정 시연 후보이며 `providers` 테이블에 넣지 않습니다. 실제 업체를 검색·채팅에 쓰려면 팀이 확인한 업체명·전화번호와 Supabase Auth 업체 계정 UUID를 **관리자 SQL**로 연결합니다. 공개 관리 API는 없고 일반 가입자는 업체로 승격되거나 `account_user_id`를 연결할 수 없으며, 런타임 역할에는 `providers` `SELECT` 권한만 있습니다.
 
 ```sql
 INSERT INTO providers (name, phone, account_user_id)
@@ -112,7 +117,7 @@ INSERT INTO provider_work_types (provider_id, work_type_id)
 SELECT '<provider id>', id FROM work_types WHERE name = '곰팡이 제거';
 ```
 
-`010` 마이그레이션이 작업 종류 4건을 시드합니다. 실제 업체·연락처·출장 지역 데이터는 팀 확인 자료가 없어 등록하지 않았습니다. 실제 후보가 없으면 `GET /providers`는 `is_sample=true` 샘플을 반환하며, 샘플·계정 미연결 업체로는 채팅방을 만들 수 없습니다. 비밀번호·토큰은 문서에 기록하지 않습니다.
+`010` 마이그레이션이 작업 종류 4건(`곰팡이 제거`, `균열 보수`, `벽지·도장 보수`, `원인 점검`)을 시드합니다. 실제 업체·연락처·출장 지역 데이터는 팀 확인 자료가 없어 등록하지 않았습니다. 실제 후보가 없으면 `GET /providers`는 `is_sample=true` 샘플을 반환하며, 앱 내 채팅은 `account_user_id`가 연결된 업체만 가능합니다(`chat_available=true`, 샘플·계정 미연결 업체로는 채팅방을 만들 수 없음). 비밀번호·토큰은 문서에 기록하지 않습니다.
 
 ### 모바일 환경변수
 
@@ -139,7 +144,7 @@ psql postgresql://localhost:5432/career_pair \
 
 `apps/api/.env`의 `DATABASE_URL`을 `postgresql://career_pair_runtime:change-me@localhost:5432/career_pair`로 맞춥니다.
 
-마이그레이션은 `schema_migrations`에 적용 이력을 남기므로 다시 실행해도 완료된 파일은 건너뜁니다. 관리자 연결은 테이블과 역할을 만들고, 런타임 연결은 이번 API에 필요한 권한만 가집니다: 기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 프로필 `SELECT/INSERT/UPDATE`, 지원 사업 `SELECT/INSERT/UPDATE`, 업체·지역·작업 참조 테이블 `SELECT`. 질문 INSERT/UPDATE 권한은 `005_next_question_grants.sql`, 프로필 권한은 `007_profiles_and_regions.sql`, 지원 사업 권한은 `008_support_programs.sql`에서 추가합니다. 지원 사업 DELETE 권한은 없습니다. 런타임 역할은 `auth.users`를 읽거나 DDL을 실행할 수 없습니다. 새 기능이 더 많은 권한을 필요로 하면 새 마이그레이션에서 명시적으로 부여합니다.
+마이그레이션은 `schema_migrations`에 적용 이력을 남기므로 다시 실행해도 완료된 파일은 건너뜁니다. 관리자 연결은 테이블과 역할을 만들고, 런타임 연결은 이번 API에 필요한 권한만 가집니다: 기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 프로필 `SELECT/INSERT/UPDATE`, 지원 사업 `SELECT/INSERT/UPDATE`, 채팅방·채팅 메시지 `SELECT/INSERT/UPDATE`, 업체·지역·작업 참조 테이블 `SELECT`. 질문 INSERT/UPDATE 권한은 `005_next_question_grants.sql`, 프로필 권한은 `007_profiles_and_regions.sql`, 지원 사업 권한은 `008_support_programs.sql`, 채팅방·채팅 메시지(`chat_rooms`·`chat_messages`) 권한은 `010_chat_and_provider_accounts.sql`에서 추가합니다(`providers`는 `SELECT`만 유지). 지원 사업 DELETE 권한은 없습니다. 런타임 역할은 `auth.users`를 읽거나 DDL을 실행할 수 없습니다. 새 기능이 더 많은 권한을 필요로 하면 새 마이그레이션에서 명시적으로 부여합니다.
 
 ## Supabase 사용 시
 

@@ -15,7 +15,7 @@
 
 - **Backend**: Python 3.13 (`>=3.11`), FastAPI, PostgreSQL 16+, psycopg, PyJWT, Scalar, uv
 - **Mobile**: Node.js 20+, React Native 0.88, Expo 58 (Expo Router), TypeScript 6
-- **Auth & Data**: Supabase Auth, 공공데이터포털 보조금24 Open API
+- **Auth & External API**: Supabase Auth, 공공데이터포털 보조금24 Open API, OpenAI 호환 LLM API
 
 ## 실행 환경
 
@@ -46,7 +46,7 @@
    psql postgresql://localhost:5432/career_pair \
      -c "ALTER ROLE career_pair_runtime LOGIN PASSWORD 'change-me'"
    ```
-   Supabase 연결 및 RLS 설정은 [개발 환경·DB·테스트 가이드](docs/guides/DEVELOPMENT.md#supabase-사용-시)를 참고하세요.
+   Supabase 연결·RLS와 업체 계정·시연 데이터 준비는 [개발 환경·DB·테스트 가이드](docs/guides/DEVELOPMENT.md#supabase-사용-시)([업체 계정 준비](docs/guides/DEVELOPMENT.md#업체-계정시연-데이터-준비))를 참고하세요.
 4. **백엔드·모바일 실행**
    ```bash
    npm run api
@@ -58,24 +58,6 @@
    npm run api:test
    npm run typecheck --workspace @career-pair/mobile
    ```
-
-## 업체 계정·시연 데이터 준비
-
-샘플 업체는 API가 빈 검색 결과에서만 반환하는 고정 시연 후보이며 `providers` 테이블에 넣지 않습니다. 실제 업체를 검색·채팅에 쓰려면 팀이 확인한 업체명·전화번호와 Supabase Auth 업체 계정 UUID를 **관리자 SQL**로 연결합니다. 공개 관리 API는 없고 일반 가입자는 업체로 승격되거나 `account_user_id`를 연결할 수 없습니다.
-
-```sql
-INSERT INTO providers (name, phone, account_user_id)
-VALUES ('<확인된 업체명>', '<확인된 전화번호>', '<provider auth user id>')
-RETURNING id;
-
-INSERT INTO provider_regions (provider_id, region_id)
-SELECT '<provider id>', id FROM regions WHERE name = 'yongin';
-
-INSERT INTO provider_work_types (provider_id, work_type_id)
-SELECT '<provider id>', id FROM work_types WHERE name = '곰팡이 제거';
-```
-
-작업 종류 4건(`곰팡이 제거`, `균열 보수`, `벽지·도장 보수`, `원인 점검`)은 `010` 마이그레이션이 시드합니다. 실제 업체·연락처·출장 지역 데이터는 팀 확인 자료가 없어 아직 등록하지 않았고, 후보가 없으면 검색은 `is_sample=true` 샘플을 반환합니다. 앱 내 채팅은 `account_user_id`가 연결된 업체만 가능합니다(`chat_available=true`).
 
 ## 주요 명령어
 
@@ -115,8 +97,8 @@ docs/
 
 | 문서 | 확인할 내용 |
 | --- | --- |
-| [개발 환경·DB·테스트 가이드](docs/guides/DEVELOPMENT.md) | 상세 디렉토리 구조, 환경변수, 로컬 DB/Supabase 설정, 테스트, 소식지 시드·동기화 |
-| [API 사용 가이드](docs/guides/API_USAGE.md) | 공통 오류·버전 규칙, `curl` 호출 예시, 레거시 다음 질문 흐름, 구현 메모와 한계 |
+| [개발 환경·DB·테스트 가이드](docs/guides/DEVELOPMENT.md) | 상세 디렉토리 구조, 환경변수, 로컬 DB/Supabase·업체 계정 설정, 테스트, 소식지 시드·동기화 |
+| [API 사용 가이드](docs/guides/API_USAGE.md) | 공통 오류·버전 규칙, 요청문·업체 검색·채팅 등 `curl` 호출 예시, 레거시 다음 질문 흐름, 구현 메모와 한계 |
 | [백엔드 구현 체크리스트](docs/plans/BACKEND_CHECKLIST.md) | 구현된 기능, 남은 MVP 작업과 통합 검증 |
 | [MVP 계획](docs/plans/MVP_PLAN.md) | 사용자 흐름, 역할, 시연 범위와 남은 제품 결정 |
 | [백엔드 설계](docs/design/BACKEND_DESIGN.md) | 인증, 기록·일괄 분석·소식지·채팅 처리 규칙 |

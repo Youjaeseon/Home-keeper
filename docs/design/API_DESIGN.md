@@ -6,7 +6,7 @@
 
 현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색(`GET /work-types`, `GET /providers`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
 
-실제 모델 기반 일괄 분석·진단 재생성과 실시간 채팅 수신 방식은 아직 미확정·미구현이다. 요청문 생성은 서버에서 단일 LLM 제공사(OpenAI 호환 Chat Completions)를 사용한다. 실행과 호출 절차는 [README](../../README.md)를 따른다.
+실제 모델 기반 일괄 분석·진단 재생성과 실시간 채팅 수신 방식은 아직 미확정·미구현이다. 요청문 생성은 서버에서 단일 LLM 제공사(OpenAI 호환 Chat Completions)를 사용한다. 실행 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 호출 예시와 구현 메모는 [API 사용 가이드](../guides/API_USAGE.md)를 따른다.
 
 ## 구현 확정 사항
 
