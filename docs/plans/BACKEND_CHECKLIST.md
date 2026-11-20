@@ -209,7 +209,9 @@ Supabase Auth로 계정 생성과 로그인을 처리하고, FastAPI는 회원 �
 
 ## 참고
 
-- [실행 방법과 현재 구현](../../README.md)
+- [README (프로젝트 개요·빠른 시작)](../../README.md)
+- [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md)
+- [API 동작·호출 가이드 및 구현 메모](../guides/API_USAGE.md)
 - [MVP 계획](MVP_PLAN.md)
 - [백엔드 처리 규칙](../design/BACKEND_DESIGN.md)
 - [DB 설계](../design/DB_DESIGN.md)
