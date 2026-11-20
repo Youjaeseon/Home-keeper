@@ -4,9 +4,9 @@
 
 ## 문서 범위
 
-현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
+현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
 
-소식지, 실제 모델 기반 일괄 분석·진단, 요청문 생성, 업체 검색과 1:1 채팅 경로는 2026년 11월 20일 변경 사항을 반영한 후속 구현 설계다. 실행과 호출 절차는 [README](../../README.md)를 따른다.
+실제 모델 기반 일괄 분석·진단, 요청문 생성, 업체 검색과 1:1 채팅 경로는 2026년 11월 20일 변경 사항을 반영한 후속 구현 설계다. 실행과 호출 절차는 [README](../../README.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -36,7 +36,7 @@
 
 주소·지역이 필요한 화면(임대인 점검 요청, 업체 찾기)에서 앱은 등록 주소와 거주 지역을 보여주고 맞는지 확인한다. 다르면 위 프로필 저장 API로 수정한 뒤 사용한다. 프로필 미등록 상태에서도 기존 계정의 로그인과 기록 조회는 가능하며, 프로필이 필요한 행동에서 등록을 안내한다.
 
-소식지와 업체 검색에는 확인한 `region_id`를 보낸다. 임대인 점검 요청문에 상세 주소가 필요하면 앱에서 생성된 초안에 확인한 주소를 반영한다. 상세 `address`는 진단·요청문 생성 API의 모델 입력에 자동으로 포함하지 않는다. 요청문 편집본 저장 API는 추가하지 않는다.
+소식지 API는 서버가 로그인 사용자의 프로필 거주 지역 ID를 사용하고, 업체 검색은 앱이 확인한 `region_id`를 보낸다. 임대인 점검 요청문에 상세 주소가 필요하면 앱에서 생성된 초안에 확인한 주소를 반영한다. 상세 `address`는 진단·요청문 생성 API의 모델 입력에 자동으로 포함하지 않는다. 요청문 편집본 저장 API는 추가하지 않는다.
 
 ## 인증과 버전
 
@@ -49,7 +49,7 @@
 로그인 후 요청인 앱은 **`소식지` · `분석`(기본 탭) · `채팅` · `내 정보`** 4개 탭을 제공한다.
 
 1. 회원가입 후 프로필 저장을 완료하거나 기존 계정으로 로그인한다.
-2. **소식지 탭**: `GET /support-programs`로 사용자 거주 지역 + 전국 주거 지원 사업을 조회한다. 마감 공고는 `마감` 배지·흐림 처리와 하단 정렬로 표시하고, 카드 클릭 시 `GET /support-programs/{program_id}` 상세 요약과 외부 원문 URL을 연다.
+2. **소식지 탭**: `GET /support-programs`로 사용자 거주 지역 + 전국 주거 지원 사업을 조회한다. 마감 공고는 `마감` 배지·흐림 처리와 하단 정렬로 표시하고, 카드 클릭 시 `GET /support-programs/{program_id}` 상세 요약과 외부 원문 URL을 연다. *(백엔드 구현 완료, 모바일 화면 후속)*
 3. **분석 탭**: `POST /records`로 기록을 만들고, 한 화면에서 사진 1~2장(1장 필수) + 위치 + 재질 + 선택 증상 메모를 입력해 `POST /records/{record_id}/analyze`를 호출한다. 현재 서버는 실제 사진/LLM 호출 없이 입력값 기반 샘플 결과를 저장·반환하며 `source=sample`로 표시한다(실제 모델 연동은 후속).
 4. **분석 결과 페이지**: 심각도(`0~100%` 또는 `판단 보류`), `추정 원인`(AI 추정 안내·미확인 정보 포함), `해결방안`, `재발 방지책`을 확인한다.
    - `자가`가 아닌 거주 형태라면 필요 시 `POST /records/{record_id}/drafts/landlord`로 임대인 점검 요청문을 생성·복사한다.
@@ -152,19 +152,88 @@
 
 진단 재생성 성공 시 이전 요청문의 복사를 막고 새 진단으로 다시 생성한다. 요청문 생성 중 진단이 교체되면 저장 없이 `409`를 반환한다. 사용자가 편집한 문구는 앱 화면에서 유지하며 저장 API로 보내지 않는다.
 
-## 소식지 조회 (`GET /support-programs`, 구현 예정)
+## 소식지 조회 (`GET /support-programs`, 구현 완료)
 
-- `GET /support-programs?region_id=<UUID>&status=<all|active>`:
-  - `region_id`가 생략되면 로그인한 사용자의 프로필 `region_id`를 사용한다.
-  - 해당 지자체(`region_scope="local"`) 사업과 전국(`region_scope="national"`) 사업을 함께 반환하며, `status=active`이면 마감 공고를 제외하고 기본(`all`)이면 전체를 반환한다.
-  - 정렬 순서: **진행중(`is_closed=false`) 먼저 + 사용자 `housing_type` 일치 사업 우선 → 마감(`is_closed=true`) 하단 배치**.
-  - 항목 필드: `id`, `title`, `summary`, `organization_name`, `region_scope`, `region_name`, `target_housing_types`, `housing_type_matched`, `deadline_text`, `deadline_date`, `is_closed`, `source_attribution`, `detail_url`.
-- `GET /support-programs/{program_id}`:
-  - 소식지 상세 요약 페이지에 필요한 지원 내용, 선정 기준·대상 거주 형태, 신청기한(`deadline_text`, `is_closed`), `apply_method`, `detail_url`(외부 브라우저 열기용), `source_attribution`을 반환한다.
+`GET /support-programs`는 로그인 사용자의 프로필 `region_id`와 `housing_type`을 기준으로, 해당 지역·상위 지역(예: 용인시 → 경기도)·전국 공고를 반환한다. 별도 `region_id` 쿼리로 다른 지역을 조회하지 않는다.
+
+- `status=all`(기본)은 마감 공고를 포함하고, `status=active`는 마감되지 않은 공고만 반환한다.
+- 정렬: **진행 중(`is_closed=false`) 먼저 → 거주 형태 태그 일치(`housing_type_matched=true`) 우선 → 확정 마감일이 이른 순 → 출처 확인 시각 최신순**. 마감 공고는 하단에 배치한다.
+- `housing_type_matched`는 사용자의 거주 형태가 공고 태그와 겹치는지만 표시한다. 태그 일치는 실제 신청 자격을 확정하지 않는다.
+- 검증 시드와 같은 제목(끝의 `사업` 제외)·기관·지역의 보조금24 API 행은 목록에서 시드로 대체해 중복 표시하지 않는다. API 행 자체는 상세 ID로 조회할 수 있다.
+- `deadline_kind`로 신청기한 상태를 구분한다.
+  - `fixed`: 명확히 해석한 날짜가 있고 `deadline_date`가 채워짐
+  - `always_open`: 공식 원문이 상시·연중 신청임
+  - `unknown`: 원문이 없거나 복수 날짜·범위·조건부 등으로 모호함
+- `is_closed`는 `deadline_kind="fixed"`이고 `deadline_date`가 **한국 시간 기준 오늘보다 이전**일 때만 `true`다. 마감일 당일은 아직 마감이 아니며, 상시·기한 불명은 `false`다.
+- 프로필이 없으면 `404`, 결과가 없으면 `200`과 빈 배열을 반환한다. DB 오류를 빈 목록으로 대체하지 않는다.
+
+목록 응답 예시 (`200 OK`):
+
+```json
+[
+  {
+    "id": "<program UUID>",
+    "title": "용인청년 부동산 중개보수 감면",
+    "summary": "민관 협력을 통해 ...",
+    "organization_name": "용인시",
+    "region_scope": "local",
+    "region_name": "경기도 용인시",
+    "target_housing_types": ["monthly_rent", "jeonse"],
+    "housing_type_matched": true,
+    "deadline_text": "2026-01-01 00:00 ~ 2026-12-31 00:00",
+    "deadline_date": "2026-12-31",
+    "deadline_kind": "fixed",
+    "is_closed": false,
+    "detail_url": "https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026021000000000000055001",
+    "source": "seed",
+    "source_attribution": "용인청년포털 · 용인시",
+    "source_checked_at": "2026-11-20T04:00:00Z",
+    "updated_at": "2026-11-20T04:00:00Z"
+  }
+]
+```
+
+`GET /support-programs/{program_id}`는 인증된 사용자라면 프로필 없이도 조회할 수 있으며, 목록 공통 필드에 다음 상세 필드를 더한다.
+
+- `support_target`: 공식 원문의 지원 대상·자격
+- `support_content`: 공식 원문의 지원 내용
+- `selection_criteria`: 공식 원문의 선정 기준(없으면 `null`)
+- `apply_method`: 공식 원문의 신청 방법(없으면 `null`)
+- `synced_at`: 보조금24 API 마지막 동기화 시각(검증 시드는 `null`)
+
+```json
+{
+  "id": "<program UUID>",
+  "title": "청년월세 지원사업",
+  "summary": "...",
+  "organization_name": "국토교통부",
+  "region_scope": "national",
+  "region_name": "전국",
+  "target_housing_types": ["monthly_rent"],
+  "support_target": "19세~34세 독립거주 무주택 청년 중 ...",
+  "support_content": "월세로 거주하는 청년을 대상으로 ...",
+  "selection_criteria": null,
+  "apply_method": "주소지 관할 주민센터에 청년 본인이 방문하거나 복지로에서 온라인으로 신청",
+  "deadline_text": "2026년 신규수혜자 신청접수 기간: 3.30(월) 09:00 ~ 5.29(금) 16:00까지",
+  "deadline_date": "2026-05-29",
+  "deadline_kind": "fixed",
+  "is_closed": true,
+  "detail_url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00004661",
+  "source": "seed",
+  "source_attribution": "복지로 · 국토교통부",
+  "source_checked_at": "2026-11-20T04:00:00Z",
+  "synced_at": null,
+  "updated_at": "2026-11-20T04:00:00Z"
+}
+```
+
+- 원문 URL은 `http`·`https`만 허용한다. 클라이언트가 공고를 생성·수정·삭제하는 API는 두지 않는다.
+- 출처 표시: 시드·동기화 데이터 모두 `source_attribution`을 포함한다. 보조금24 동기화 행의 출처는 `행정안전부 대한민국 공공서비스(혜택) 정보 · 공공데이터포털`이다.
+- `source_checked_at`은 해당 행의 출처를 마지막으로 확인한 시각이고, `synced_at`은 외부 API에서 마지막으로 갱신한 시각이다. 모바일은 두 값을 구분해 표시할 수 있다.
 
 ## 업체 조회 (`GET /regions` 구현 완료, `GET /work-types`, `GET /providers` 구현 예정)
 
-`GET /regions`는 회원 프로필의 거주 지역 선택과 소식지·업체 검색에 사용할 지역 ID와 시·군·구가 포함된 표시 이름을 반환한다. 응답은 `{ "region_id", "name", "display_name" }` 배열이며 `display_name` 순으로 정렬한다. 마이그레이션 `007_profiles_and_regions.sql`은 시연 지역 `용인`(`name="yongin"`, `display_name="경기도 용인시"`)을 중복 없이 시드한다. `GET /work-types`는 작업 ID와 이름을 반환한다. 앱은 진단의 추천 작업을 미리 선택한다.
+`GET /regions`는 회원 프로필의 거주 지역 선택과 소식지·업체 검색에 사용할 지역 ID와 시·군·구가 포함된 표시 이름을 반환한다. 응답은 `{ "region_id", "name", "display_name" }` 배열이며 `display_name` 순으로 정렬한다. 마이그레이션 `007_profiles_and_regions.sql`은 시연 지역 `용인`(`name="yongin"`, `display_name="경기도 용인시"`)을 시드하고, `008_support_programs.sql`은 상위 지역 `경기도`(`name="gyeonggi"`)를 추가해 용인시의 상위 지역으로 연결한다. `GET /work-types`는 작업 ID와 이름을 반환한다. 앱은 진단의 추천 작업을 미리 선택한다.
 
 업체 검색 전 앱은 등록 주소·거주 지역이 맞는지 확인하고 확인한 거주 지역 ID를 사용한다. `GET /providers?region_id=<UUID>&work_type_id=<UUID>`는 출장 가능 지역과 작업이 모두 맞는 업체를 반환한다.
 
@@ -193,7 +262,7 @@
 | 인증 실패 또는 만료 | 401 |
 | 기록·프로필·지원 사업·채팅방을 찾지 못했거나 접근 권한 없음 | 404 |
 | 입력 버전 충돌, 진단 교체 충돌, 동일 메시지 ID의 내용 충돌 | 409 |
-| 요청 필드·거주 형태·검색 코드·업로드 파일이 유효하지 않거나 프로필의 지역·닉네임이 유효하지 않음 | 422 |
+| 요청 필드·거주 형태·검색 코드·업로드 파일이 유효하지 않거나 프로필의 지역·닉네임 또는 `status` 쿼리가 유효하지 않음 | 422 |
 | 외부 모델 또는 공공 API 호출·응답 형식 오류 | 502 |
 | 외부 모델 또는 공공 API 응답 제한 시간 초과 | 504 |
 
@@ -211,4 +280,4 @@
 
 - 실제 모델 연동 시 `POST /records/{record_id}/analyze`의 YOLO·비전 LLM·텍스트 LLM 인증·요청·응답·좌표 형식과 배포 환경 제한 시간
 - 채팅 실시간 수신 방식(`REST 폴링` / `WebSocket` / `Supabase Realtime`)과 `GET /chat/rooms/{room_id}/messages` 증분 조회 파라미터
-- 보조금24 API(`gov24/v3/serviceList`) 연동 시 주거 필터 키워드 및 동기화 주기
+- 보조금24 API(`gov24/v3/serviceList`) 동기화의 실제 운영 키·응답 최신성 검증과 주거 필터 키워드 보정

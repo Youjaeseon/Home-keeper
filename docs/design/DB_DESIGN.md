@@ -1,12 +1,12 @@
 # MVP DB 설계 초안
 
-합의한 저장 규칙을 기준으로 정리한 테이블 설계다. 아래 테이블 표는 전체 설계 요약이며, 현재 실제 DB에 적용된 컬럼·타입은 마이그레이션(`001`–`007`)과 구현 확정 사항을 함께 확인한다. 접근·생성·실패 처리 규칙은 [백엔드 설계](BACKEND_DESIGN.md)를 따른다.
+합의한 저장 규칙을 기준으로 정리한 테이블 설계다. 아래 테이블 표는 전체 설계 요약이며, 현재 실제 DB에 적용된 컬럼·타입은 마이그레이션(`001`–`009`)과 구현 확정 사항을 함께 확인한다. 접근·생성·실패 처리 규칙은 [백엔드 설계](BACKEND_DESIGN.md)를 따른다.
 
 ## 문서 범위
 
-아래 구현 확정 사항은 현재 마이그레이션(`001`–`007`)에 반영된 내용이다.
+아래 구현 확정 사항은 현재 마이그레이션(`001`–`009`)에 반영된 내용이다.
 
-2026년 11월 20일 팀 회의 변경 사항을 반영해 `records.material`, 샘플 일괄 분석 결과 저장, 회원 프로필(`profiles`)과 시연 지역 시드를 구현했다. `providers.account_user_id`, `support_programs`(소식지 주거 지원 사업), `chat_rooms`, `chat_messages`(업체–요청인 1:1 채팅) 추가는 후속 마이그레이션 대상으로 설계했다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행 방법은 [README](../../README.md)를 따른다.
+2026년 11월 20일 팀 회의 변경 사항을 반영해 `records.material`, 샘플 일괄 분석 결과 저장, 회원 프로필(`profiles`), 지역 상하 관계(`regions.parent_id`), 주거 지원 사업 소식지(`support_programs`)와 검증 시드를 구현했다. `providers.account_user_id`, `support_programs`의 보조금24 동기화 운영 데이터, `chat_rooms`, `chat_messages`(업체–요청인 1:1 채팅)는 후속 작업·운영 데이터다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행 방법은 [README](../../README.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -17,7 +17,7 @@
 - 질문·메시지 순서는 `records.conversation_sequence`에서 함께 발급한다. 각 테이블의 `(record_id, sequence)` 유일 제약은 유지하고, 두 테이블 사이의 순서는 기록 행 잠금과 같은 트랜잭션에서 조정한다. *(현재 MVP 미사용/보류)*
 - `messages`는 `(record_id, question_id)` 복합 외래키로 같은 기록의 질문만 참조한다. `sender = 'user'`인 행은 `client_message_id`가 필수다. *(현재 MVP 미사용/보류)*
 - `messages.input_revision`은 그 메시지가 반영된 뒤의 기록 입력 버전이다. *(현재 MVP 미사용/보류)*
-- 런타임 역할 `career_pair_runtime`은 마이그레이션이 `NOLOGIN`으로 만들고 현재 구현된 API에 필요한 DML만 부여한다(기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 프로필 `SELECT/INSERT/UPDATE`, 업체·지역·작업 참조 테이블 `SELECT`). 질문 INSERT/UPDATE는 `005_next_question_grants.sql`에서 추가하고, `records.material`은 `006_records_material.sql`, `profiles`와 용인 지역 시드는 `007_profiles_and_regions.sql`에서 추가한다. 기록의 테이블 단위 SELECT/UPDATE와 RLS 정책이 새 컬럼에도 적용되므로 별도 컬럼 권한은 추가하지 않는다. 로그인 비밀번호는 관리자가 별도로 설정한다. 새 기능이 더 많은 권한을 필요로 하면 후속 마이그레이션에서 명시적으로 부여한다. Supabase Data API 역할(`anon`, `authenticated`, `service_role`)이 있으면 앱 테이블 권한과 향후 테이블 기본 권한을 회수한다.
+- 런타임 역할 `career_pair_runtime`은 마이그레이션이 `NOLOGIN`으로 만들고 현재 구현된 API에 필요한 DML만 부여한다(기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 프로필 `SELECT/INSERT/UPDATE`, 지원 사업 `SELECT/INSERT/UPDATE`, 업체·지역·작업 참조 테이블 `SELECT`). 질문 INSERT/UPDATE는 `005_next_question_grants.sql`, `records.material`은 `006_records_material.sql`, `profiles`·용인 지역·기록 목록 인덱스는 `007_profiles_and_regions.sql`, 지역 상하 관계·지원 사업·시드는 `008_support_programs.sql`·`009_support_program_seed.sql`에서 추가한다. 기록의 테이블 단위 SELECT/UPDATE와 RLS 정책이 새 컬럼에도 적용되므로 별도 컬럼 권한은 추가하지 않는다. 동기화는 런타임 역할로 수행하며 지원 사업 DELETE 권한은 주지 않는다. 로그인 비밀번호는 관리자가 별도로 설정한다. 새 기능이 더 많은 권한을 필요로 하면 후속 마이그레이션에서 명시적으로 부여한다. Supabase Data API 역할(`anon`, `authenticated`, `service_role`)이 있으면 앱 테이블 권한과 향후 테이블 기본 권한을 회수한다.
 - 앱 테이블에는 `003_backend_rls.sql`이 RLS를 켜고 `career_pair_runtime`만 통과시키는 정책을 둔다. Data API 역할은 권한 회수로 막고, 사용자별 접근 제어는 FastAPI의 소유권/참여자 검사로 수행한다.
 
 ## 테이블
@@ -26,9 +26,9 @@
 | --- | --- | --- |
 | `profiles` | 구현됨 (`007`) | `user_id uuid PK/FK auth.users(id)`, `nickname text NOT NULL`, `role text NOT NULL`, `region_id uuid NOT NULL FK regions(id)`, `address text NULL`, `housing_type text NOT NULL`, `created_at timestamptz`, `updated_at timestamptz` |
 | `records` | 구현됨 (`material` 포함) | `id uuid PK`, `owner_id uuid`, `location text`, `material text NULL`, `symptoms text`, `photo_observations jsonb`, `input_revision bigint`, `next_question_result jsonb` *(레거시)*, `next_question_revision bigint` *(레거시)*, `diagnosis jsonb`, `diagnosis_revision bigint`, `diagnosis_generation bigint`, `landlord_draft text`, `landlord_draft_revision bigint`, `landlord_draft_diagnosis_generation bigint`, `provider_draft text`, `provider_draft_revision bigint`, `provider_draft_diagnosis_generation bigint`, `conversation_sequence bigint` *(레거시)*, `created_at timestamptz`, `updated_at timestamptz` |
-| `support_programs` | 구현 예정 | `id uuid PK`, `external_id text UNIQUE NULL`, `source text NOT NULL`, `title text NOT NULL`, `summary text NOT NULL`, `organization_name text NOT NULL`, `region_scope text NOT NULL`, `region_id uuid NULL FK regions(id)`, `target_housing_types text[]`, `deadline_text text NOT NULL`, `deadline_date date NULL`, `apply_method text NULL`, `detail_url text NULL`, `source_attribution text NOT NULL`, `synced_at timestamptz NULL`, `created_at timestamptz`, `updated_at timestamptz` |
+| `support_programs` | 구현됨 (`008`·`009`) | `id uuid PK`, `external_id text UNIQUE NOT NULL`, `source text`(`seed`/`gov24_api`), `title`, `summary`, `organization_name`, `region_scope`(`national`/`local`), `region_id uuid NULL FK regions(id)`, `target_housing_types text[]`, `support_target`, `support_content`, `selection_criteria`, `apply_method`, `deadline_text`, `deadline_date date NULL`, `deadline_kind`(`fixed`/`always_open`/`unknown`), `detail_url`, `source_attribution`, `source_checked_at`, `synced_at`, `created_at`, `updated_at` |
 | `providers` | 구현됨 (`account_user_id` 추가 예정) | `id uuid PK`, `name text NOT NULL`, `phone text NOT NULL`, `account_user_id uuid NULL UNIQUE FK auth.users(id)` *(추가 예정)* |
-| `regions` | 구현됨 | `id uuid PK`, `name text NOT NULL UNIQUE`, `display_name text NOT NULL` |
+| `regions` | 구현됨 (`008`에서 상하 관계 추가) | `id uuid PK`, `name text NOT NULL UNIQUE`, `display_name text NOT NULL`, `parent_id uuid NULL FK regions(id)` |
 | `work_types` | 구현됨 | `id uuid PK`, `name text NOT NULL UNIQUE` |
 | `provider_regions` | 구현됨 | `provider_id uuid FK`, `region_id uuid FK` |
 | `provider_work_types` | 구현됨 | `provider_id uuid FK`, `work_type_id uuid FK` |
@@ -58,16 +58,33 @@
 
 계정 생성과 프로필 저장은 별도 단계이며, `PUT /me/profile`은 같은 사용자 ID로 upsert해 저장 실패 후 재시도해도 한 행만 유지한다. 프로필이 없는 기존 계정에는 프로필 등록을 안내한다. 상세 주소를 외부 AI 모델 입력에 자동 포함하지 않으며, 프로필 갱신으로 과거 기록과 요청문을 일괄 수정하지 않는다.
 
-## 소식지 추가 설계 (`support_programs`, 구현 예정)
+## 소식지 (`support_programs`, 구현 완료)
 
-`support_programs`는 주거 관련 정부·지자체 지원 사업을 저장할 테이블이다.
+`support_programs`는 주거 관련 정부·지자체 지원 사업과 공고를 저장하는 테이블이다. `008_support_programs.sql`이 테이블·제약·인덱스·RLS·런타임 권한을 만들고, `009_support_program_seed.sql`이 2026-11-20에 공식 원문으로 확인한 시드 4건을 넣는다. 시드는 `external_id`가 `seed:`로 시작하고 `ON CONFLICT (external_id) DO NOTHING`이라 반복 적용해도 중복되지 않는다.
 
-- `external_id`: 보조금24 API의 서비스 ID(`SVC_ID`, `UNIQUE NULL`). API 동기화 시 upsert 기준 키로 사용한다.
-- `source`: `CHECK (source IN ('gov24_api', 'seed'))`.
-- `region_scope`: `CHECK (region_scope IN ('national', 'local'))`. `national`일 때는 `region_id`가 `NULL`, `local`일 때는 `regions(id)`를 참조할 수 있다.
-- `target_housing_types`: `text[] NOT NULL DEFAULT '{}'`. 사용자 `housing_type`과 겹치는 사업을 우선 표시·태그하는 데 사용한다.
-- `deadline_text` / `deadline_date`: 보조금24 API의 자유 텍스트 `신청기한` 원문을 `deadline_text`에 저장하고, 날짜 파싱 또는 시드 입력 시 `deadline_date`(`date NULL`)를 함께 저장한다. `deadline_date < CURRENT_DATE`인 공고만 마감으로 판정한다.
-- `source_attribution`: 공공누리(KOGL) 기준에 따른 출처 표시 문자열(예: `행정안전부 공공서비스(혜택) 정보 · 공공데이터포털`).
+- `external_id`: 보조금24 API의 `서비스ID` 또는 시드의 고정 ID. `UNIQUE`, upsert 기준이다.
+- `source`: `CHECK (source IN ('seed', 'gov24_api'))`.
+- `region_scope`: `CHECK (region_scope IN ('national', 'local'))`. `national`은 `region_id IS NULL`, `local`은 `region_id IS NOT NULL`이어야 한다.
+- `region_id`: `regions(id)` 참조. `regions.parent_id`로 상위 지역을 표현하며, `008`은 경기도(`gyeonggi`)를 추가하고 용인시(`yongin`)의 상위로 연결한다. 기존 부모 관계가 있으면 덮어쓰지 않는다.
+- `target_housing_types`: `monthly_rent`, `jeonse`, `semi_jeonse`, `owned`, `other`만 허용하는 `text[]`. 공고 원문에 명시된 거주 형태만 태그하며, 태그가 신청 자격을 확정하지 않는다.
+- `support_target`·`support_content`: 공식 원문의 지원 대상과 지원 내용. 동기화에서 비어 있으면 해당 행을 저장하지 않는다.
+- `selection_criteria`·`apply_method`: 원문에 있을 때만 저장하며 없으면 `NULL`이다.
+- `deadline_text`: 공식 신청기한 원문(없으면 `NULL`). `deadline_date`: 명확히 해석한 마감일만 저장하고, `deadline_kind`는 `fixed`·`always_open`·`unknown` 중 하나다. `fixed`는 날짜가 필수이고 나머지는 날짜가 `NULL`이어야 한다. 마감일 당일은 마감으로 처리하지 않고 한국 시간 기준 다음 날부터 `is_closed=true`가 된다.
+- `detail_url`: 공식 원문 URL. `http`·`https`만 허용하는 DB CHECK가 있다.
+- `source_attribution`: 화면에 표시할 출처. 보조금24 동기화는 `행정안전부 대한민국 공공서비스(혜택) 정보 · 공공데이터포털`, 시드는 각 공식 원문 기관을 기록한다.
+- `source_checked_at`: 출처를 마지막으로 확인한 시각. `synced_at`: 외부 API에서 마지막으로 갱신한 시각(시드는 `NULL`).
+- `created_at`·`updated_at`: 생성·갱신 시각.
+
+시드 데이터 계약은 다음 네 건이다. 공고명·마감·URL은 공식 원문에서 확인한 범위만 넣었고, 확인되지 않은 마감은 `NULL`/`unknown`으로 보존한다.
+
+| `external_id` | 범위 | 공식 원문 |
+| --- | --- | --- |
+| `seed:gov24-youth-monthly-rent-2026` | 전국 · 국토교통부 | [복지로 청년월세 지원사업](https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00004661) |
+| `seed:gyeonggi-independent-youth-housing-2026` | 경기도 · 경기주택도시공사 | [경기청년포털 자립준비청년 주거비 지원사업](https://youth.gg.go.kr/gg/intro/youth-policy-educational-testing.do?articleNo=9010&mode=view) |
+| `seed:yongin-youth-brokerage-fee-2026` | 용인시 | [용인청년포털 부동산 중개보수 감면](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026021000000000000055001) |
+| `seed:yongin-youth-monthly-rent-2026` | 용인시 | [용인청년포털 청년월세 지원](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026032300000000000061001) |
+
+보조금24 동기화는 `serviceList`의 공식 필드 중 `서비스ID`, `서비스명`, `서비스목적요약`, `소관기관명`, `소관기관유형`, `지원대상`, `지원내용`, `신청방법`, `신청기한`, `상세조회URL`, `서비스분야`를 사용한다. 서비스명에 주거 관련 키워드가 있는 사업만 반영한다. `소관기관명`이 등록 지역 표시명과 정확히 일치할 때만 `local`로 확정하고, 중앙행정기관은 `national`로만 분류한다. 시·군·구명이 다르거나 모호한 지역은 저장하지 않는다. 거주 형태도 원문에 명시된 경우만 태그한다. 검증 시드와 같은 제목(끝의 `사업` 제외)·기관·지역의 API 행은 목록에서 시드로 대체한다.
 
 ## 업체–요청인 1:1 채팅 추가 설계 (`chat_rooms`, `chat_messages`, 구현 예정)
 
@@ -86,7 +103,7 @@
 
 - `profiles`, `support_programs`, `chat_rooms`, `chat_messages` 모두 기존 앱 테이블과 동일하게 Supabase Data API(`anon`, `authenticated`, `service_role`) 권한을 회수하고, `career_pair_runtime` 역할만 필요한 DML 권한을 부여해 RLS를 통과시키는 구조를 기본으로 둔다.
   - `profiles`(구현 완료): `SELECT, INSERT, UPDATE`
-  - `support_programs`: `SELECT, INSERT, UPDATE` (동기화 작업 시 백엔드 갱신 허용)
+  - `support_programs`(구현 완료): `SELECT, INSERT, UPDATE` (동기화 upsert용, DELETE 없음)
   - `chat_rooms`, `chat_messages`: `SELECT, INSERT, UPDATE`
 - *(예외 참고)* 만약 팀원 협의 결과 채팅 실시간 수신 방식으로 `Supabase Realtime`을 채택한다면, `chat_rooms`와 `chat_messages`에 한해 `authenticated` 참여자 본인만 조회할 수 있는 예외 RLS 정책을 별도로 검토해야 한다. `FastAPI REST 폴링` 또는 `FastAPI WebSocket`을 선택하면 기존 Data API 차단 경계를 그대로 유지한다.
 
@@ -94,7 +111,8 @@
 
 - `records(owner_id)` 및 `(owner_id, updated_at DESC)`에 인덱스를 두어 `내 정보`의 내 하자 분석 기록 목록 조회를 지원한다. `(owner_id, updated_at DESC)` 인덱스는 `007_profiles_and_regions.sql`에서 추가했다.
 - `profiles(region_id)` 인덱스를 두어 지역별 조회를 지원한다. `007_profiles_and_regions.sql`에서 추가했다.
-- `support_programs(region_scope, region_id, deadline_date)`에 인덱스를 두어 거주 지역+전국 필터링과 마감 하단 정렬을 지원한다.
+- `support_programs(region_scope, region_id, deadline_date)` 인덱스와 `(source, synced_at DESC)` 인덱스로 지역 필터·마감 정렬·동기화 상태를 지원한다. `008_support_programs.sql`에서 추가했다.
+- `regions(parent_id)` 인덱스로 상위 지역 조회를 지원한다. `008_support_programs.sql`에서 추가했다.
 - `chat_rooms(requester_id, provider_id)` 유일 제약과 `chat_rooms(requester_id, last_message_at DESC)`, `chat_rooms(provider_id, last_message_at DESC)` 인덱스를 둔다.
 - `chat_messages(room_id, client_message_id)` 유일 제약과 `chat_messages(room_id, created_at, id)` 인덱스를 둔다.
 - 업체와 지역, 업체와 작업 연결은 각각 두 ID를 복합 기본키로 사용하고, 지역 ID·작업 ID 역방향 인덱스를 유지한다.
