@@ -2,9 +2,9 @@
 
 ## 문서 범위
 
-이 문서는 2026년 11월 20일 팀 회의 변경 사항을 반영한 MVP 전체의 백엔드 처리 규칙을 설명한다. 현재 저장소에 구현된 기능은 인증, 하자 기록 CRUD(`material` 포함), 내 기록 목록(`GET /records`), 회원 프로필(`GET/PUT /me/profile`)·지역 목록(`GET /regions`), **주거 지원 사업 소식지**(목록·상세·보조금24 수동 동기화), 사진·위치·재질 기반 **샘플 일괄 분석**, 그리고 **현재 MVP 흐름에서는 사용하지 않는 레거시/보류 상태의 대화·시연용 다음 질문 API**(`messages`, `next-question`)다. 실제 모델 기반 사진 분석·진단, 요청문 생성, 업체 검색과 1:1 채팅은 후속 구현 대상이다.
+이 문서는 2026년 11월 20일 팀 회의 변경 사항을 반영한 MVP 전체의 백엔드 처리 규칙을 설명한다. 현재 저장소에 구현된 기능은 인증, 하자 기록 CRUD(`material` 포함), 내 기록 목록(`GET /records`), 회원 프로필(`GET/PUT /me/profile`)·지역 목록(`GET /regions`), **주거 지원 사업 소식지**(목록·상세·보조금24 수동 동기화), 사진·위치·재질 기반 **샘플 일괄 분석**, **요청문 생성·기본 양식**, **업체 검색**, **요청인–업체 1:1 채팅 REST API**, 그리고 **현재 MVP 흐름에서는 사용하지 않는 레거시/보류 상태의 대화·시연용 다음 질문 API**(`messages`, `next-question`)다. 실제 모델 기반 사진 분석·진단 재생성과 실시간 채팅 수신 방식은 후속이다.
 
-실행과 검증 절차는 [README](../../README.md), 테이블과 제약은 [DB 설계](DB_DESIGN.md), 앱 연동 계약은 [API 설계](API_DESIGN.md)를 따른다.
+실행과 검증 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 테이블과 제약은 [DB 설계](DB_DESIGN.md), 앱 연동 계약은 [API 설계](API_DESIGN.md)를 따른다.
 
 ## 인증과 접근 권한
 
@@ -43,11 +43,11 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 | 회원 프로필 (`profiles`) | 구현됨 (`007`) | 사용자 ID, 닉네임, 역할(`requester`/`provider`), 거주 지역 ID, 선택 등록 주소, 거주 형태(`monthly_rent`/`jeonse`/`semi_jeonse`/`owned`/`other`), 수정 시각. 로그인한 사용자 본인만 조회·수정한다. |
 | 하자 기록 (`records`) | 구현됨 (`material` 포함) | 기록 ID, 소유자 ID, 위치·재질·선택 증상 메모, 사진 관찰 요약, 최신 진단(JSONB), 최신 점검 요청문, 최신 견적 요청문 |
 | 소식지 지원 사업 (`support_programs`) | 구현됨 (`008`·`009`) | 지원 사업 ID, 외부 ID, 출처(`gov24_api`/`seed`), 제목, 요약, 소관기관, 지역 구분(`national`/`local`), 지역 ID, 대상 거주 형태 태그, 지원 대상·내용, 선정 기준, 신청 방법, 신청기한 원문·마감일·종류, 원문 URL, 출처 표기, 출처 확인 시각, 동기화 시각 |
-| 업체 (`providers` 등) | 테이블 구현됨 (`account_user_id` 추가 예정) | 업체 ID, 업체명, 연락처, 사전 등록 업체 계정 사용자 ID, 출장 지역 연결, 작업 종류 연결 |
-| 채팅방·메시지 (`chat_rooms`, `chat_messages`) | 구현 예정 | 채팅방 ID, 요청인 ID, 업체 ID, 최근 연결 기록 ID, 발신자 ID·역할, 메시지 유형(`text`/`record_summary`), 연결 기록 ID, 본문·요약 페이로드, `client_message_id` |
+| 업체 (`providers` 등) | 구현됨 (`account_user_id`는 `010`) | 업체 ID, 업체명, 연락처, 사전 등록 업체 계정 사용자 ID, 출장 지역 연결, 작업 종류 연결 |
+| 채팅방·메시지 (`chat_rooms`, `chat_messages`) | 구현됨 (`010`) | 채팅방 ID, 요청인 ID, 업체 ID, 최근 연결 기록 ID, 발신자 ID·역할, 메시지 유형(`text`/`record_summary`), 연결 기록 ID, 본문·요약 페이로드, `client_message_id` |
 | 질문·대화 메시지 (`questions`, `messages`) | 기존 구현 (MVP 미사용/보류) | 분석 채팅창 제거에 따라 현재 MVP에서는 호출하지 않는 레거시 테이블. 추후 설문/객관식 추가 질문 도입 시 재검토한다. |
 
-업체 검색은 사용자가 확인한 거주 지역 `region_id`와 `work_type_id`를 받는다. FastAPI는 진단 시 AI에 등록된 작업 목록을 제공하고 그중 하나를 고르게 한다. 등록되지 않은 작업을 반환하거나 판단 근거가 부족하면 `원인 점검`을 선택하고 추천 이유를 보여준다. 앱은 같은 목록에서 제안된 작업을 미리 선택하며 사용자가 변경할 수 있다. 업체 검색이 성공했고 입력한 동네(시연 지역: 용인)와 작업이 모두 맞는 실제 업체가 없을 때만 API가 샘플 후보를 반환한다. 샘플 여부를 응답에 명시해 앱이 샘플 표시와 연락 시연 안내에 사용하게 한다.
+업체 검색은 사용자가 확인한 거주 지역 `region_id`와 `work_type_id`를 받는다. FastAPI는 진단 시 AI에 등록된 작업 목록을 제공하고 그중 하나를 고르게 한다. 등록되지 않은 작업을 반환하거나 판단 근거가 부족하면 `원인 점검`을 선택하고 추천 이유를 보여준다. 앱은 같은 목록에서 제안된 작업을 미리 선택하며 사용자가 변경할 수 있다. 업체 검색이 성공했고 입력한 동네(시연 지역: 용인)와 작업이 모두 맞는 실제 업체가 없을 때만 API가 샘플 후보를 반환한다. 샘플은 실제 `providers` 행이 아니며 전화번호를 만들지 않는다. 응답의 `is_sample`과 업체별 `chat_available`을 명시해 앱이 샘플 표시·연락 시연 안내·채팅 가능 여부를 구분하게 한다. DB 오류는 빈 결과나 샘플로 숨기지 않고 `500`으로 반환한다.
 
 ## 일괄 분석과 진단 처리 (샘플 구현 완료)
 
@@ -99,15 +99,16 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 - **상세·출처**: 상세 응답에는 지원 대상·내용·선정 기준·신청 방법·신청기한·공식 URL과 `source_attribution`, `source_checked_at`, `synced_at`을 포함한다. `detail_url`은 DB CHECK와 동기화 검증 모두에서 http/https만 허용한다.
 - **오류 처리**: 프로필 미등록 목록 조회는 404, 없는 공고 상세는 404, 잘못된 쿼리·UUID는 422다. DB 오류를 빈 목록으로 대체하지 않는다. 클라이언트가 공고를 생성·수정·삭제하는 API는 없다.
 
-## 업체–요청인 1:1 채팅 (구현 예정)
+## 업체–요청인 1:1 채팅 (REST 구현 완료)
 
-기존 `SMS 메시지 보내기`를 앱 내 1:1 채팅으로 대체한다.
+기존 `SMS 메시지 보내기`를 앱 내 1:1 채팅으로 대체한다. 저장·목록·이력 조회는 FastAPI REST API로 구현했고, 실시간 수신 방식은 팀 협의 전이라 WebSocket·Supabase Realtime·읽음 표시·푸시를 추가하지 않았다.
 
-- **방 생성과 재사용**: 요청인이 업체 목록에서 실제 업체의 `채팅하기`를 누르면 `POST /chat/rooms`가 `(requester_id, provider_id)` 기준으로 기존 채팅방을 재사용하거나 새 방을 만든다. `샘플` 업체는 방을 만들지 않고 앱에서 시연 안내를 띄운다.
-- **하자 분석 요약 자동 공유**: 분석 결과 화면을 거쳐 `record_id`와 함께 채팅방에 진입하면, 해당 하자 기록의 요약(의심 유형·위치·재질·심각도%·추정 원인)을 `message_type='record_summary'` 메시지로 채팅방에 자동 등록한다. 같은 기록 요약이 직전과 동일하면 중복 등록하지 않는다. 견적 요청문은 요청인이 채팅 입력창 초안으로 불러와 수정·전송하거나 복사해 쓸 수 있다.
-- **접근 제어**: 채팅방·메시지 조회와 전송은 `room.requester_id == current_user_id` 또는 해당 업체의 `provider.account_user_id == current_user_id`인 참여자에게만 허용하고 그 외에는 404를 반환한다.
-- **메시지 멱등성**: REST 메시지 전송(`POST /chat/rooms/{room_id}/messages`)은 `(room_id, client_message_id)` 유일 제약으로 재전송 중복을 막는다.
-- **실시간 전송 방식(팀원 협의 보류)**: 메시지 저장·이력 조회는 FastAPI REST API로 두되, 실시간 수신 방식(`FastAPI REST 짧은 주기 폴링` vs `FastAPI WebSocket` vs `Supabase Realtime`)과 시연용 업체 계정 로그인 후 최소 화면 구성은 모바일·팀원과 협의해 확정한다. *(참고: 만약 `Supabase Realtime`을 채택할 경우, 기존 [003_backend_rls.sql](../../apps/api/migrations/003_backend_rls.sql)의 Data API 전면 차단 정책에서 채팅 테이블만 예외 RLS를 열어야 하는 보안 경계 변경이 필요하다.)*
+- **방 생성과 재사용**: 요청인이 `POST /chat/rooms`에 `provider_id`(와 선택 `record_id`)를 보내면 `(requester_id, provider_id)` 기준으로 기존 방을 재사용하거나 새 방을 만든다. DB 유일 제약이 동시 생성도 하나로 수렴시킨다. 샘플 업체는 DB에 없으므로 `404`, 계정 미연결 업체는 `422`이며, 업체 계정은 방을 만들 수 없다(`422`).
+- **하자 분석 요약 자동 공유**: 서버가 저장된 기록·진단으로 `message_type='record_summary'` 메시지를 만든다. 본문은 `[하자 분석 요약]` 형식의 텍스트, `payload`는 위치·재질·증상·의심 유형·심각도·추정 원인·진단 버전 스냅샷이다. 클라이언트가 보낸 요약은 받지 않고, 같은 방에 같은 기록·같은 `payload`가 있으면 다시 공유하지 않는다. 진단을 재생성하면 `payload`가 달라져 새 요약이 공유된다. 등록 주소·이메일·닉네임·거주 형태·원본 사진은 포함하지 않는다.
+- **접근 제어**: 채팅방·메시지 조회와 전송은 `room.requester_id == current_user_id` 또는 해당 업체의 `provider.account_user_id == current_user_id`인 참여자에게만 허용하고 그 외에는 `404`를 반환한다. 업체는 공유 요약만 볼 수 있고 원본 기록·프로필 API에는 접근할 수 없다.
+- **메시지 멱등성**: `(room_id, client_message_id)` 유일 제약과 `ON CONFLICT DO NOTHING`으로 재전송 중복을 막는다. 같은 ID·같은 내용은 기존 메시지를 반환하고, 같은 ID·다른 내용은 `409`(`message_conflict`)다. 발신자 ID·역할은 토큰과 방 참여 정보에서 정하며 요청 본문으로 받지 않는다.
+- **정렬·페이지·반복 조회**: 메시지는 `created_at`, `id` 오름차순이고 `limit`(기본 50, 최대 100)·`offset` 페이지를 쓴다. 실시간 수신 미확정 상태에서 앱은 `GET /chat/rooms`의 `last_message_at` 확인 후 받은 개수만큼 `offset`을 늘려 재조회하는 REST 폴링을 사용한다.
+- **기존 레거시와 분리**: `records/messages`(AI 추가 질문)와 `chat_messages`(업체 채팅)는 별도 테이블·API이며 서로 재사용하지 않는다.
 
 ## 개인정보 저장 검토
 
@@ -156,12 +157,12 @@ DB 저장을 직접 허용한다는 별도 문구는 확인되지 않았으나, 
 | `PATCH /records/{record_id}` | 구현됨 | 변경할 위치·재질·증상 | 저장된 값, `input_revision` |
 | `POST /records/{record_id}/analyze` | 구현됨 (샘플) | 사진 1~2장(전체·근접), `location`, `material`, `symptoms?`, 외부 분석 동의 여부 | 사진별 샘플 상태(`not_analyzed`, `detections=[]`), 입력 기반 샘플 진단(`심각도%`, `추정 원인`, `해결방안`, `재발 방지책`), `input_revision`, `diagnosis_generation`, `source="sample"` |
 | `POST /records/{record_id}/diagnosis` | 구현 예정 | `regenerate?` | 최신 진단 재사용 또는 재생성 결과(`diagnosis_generation` 포함) |
-| `POST /records/{record_id}/drafts/{kind}` | 구현 예정 | 요청문 종류(`landlord` \| `provider`) | 요청문과 입력 버전·진단 생성 번호 |
-| `GET /records/{record_id}/drafts/{kind}/template` | 구현 예정 | 요청문 종류(`landlord` \| `provider`) | 현재 기록의 확인된 사실을 채운 기본 양식 |
+| `POST /records/{record_id}/drafts/{kind}` | 구현됨 | 요청문 종류(`landlord` \| `provider`), `regenerate?` | 요청문과 입력 버전·진단 생성 번호(모델 실패 시 502/503/504, 기존 값 유지) |
+| `GET /records/{record_id}/drafts/{kind}/template` | 구현됨 | 요청문 종류(`landlord` \| `provider`) | 현재 기록의 확인된 사실을 채운 기본 양식 |
 | `GET /regions` | 구현됨 | 없음 | 지역 ID·이름·시·군·구 표시 이름 |
-| `GET /work-types`, `GET /providers` | 구현 예정 | 없음 / `region_id`, `work_type_id` | 작업 목록 / 업체 후보 목록(`채팅 가능 여부`, 전화번호, `is_sample`) |
-| `GET /chat/rooms`, `POST /chat/rooms` | 구현 예정 | 생성 시 `provider_id`, `record_id?` | 채팅방 목록 또는 생성·재사용된 방(하자 요약 자동 공유) |
-| `GET /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/messages` | 구현 예정 | 메시지 전송 시 `client_message_id`, `content` | 채팅 메시지 목록 또는 저장된 메시지 |
+| `GET /work-types`, `GET /providers` | 구현됨 | 없음 / `region_id`, `work_type_id` | 작업 목록 / 업체 후보 목록(`chat_available`, 전화번호, `is_sample`) |
+| `GET /chat/rooms`, `POST /chat/rooms` | 구현됨 | 생성 시 `provider_id`, `record_id?` | 채팅방 목록 또는 생성·재사용된 방(하자 요약 자동 공유) |
+| `GET /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/messages` | 구현됨 | 조회 `limit`·`offset` / 전송 `client_message_id`, `content` | 채팅 메시지 페이지 또는 저장된 메시지 |
 | `POST /records/{record_id}/messages`, `PUT .../messages/{message_id}`, `POST .../next-question` | 구현됨 (MVP 미사용/보류) | 기존 AI 질문 대화 요청 | 기존 메시지·시연 질문 응답 |
 
 ## 일괄 분석 결과 분기와 검증 사례
