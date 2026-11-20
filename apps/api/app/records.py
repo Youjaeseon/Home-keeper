@@ -1,14 +1,21 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, Path
+from fastapi import APIRouter, Body, Depends, File, Form, Path, UploadFile
 from psycopg.types.json import Jsonb
 
 from app.auth import get_current_user
 from app.db import read_transaction, transaction
 from app.errors import invalid_request, message_conflict, not_found, revision_conflict
+from app.sample_analysis import (
+    MAX_PHOTO_BYTES,
+    PHOTO_ROLES,
+    SOURCE as ANALYSIS_SOURCE,
+    build_sample_analysis,
+)
 from app.sample_questions import SOURCE, build_sample_decision
 from app.schemas import (
+    AnalyzeResponse,
     ConflictErrorResponse,
     ErrorResponse,
     MessageCreateRequest,
@@ -192,6 +199,21 @@ _NEXT_QUESTION_CONFLICT_RESPONSE = _error_response(
     },
 )
 
+_ANALYZE_CONFLICT_RESPONSE = _error_response(
+    ConflictErrorResponse,
+    "분석 중 기록 입력 버전이 변경됨",
+    {
+        "revision_conflict": {
+            "summary": "입력 변경으로 분석 결과를 저장하지 않음",
+            "value": {
+                "code": "revision_conflict",
+                "message": "입력이 변경되었습니다. 최신 기록을 확인한 뒤 다시 시도해 주십시오.",
+                "input_revision": 2,
+            },
+        }
+    },
+)
+
 router = APIRouter(
     prefix="/records",
     tags=["records"],
@@ -309,6 +331,43 @@ def _allocate_conversation_sequence(conn, record_id: UUID) -> int:
     return allocated["conversation_sequence"]
 
 
+def _supported_photo_header(head: bytes) -> bool:
+    if head.startswith(b"\xff\xd8\xff"):
+        return True
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    return (
+        len(head) >= 12
+        and head[4:8] == b"ftyp"
+        and head[8:12] in {b"heic", b"heix", b"hevc", b"hevx", b"mif1", b"msf1"}
+    )
+
+
+def _validate_photo(upload: UploadFile) -> None:
+    head = upload.file.read(16)
+    if not head or not _supported_photo_header(head):
+        raise invalid_request("사진은 JPEG, PNG, HEIC/HEIF 형식만 업로드할 수 있습니다.")
+
+    total = len(head)
+    while True:
+        chunk = upload.file.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_PHOTO_BYTES:
+            raise invalid_request("사진 한 장은 10MB 이하여야 합니다.")
+
+
+def _validate_photo_roles(photo_roles: list[str], photo_count: int) -> None:
+    if len(photo_roles) != photo_count:
+        raise invalid_request("사진 수와 photo_roles 수가 일치해야 합니다.")
+    if any(role not in PHOTO_ROLES for role in photo_roles):
+        raise invalid_request("photo_roles는 overview 또는 closeup이어야 합니다.")
+    if len(set(photo_roles)) != len(photo_roles):
+        raise invalid_request("사진 역할은 서로 달라야 합니다.")
+
+
+
 @router.post(
     "",
     response_model=RecordCreateResponse,
@@ -335,7 +394,7 @@ def create_record(owner_id: UUID = Depends(get_current_user)):
     response_model=RecordOut,
     summary="하자 기록 상세 조회",
     description=(
-        "`REPEATABLE READ` 스냅샷으로 입력(`location`, `symptoms`, `photo_observations`), "
+        "`REPEATABLE READ` 스냅샷으로 입력(`location`, `material`, `symptoms`, `photo_observations`), "
         "`questions`, `messages`, 최신 생성 결과(`next_question`, `diagnosis`, `drafts`)를 조회합니다.\n\n"
         "- 본인 소유의 하자 기록만 조회할 수 있으며, 다른 사용자 기록이나 없는 기록은 `404`를 반환합니다.\n"
         "- `questions`와 `messages`는 기록 내 공용 `sequence` 오름차순으로 반환되므로, 두 배열을 합쳐 `sequence` 순으로 정렬하면 전체 대화 순서가 유지됩니다.\n"
@@ -389,6 +448,7 @@ def get_record(
         return {
             "record_id": record["id"],
             "location": record["location"],
+            "material": record["material"],
             "symptoms": record["symptoms"],
             "photo_observations": record["photo_observations"],
             "input_revision": current_revision,
@@ -420,8 +480,8 @@ def get_record(
     response_model=RecordPatchResponse,
     summary="하자 기록 위치·증상 수정",
     description=(
-        "하자 기록의 `location`·`symptoms`를 부분 수정합니다.\n\n"
-        "- `location`과 `symptoms` 중 최소 하나를 포함해야 하며, 허용되지 않은 추가 필드는 거부됩니다(`422`).\n"
+        "하자 기록의 `location`·`material`·`symptoms`를 부분 수정합니다.\n\n"
+        "- `location`, `material`, `symptoms` 중 최소 하나를 포함해야 하며, 허용되지 않은 추가 필드는 거부됩니다(`422`).\n"
         '- 생략한 필드는 기존 값을 유지하고, 명시적으로 `null`을 전달한 필드(예: `{"location": null}`)는 값을 지웁니다.\n'
         "- `input_revision`을 요구하지 않으며, 저장된 값과 실제로 달라질 때만 `input_revision`이 `1` 증가합니다(동일 값 재저장 시 유지)."
     ),
@@ -438,14 +498,15 @@ def update_record(
         Body(
             openapi_examples={
                 "update_fields": {
-                    "summary": "위치·증상 수정",
+                    "summary": "위치·재질·증상 수정",
                     "value": {
                         "location": "안방 창틀 아래",
+                        "material": "실리콘",
                         "symptoms": "검은 곰팡이 얼룩이 번지고 있어요",
                     },
                 },
                 "update_symptoms_only": {
-                    "summary": "증상만 부분 수정(위치 유지)",
+                    "summary": "증상만 부분 수정(위치·재질 유지)",
                     "value": {
                         "symptoms": "벽지가 들뜨고 물기가 맺혀 있어요",
                     },
@@ -458,12 +519,18 @@ def update_record(
     with transaction() as conn:
         record = _lock_record(conn, record_id, owner_id)
         location = body.location if "location" in body.model_fields_set else record["location"]
+        material = body.material if "material" in body.model_fields_set else record["material"]
         symptoms = body.symptoms if "symptoms" in body.model_fields_set else record["symptoms"]
 
-        if location == record["location"] and symptoms == record["symptoms"]:
+        if (
+            location == record["location"]
+            and material == record["material"]
+            and symptoms == record["symptoms"]
+        ):
             return {
                 "record_id": record["id"],
                 "location": location,
+                "material": material,
                 "symptoms": symptoms,
                 "input_revision": record["input_revision"],
             }
@@ -471,14 +538,143 @@ def update_record(
         updated = conn.execute(
             """
             UPDATE records
-            SET location = %s, symptoms = %s,
+            SET location = %s, material = %s, symptoms = %s,
                 input_revision = input_revision + 1, updated_at = now()
             WHERE id = %s
-            RETURNING location, symptoms, input_revision
+            RETURNING location, material, symptoms, input_revision
             """,
-            (location, symptoms, record_id),
+            (location, material, symptoms, record_id),
         ).fetchone()
     return {"record_id": record_id, **updated}
+
+
+@router.post(
+    "/{record_id}/analyze",
+    response_model=AnalyzeResponse,
+    summary="사진·위치·재질 일괄 분석",
+    description=(
+        "사진 1~2장과 위치·재질·선택 증상 메모를 multipart로 한 번에 받아 분석 결과를 저장합니다.\n\n"
+        "- 현재는 실제 YOLO·비전 LLM·텍스트 LLM을 호출하지 않고, 입력값만 사용한 **결정적 샘플 결과**를 반환합니다. `source`는 항상 `sample`입니다.\n"
+        "- 사진 원본·표시 좌표·신뢰도는 저장하거나 만들지 않습니다. 샘플 `photo_analysis.applied`는 `false`, 사진 상태는 `not_analyzed`, `detections`는 빈 배열입니다.\n"
+        "- 사진은 1~2장, JPEG/PNG/HEIC/HEIF, 한 장당 10MB 이하만 허용합니다. `photo_roles`는 사진 수와 같아야 하며 서로 달라야 합니다.\n"
+        "- 제출한 위치·재질·증상이 실제로 바뀌면 `input_revision`을 올리고 `diagnosis_generation`을 증가시킵니다. 분석 중 입력이 바뀌면 아무것도 저장하지 않고 `409`를 반환합니다.\n"
+        "- 성공·실패 모두 업로드 임시 파일을 닫고, 원본 사진이나 로그는 남기지 않습니다."
+    ),
+    response_description="샘플 사진 분석 상태와 저장된 구조화 진단 결과",
+    responses={
+        404: _RECORD_NOT_FOUND_RESPONSE,
+        409: _ANALYZE_CONFLICT_RESPONSE,
+        422: _VALIDATION_ERROR_RESPONSE,
+    },
+)
+def analyze_record(
+    record_id: Annotated[
+        UUID,
+        Path(description="분석할 하자 기록의 UUID."),
+    ],
+    photos: Annotated[
+        list[UploadFile],
+        File(description="사진 파일 1~2장. 첫 번째 사진은 필수입니다."),
+    ],
+    photo_roles: Annotated[
+        list[str],
+        Form(description="사진별 역할. `overview`(전체) 또는 `closeup`(근접)이며 사진 수와 같아야 합니다."),
+    ],
+    external_analysis_consent: Annotated[
+        bool,
+        Form(description="외부 비전 분석 전송 동의 여부. 샘플 모드에서는 실제 외부 전송을 하지 않습니다."),
+    ],
+    location: Annotated[
+        str,
+        Form(description="하자 발견 위치. 공백만 입력할 수 없습니다."),
+    ],
+    material: Annotated[
+        str,
+        Form(description="하자 표면 재질. 공백만 입력할 수 없습니다."),
+    ],
+    symptoms: Annotated[
+        str | None,
+        Form(description="선택 증상 메모. 없으면 생략하거나 `null`/빈 문자열로 보냅니다."),
+    ] = None,
+    owner_id: UUID = Depends(get_current_user),
+):
+    try:
+        with transaction() as conn:
+            record = _lock_record(conn, record_id, owner_id)
+            snapshot_revision = record["input_revision"]
+        # The row lock ends before file validation and sample generation.
+
+        if not 1 <= len(photos) <= 2:
+            raise invalid_request("사진은 1~2장을 업로드해야 합니다.")
+        _validate_photo_roles(photo_roles, len(photos))
+        for photo in photos:
+            _validate_photo(photo)
+
+        location = location.strip()
+        material = material.strip()
+        symptoms = (symptoms or "").strip() or None
+        if not location:
+            raise invalid_request("위치를 입력해야 합니다.")
+        if not material:
+            raise invalid_request("재질을 입력해야 합니다.")
+
+        sample = build_sample_analysis(
+            location=location,
+            material=material,
+            symptoms=symptoms,
+            photo_roles=photo_roles,
+            external_analysis_consent=external_analysis_consent,
+        )
+
+        with transaction() as conn:
+            record = _lock_record(conn, record_id, owner_id)
+            if record["input_revision"] != snapshot_revision:
+                raise revision_conflict(record["input_revision"])
+
+            changed = (
+                location != record["location"]
+                or material != record["material"]
+                or symptoms != record["symptoms"]
+            )
+            new_revision = record["input_revision"] + (1 if changed else 0)
+            updated = conn.execute(
+                """
+                UPDATE records
+                SET location = %s,
+                    material = %s,
+                    symptoms = %s,
+                    photo_observations = %s,
+                    diagnosis = %s,
+                    diagnosis_revision = %s,
+                    diagnosis_generation = diagnosis_generation + 1,
+                    input_revision = %s,
+                    updated_at = now()
+                WHERE id = %s
+                RETURNING input_revision, diagnosis_generation
+                """,
+                (
+                    location,
+                    material,
+                    symptoms,
+                    Jsonb(sample.photo_analysis),
+                    Jsonb(sample.diagnosis),
+                    new_revision,
+                    new_revision,
+                    record_id,
+                ),
+            ).fetchone()
+
+        return {
+            "record_id": record_id,
+            "input_revision": updated["input_revision"],
+            "diagnosis_generation": updated["diagnosis_generation"],
+            "photo_analysis": sample.photo_analysis,
+            "diagnosis": sample.diagnosis,
+            "source": ANALYSIS_SOURCE,
+        }
+    finally:
+        for photo in photos:
+            photo.file.close()
 
 
 @router.post(

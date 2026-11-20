@@ -48,6 +48,21 @@ def test_initial_migration_is_recorded(admin):
     assert "002_message_submission.sql" in versions
     assert "003_backend_rls.sql" in versions
     assert "004_protect_rls_trigger.sql" in versions
+    assert "005_next_question_grants.sql" in versions
+    assert "006_records_material.sql" in versions
+
+
+def test_records_material_column(admin):
+    column = admin.execute(
+        """
+        SELECT data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'records'
+          AND column_name = 'material'
+        """
+    ).fetchone()
+    assert column == {"data_type": "text", "is_nullable": "YES"}
 
 
 def test_public_tables_have_rls_for_backend_only(admin):

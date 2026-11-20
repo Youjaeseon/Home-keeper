@@ -44,13 +44,17 @@ class RecordCreateResponse(BaseModel):
 
 
 class RecordPatchRequest(BaseModel):
-    """하자 기록 위치·증상 부분 수정 요청."""
+    """하자 기록 위치·재질·증상 부분 수정 요청."""
 
     model_config = ConfigDict(extra="forbid")
 
     location: str | None = Field(
         default=None,
         description="하자 발견 위치(예: 안방 창틀 아래). 생략하면 기존 값을 유지하고 `null`을 보내면 값을 지웁니다.",
+    )
+    material: str | None = Field(
+        default=None,
+        description="하자 표면 재질(예: 실리콘, 벽지, 도장면). 생략하면 기존 값을 유지하고 `null`을 보내면 값을 지웁니다.",
     )
     symptoms: str | None = Field(
         default=None,
@@ -60,15 +64,16 @@ class RecordPatchRequest(BaseModel):
     @model_validator(mode="after")
     def require_a_field(self):
         if not self.model_fields_set:
-            raise ValueError("location 또는 symptoms 중 하나가 필요해요.")
+            raise ValueError("location, material, symptoms 중 하나가 필요해요.")
         return self
 
 
 class RecordPatchResponse(BaseModel):
-    """하자 기록 위치·증상 수정 응답."""
+    """하자 기록 위치·재질·증상 수정 응답."""
 
     record_id: UUID = Field(description="수정한 하자 기록의 UUID.")
     location: str | None = Field(description="저장된 하자 발견 위치(값이 없으면 `null`).")
+    material: str | None = Field(description="저장된 하자 표면 재질(값이 없으면 `null`).")
     symptoms: str | None = Field(description="저장된 하자 증상 설명(값이 없으면 `null`).")
     input_revision: int = Field(
         description="요청 처리 후 현재 기록 입력 버전. 실제 값이 변경된 경우에만 `1` 증가합니다."
@@ -289,12 +294,104 @@ class DraftsOut(BaseModel):
     )
 
 
+class AnalyzePhotoOut(BaseModel):
+    """샘플 일괄 분석의 사진별 처리 상태."""
+
+    role: Literal["overview", "closeup"] = Field(
+        description="사진 역할. `overview`는 전체, `closeup`은 근접 사진입니다."
+    )
+    status: Literal["not_analyzed"] = Field(
+        description="사진 분석 상태. 샘플 모드에서는 실제 분석을 하지 않으므로 항상 `not_analyzed`입니다."
+    )
+    source: Literal["sample"] = Field(
+        description="샘플 모드 표시. 값은 항상 `sample`입니다."
+    )
+    detections: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="탐지 결과 목록. 샘플 모드에서는 좌표·신뢰도를 만들지 않으므로 항상 빈 배열입니다.",
+    )
+
+
+class AnalyzePhotoAnalysisOut(BaseModel):
+    """샘플 일괄 분석의 사진 분석 영역."""
+
+    applied: bool = Field(
+        description="실제 사진 분석이 적용됐는지 여부. 샘플 모드에서는 항상 `false`입니다."
+    )
+    notice: str | None = Field(
+        description="사진 분석을 수행하지 않은 이유와 샘플 안내. 샘플 모드에서는 필수입니다."
+    )
+    photos: list[AnalyzePhotoOut] = Field(
+        description="업로드한 사진별 역할과 처리 상태 목록."
+    )
+    source: Literal["sample"] = Field(
+        description="샘플 결과 표시. 값은 항상 `sample`입니다."
+    )
+
+
+class AnalyzeDiagnosisOut(BaseModel):
+    """일괄 분석이 저장한 구조화 진단 결과."""
+
+    observations: str = Field(
+        description="입력값을 바탕으로 한 관찰 요약. 샘플 모드에서는 사진 분석 미수행을 명시합니다."
+    )
+    severity_score: int | None = Field(
+        ge=0,
+        le=100,
+        description="심각도 퍼센트(0~100). 정보가 부족한 실제 모델 결과에서는 `null`일 수 있습니다.",
+    )
+    severity_level: Literal["low", "medium", "high", "undetermined"] = Field(
+        description="심각도 단계. `undetermined`는 판단 보류입니다."
+    )
+    reason: str = Field(description="심각도와 권장 대응의 산정 근거.")
+    causes: list[str] = Field(description="추정 원인 목록. 확정 원인이 아닙니다.")
+    estimation_notice: str = Field(
+        description="AI/샘플 추정임을 알리는 안내. 실제 사진 분석이나 현장 점검 결과가 아님을 표시합니다."
+    )
+    recommended_action: Literal["self_care", "inspection", "provider_consult"] = Field(
+        description="권장 대응. 직접 조치, 점검 요청, 업체 상담 중 하나입니다."
+    )
+    care_steps: list[str] = Field(description="해결방안과 처리 단계 목록.")
+    supplies: list[str] = Field(description="처리에 필요한 준비물 목록.")
+    prevention_tips: list[str] = Field(description="재발 방지책 목록.")
+    unknowns: list[str] = Field(description="아직 확인되지 않은 정보 목록.")
+    work_type_id: UUID | None = Field(
+        description="추천 작업 종류의 UUID. 샘플 모드에서는 작업 목록이 없으면 `null`입니다."
+    )
+    work_type_reason: str = Field(description="추천 작업과 원인 점검을 권장하는 이유.")
+    source: Literal["sample"] = Field(
+        description="샘플 결과 표시. 값은 항상 `sample`입니다."
+    )
+
+
+class AnalyzeResponse(BaseModel):
+    """사진·위치·재질·증상 일괄 분석 응답."""
+
+    record_id: UUID = Field(description="분석한 하자 기록의 UUID.")
+    input_revision: int = Field(
+        description="분석 입력을 저장한 뒤의 기록 입력 버전. 실제 입력 변경 시에만 증가합니다."
+    )
+    diagnosis_generation: int = Field(
+        description="진단 생성 번호. 분석 성공 시 `1` 증가합니다."
+    )
+    photo_analysis: AnalyzePhotoAnalysisOut = Field(
+        description="사진별 분석 상태. 샘플 모드에서는 실제 사진 분석을 수행하지 않습니다."
+    )
+    diagnosis: AnalyzeDiagnosisOut = Field(description="저장된 구조화 진단 결과.")
+    source: Literal["sample"] = Field(
+        description="샘플 결과 표시. 실제 YOLO·비전 LLM·텍스트 LLM 호출 없이 만든 결과임을 나타냅니다."
+    )
+
+
 class RecordOut(BaseModel):
     """하자 기록 상세 조회 응답."""
 
     record_id: UUID = Field(description="하자 기록의 고유 UUID.")
     location: str | None = Field(
         description="사용자가 입력한 하자 발견 위치(미입력 시 `null`)."
+    )
+    material: str | None = Field(
+        description="사용자가 입력한 표면 재질(미입력 시 `null`)."
     )
     symptoms: str | None = Field(
         description="사용자가 입력한 하자 증상 설명(미입력 시 `null`)."

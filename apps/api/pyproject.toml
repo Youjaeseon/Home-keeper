@@ -9,6 +9,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "PyJWT[crypto]>=2.9",
     "scalar-fastapi>=1.10.0",
+    "python-multipart>=0.0.34",
 ]
 
 [dependency-groups]

@@ -79,6 +79,7 @@ def test_create_and_get_empty_record(client, user_factory, token_for, record_fac
     assert body["record_id"] == created["record_id"]
     assert body["input_revision"] == 0
     assert body["location"] is None
+    assert body["material"] is None
     assert body["questions"] == []
     assert body["messages"] == []
     assert body["diagnosis"] is None
@@ -112,7 +113,7 @@ def test_patch_only_bumps_revision_on_real_change(
     first = client.patch(
         url,
         headers=auth_headers(token),
-        json={"location": "창가", "symptoms": "검은 얼룩"},
+        json={"location": "창가", "material": "실리콘", "symptoms": "검은 얼룩"},
     )
     assert first.status_code == 200
     assert first.json()["input_revision"] == 1
@@ -120,18 +121,30 @@ def test_patch_only_bumps_revision_on_real_change(
     same = client.patch(
         url,
         headers=auth_headers(token),
-        json={"location": "창가", "symptoms": "검은 얼룩"},
+        json={"location": "창가", "material": "실리콘", "symptoms": "검은 얼룩"},
     )
     assert same.status_code == 200
     assert same.json()["input_revision"] == 1
+
+    changed_material = client.patch(
+        url, headers=auth_headers(token), json={"material": "벽지"}
+    )
+    assert changed_material.status_code == 200
+    assert changed_material.json()["input_revision"] == 2
+    assert changed_material.json()["material"] == "벽지"
 
     cleared = client.patch(
         url, headers=auth_headers(token), json={"location": None}
     )
     assert cleared.status_code == 200
-    assert cleared.json()["input_revision"] == 2
+    assert cleared.json()["input_revision"] == 3
     assert cleared.json()["location"] is None
+    assert cleared.json()["material"] == "벽지"
     assert cleared.json()["symptoms"] == "검은 얼룩"
+
+    detail = _get_record(client, token, record_id).json()
+    assert detail["material"] == "벽지"
+    assert detail["input_revision"] == 3
 
     empty = client.patch(url, headers=auth_headers(token), json={})
     assert empty.status_code == 422

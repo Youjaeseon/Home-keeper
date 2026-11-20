@@ -28,6 +28,10 @@ _API_DESCRIPTION = """
 - `POST /records/{record_id}/next-question`은 현재 저장된 입력과 대화로 다음 질문을 결정하며, 같은 `input_revision`의 저장 결과는 재생성하지 않고 반환합니다.
 - 실제 LLM이 아니라 곰팡이 의심 창가 얼룩 사례의 두 질문을 사용하는 샘플 규칙이며, 응답의 `source`는 항상 `sample`입니다.
 
+### 사진·위치·재질 일괄 분석
+- `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·외부 분석 동의를 multipart로 받아 샘플 진단을 저장합니다.
+- 현재는 실제 사진 분석이나 LLM을 호출하지 않으며, `photo_analysis.applied=false`, `detections=[]`, `source=sample`로 실제 분석이 아님을 표시합니다.
+
 ### 공통 오류 형식
 - 모든 오류는 `{ "code": string, "message": string, "input_revision"?: number }` 형식으로 반환됩니다.
 """.strip()
@@ -35,7 +39,7 @@ _API_DESCRIPTION = """
 _OPENAPI_TAGS = [
     {
         "name": "records",
-        "description": "하자 기록 생성·조회·수정, 사용자 대화 메시지 저장·편집, 시연용 다음 질문 조회 API. 모든 요청에 Supabase Auth Bearer JWT 인증과 기록 소유권 검증이 필요합니다.",
+        "description": "하자 기록 생성·조회·수정, 사진·위치·재질 일괄 분석, 사용자 대화 메시지 저장·편집, 시연용 다음 질문 조회 API. 모든 요청에 Supabase Auth Bearer JWT 인증과 기록 소유권 검증이 필요합니다.",
     },
     {
         "name": "health",
@@ -53,6 +57,25 @@ app = FastAPI(
 )
 app.include_router(records_router)
 add_scalar_reference(app, route="/docs")
+
+
+_original_openapi = app.openapi
+
+
+def _openapi_with_multipart_descriptions():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = _original_openapi()
+    for name, component in schema.get("components", {}).get("schemas", {}).items():
+        if name.startswith("Body_") and not component.get("description"):
+            component["description"] = (
+                "사진과 위치·재질·증상, 외부 분석 동의를 multipart/form-data로 전송하는 요청 본문입니다."
+            )
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _openapi_with_multipart_descriptions
 
 
 def _error(status: int, code: str, message: str, **extra) -> JSONResponse:
