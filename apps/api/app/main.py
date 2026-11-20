@@ -10,6 +10,7 @@ from app.errors import ApiError
 from app.profile import router as profile_router
 from app.records import router as records_router
 from app.schemas import HealthResponse
+from app.support_programs import router as support_programs_router
 
 logger = logging.getLogger("career_pair_api")
 
@@ -17,13 +18,18 @@ _API_DESCRIPTION = """
 임차 주택 하자 대응을 위한 하자 기록과 대화 메시지를 관리하는 MVP 백엔드 API입니다.
 
 ### 인증과 소유권
-- `GET /health`를 제외한 `/records`, `/me/profile`, `/regions` 엔드포인트는 `Authorization: Bearer <access_token>` 헤더(Supabase Auth JWT)가 필요합니다.
+- `GET /health`를 제외한 `/records`, `/me/profile`, `/regions`, `/support-programs` 엔드포인트는 `Authorization: Bearer <access_token>` 헤더(Supabase Auth JWT)가 필요합니다.
 - 토큰의 `sub` 클레임(UUID)이 요청 사용자로 식별되며, 본인이 소유한 하자 기록에만 접근할 수 있습니다. 다른 사용자의 기록이나 존재하지 않는 리소스는 `404`로 응답합니다.
 
 ### 프로필과 내 기록
 - `GET`·`PUT /me/profile`은 검증된 사용자 ID로 본인 프로필만 조회·저장합니다. 새 프로필의 역할은 서버가 `requester`로 정하며 요청에서 역할을 바꿀 수 없습니다.
 - `GET /regions`는 프로필의 거주 지역 선택에 사용할 지역 목록을 반환합니다.
 - `GET /records`는 본인 소유 기록을 최근 수정 순으로 요약해 반환합니다. 다른 사용자의 기록은 포함하지 않습니다.
+
+### 주거 지원 사업 소식지
+- `GET /support-programs`는 로그인 사용자의 프로필 지역·상위 지역·전국 공고를 반환합니다. 거주 형태 태그가 일치하는 공고를 우선 표시하며, 태그 일치는 신청 자격을 확정하지 않습니다.
+- 마감일이 확정된 공고는 한국 시간 기준 마감일 다음 날부터 `is_closed=true`가 되고 목록 하단에 배치됩니다. 상시·기한 불명은 `deadline_kind`로 구분합니다.
+- `GET /support-programs/{program_id}`는 공식 원문 링크, 지원 대상·내용·신청 방법, 출처와 출처 확인 시점을 반환합니다.
 
 ### 입력 버전(`input_revision`) 낙관적 동시성
 - 새 하자 기록의 `input_revision`은 `0`에서 시작합니다.
@@ -52,6 +58,10 @@ _OPENAPI_TAGS = [
         "description": "로그인 사용자의 주거 프로필 조회·등록·수정과 지역 목록 조회 API. 역할은 서버가 정하며 클라이언트가 변경할 수 없습니다.",
     },
     {
+        "name": "support-programs",
+        "description": "프로필 지역·상위 지역·전국 주거 지원 사업 소식지 API. 출처 확인 시점과 마감 종류를 함께 제공하며, 공고 데이터를 클라이언트가 수정하는 API는 없습니다.",
+    },
+    {
         "name": "health",
         "description": "서버 상태 확인용 엔드포인트(인증 불필요).",
     },
@@ -67,6 +77,7 @@ app = FastAPI(
 )
 app.include_router(records_router)
 app.include_router(profile_router)
+app.include_router(support_programs_router)
 add_scalar_reference(app, route="/docs")
 
 

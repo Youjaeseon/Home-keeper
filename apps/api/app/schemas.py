@@ -1,10 +1,12 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 HousingType = Literal["monthly_rent", "jeonse", "semi_jeonse", "owned", "other"]
+DeadlineKind = Literal["fixed", "always_open", "unknown"]
+SupportProgramSource = Literal["seed", "gov24_api"]
 
 
 class HealthResponse(BaseModel):
@@ -453,6 +455,83 @@ class RecordListItem(BaseModel):
     )
     created_at: datetime = Field(description="기록 생성 시각(UTC).")
     updated_at: datetime = Field(description="기록 마지막 수정 시각(UTC).")
+
+
+class SupportProgramSummary(BaseModel):
+    """소식지 목록·상세에 공통인 주거 지원 사업 정보."""
+
+    id: UUID = Field(description="지원 사업의 고유 UUID.")
+    title: str = Field(description="공고·사업 이름.")
+    summary: str = Field(description="목록에 표시할 사업 목적 요약.")
+    organization_name: str = Field(description="공고를 제공한 기관 또는 사업 주관기관.")
+    region_scope: Literal["national", "local"] = Field(
+        description="지원 범위. `national`은 전국, `local`은 특정 지역입니다."
+    )
+    region_name: str = Field(
+        description="화면에 표시할 지역명. 전국 사업은 `전국`, 지역 사업은 시·군·구 표시명입니다."
+    )
+    target_housing_types: list[HousingType] = Field(
+        description=(
+            "공고 원문에서 확인된 거주 형태 태그. 신청 자격을 확정하는 값이 아니며, "
+            "태그 일치 여부는 참고 정보입니다."
+        )
+    )
+    deadline_text: str | None = Field(
+        description="공식 원문의 신청기한 문구. 확인하지 못했으면 `null`입니다."
+    )
+    deadline_date: date | None = Field(
+        description=(
+            "명확히 해석한 마감일. 신청기한이 상시·기한 불명·복수 날짜 등이면 `null`입니다."
+        )
+    )
+    deadline_kind: DeadlineKind = Field(
+        description=(
+            "신청기한 종류. `fixed`는 확정 날짜, `always_open`은 공식 상시·연중 신청, "
+            "`unknown`은 기한 미확인 또는 모호한 문구입니다."
+        )
+    )
+    is_closed: bool = Field(
+        description=(
+            "한국 시간 기준 마감일이 지난 확정 날짜 공고인지 여부. "
+            "마감일 당일은 아직 마감이 아니며, 상시·기한 불명은 `false`입니다."
+        )
+    )
+    detail_url: str = Field(description="공식 원문 또는 신청 페이지 URL(http/https).")
+    source: SupportProgramSource = Field(
+        description="데이터 출처. `seed`는 검증 시드, `gov24_api`는 보조금24 동기화입니다."
+    )
+    source_attribution: str = Field(description="화면과 문서에 표시할 출처 문구.")
+    source_checked_at: datetime = Field(
+        description="서버가 해당 공고의 출처를 마지막으로 확인한 시각(UTC)."
+    )
+    updated_at: datetime = Field(description="DB 행을 마지막으로 갱신한 시각(UTC).")
+
+
+class SupportProgramListItem(SupportProgramSummary):
+    """소식지 목록의 주거 지원 사업 항목."""
+
+    housing_type_matched: bool = Field(
+        description=(
+            "로그인 사용자의 거주 형태가 공고 태그와 겹치는지 여부. "
+            "신청 자격 충족을 확정하지 않습니다."
+        )
+    )
+
+
+class SupportProgramDetail(SupportProgramSummary):
+    """주거 지원 사업 상세 조회 응답."""
+
+    support_target: str = Field(description="공식 원문의 지원 대상·자격 설명.")
+    support_content: str = Field(description="공식 원문의 지원 내용.")
+    selection_criteria: str | None = Field(
+        description="공식 원문의 선정 기준. 원문에 없으면 `null`입니다."
+    )
+    apply_method: str | None = Field(
+        description="공식 원문의 신청 방법. 원문에 없으면 `null`입니다."
+    )
+    synced_at: datetime | None = Field(
+        description="보조금24 API에서 마지막으로 동기화한 시각. 검증 시드는 `null`입니다."
+    )
 
 
 class RecordOut(BaseModel):

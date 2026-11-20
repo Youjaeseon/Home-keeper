@@ -16,6 +16,7 @@ APP_TABLES = {
     "provider_regions",
     "provider_work_types",
     "profiles",
+    "support_programs",
 }
 
 
@@ -52,6 +53,8 @@ def test_initial_migration_is_recorded(admin):
     assert "005_next_question_grants.sql" in versions
     assert "006_records_material.sql" in versions
     assert "007_profiles_and_regions.sql" in versions
+    assert "008_support_programs.sql" in versions
+    assert "009_support_program_seed.sql" in versions
 
 
 def test_records_material_column(admin):
@@ -235,6 +238,131 @@ def test_reverse_provider_indexes_exist(admin):
     assert "records_owner_id_idx" in names
     assert "records_owner_id_updated_at_idx" in names
     assert "profiles_region_id_idx" in names
+    assert "regions_parent_id_idx" in names
+    assert "support_programs_region_deadline_idx" in names
+    assert "support_programs_source_synced_idx" in names
+
+
+def test_support_program_schema_and_seeded_programs(admin):
+    columns = {
+        row["column_name"]
+        for row in admin.execute(
+            """
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'support_programs'
+            """
+        ).fetchall()
+    }
+    assert {
+        "id",
+        "external_id",
+        "source",
+        "title",
+        "summary",
+        "organization_name",
+        "region_scope",
+        "region_id",
+        "target_housing_types",
+        "support_target",
+        "support_content",
+        "selection_criteria",
+        "apply_method",
+        "deadline_text",
+        "deadline_date",
+        "deadline_kind",
+        "detail_url",
+        "source_attribution",
+        "source_checked_at",
+        "synced_at",
+        "created_at",
+        "updated_at",
+    } <= columns
+
+    regions = {
+        row["name"]: row
+        for row in admin.execute(
+            "SELECT id, name, display_name, parent_id FROM regions"
+        ).fetchall()
+    }
+    assert regions["gyeonggi"]["display_name"] == "경기도"
+    assert regions["yongin"]["parent_id"] == regions["gyeonggi"]["id"]
+
+    seeded = admin.execute(
+        "SELECT count(*) AS count FROM support_programs WHERE source = 'seed'"
+    ).fetchone()["count"]
+    assert seeded == 4
+    assert admin.execute(
+        "SELECT count(*) AS count FROM support_programs WHERE detail_url !~* '^https?://'"
+    ).fetchone()["count"] == 0
+
+
+def test_support_program_rejects_invalid_url_and_deadline(admin):
+    def values(**overrides):
+        program = {
+            "external_id": f"test-invalid-{uuid4()}",
+            "source": "seed",
+            "title": "검증용",
+            "summary": "검증용",
+            "organization_name": "검증기관",
+            "region_scope": "national",
+            "region_id": None,
+            "target_housing_types": [],
+            "support_target": "검증 대상",
+            "support_content": "검증 내용",
+            "selection_criteria": None,
+            "apply_method": None,
+            "deadline_text": None,
+            "deadline_date": None,
+            "deadline_kind": "unknown",
+            "detail_url": "https://example.com/program",
+            "source_attribution": "검증",
+        }
+        program.update(overrides)
+        return program
+
+    invalid_url = values(detail_url="ftp://example.com/program")
+    with pytest.raises(psycopg.errors.CheckViolation):
+        admin.execute(
+            """
+            INSERT INTO support_programs
+                (external_id, source, title, summary, organization_name,
+                 region_scope, region_id, target_housing_types, support_target,
+                 support_content, selection_criteria, apply_method, deadline_text,
+                 deadline_date, deadline_kind, detail_url, source_attribution)
+            VALUES
+                (%(external_id)s, %(source)s, %(title)s, %(summary)s,
+                 %(organization_name)s, %(region_scope)s, %(region_id)s,
+                 %(target_housing_types)s, %(support_target)s, %(support_content)s,
+                 %(selection_criteria)s, %(apply_method)s, %(deadline_text)s,
+                 %(deadline_date)s, %(deadline_kind)s, %(detail_url)s,
+                 %(source_attribution)s)
+            """,
+            invalid_url,
+        )
+
+    invalid_deadline = values(
+        deadline_kind="fixed",
+        deadline_text="2026. 13. 01.",
+        deadline_date=None,
+    )
+    with pytest.raises(psycopg.errors.CheckViolation):
+        admin.execute(
+            """
+            INSERT INTO support_programs
+                (external_id, source, title, summary, organization_name,
+                 region_scope, region_id, target_housing_types, support_target,
+                 support_content, selection_criteria, apply_method, deadline_text,
+                 deadline_date, deadline_kind, detail_url, source_attribution)
+            VALUES
+                (%(external_id)s, %(source)s, %(title)s, %(summary)s,
+                 %(organization_name)s, %(region_scope)s, %(region_id)s,
+                 %(target_housing_types)s, %(support_target)s, %(support_content)s,
+                 %(selection_criteria)s, %(apply_method)s, %(deadline_text)s,
+                 %(deadline_date)s, %(deadline_kind)s, %(detail_url)s,
+                 %(source_attribution)s)
+            """,
+            invalid_deadline,
+        )
 
 
 def test_profiles_table_and_seeded_demo_region(admin):
@@ -305,12 +433,15 @@ def test_runtime_role_has_only_required_privileges():
         assert conn.execute("SELECT count(*) FROM messages").fetchone() is not None
         assert conn.execute("SELECT count(*) FROM providers").fetchone() is not None
         assert conn.execute("SELECT count(*) FROM profiles").fetchone() is not None
+        assert conn.execute("SELECT count(*) FROM support_programs").fetchone() is not None
 
         for table, privilege in (
             ("questions", "INSERT"),
             ("questions", "UPDATE"),
             ("profiles", "INSERT"),
             ("profiles", "UPDATE"),
+            ("support_programs", "INSERT"),
+            ("support_programs", "UPDATE"),
         ):
             assert conn.execute(
                 "SELECT has_table_privilege(current_user, %s, %s)",
@@ -320,6 +451,7 @@ def test_runtime_role_has_only_required_privileges():
         for statement in (
             "DELETE FROM records",
             "DELETE FROM profiles",
+            "DELETE FROM support_programs",
             "INSERT INTO providers (name, phone) VALUES ('업체', '000')",
         ):
             with pytest.raises(psycopg.errors.InsufficientPrivilege):

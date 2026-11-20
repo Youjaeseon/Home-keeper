@@ -35,8 +35,8 @@ def test_openapi_metadata_tags_and_security():
     assert spec["info"]["description"].strip()
 
     tags = {tag["name"]: tag for tag in spec["tags"]}
-    assert {"records", "profile", "health"} <= set(tags)
-    for name in ("records", "profile", "health"):
+    assert {"records", "profile", "support-programs", "health"} <= set(tags)
+    for name in ("records", "profile", "support-programs", "health"):
         assert tags[name]["description"].strip()
 
     bearer = spec["components"]["securitySchemes"]["HTTPBearer"]
@@ -53,6 +53,8 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
         ("/me/profile", "get"): {"200", "401", "404"},
         ("/me/profile", "put"): {"200", "401", "422"},
         ("/regions", "get"): {"200", "401"},
+        ("/support-programs", "get"): {"200", "401", "404", "422"},
+        ("/support-programs/{program_id}", "get"): {"200", "401", "404", "422"},
         ("/records/{record_id}", "get"): {"200", "401", "404", "422"},
         ("/records/{record_id}", "patch"): {"200", "401", "404", "422"},
         ("/records/{record_id}/messages", "post"): {"200", "401", "404", "409", "422"},
