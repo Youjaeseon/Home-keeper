@@ -10,6 +10,10 @@ class Settings:
     supabase_jwt_secret: str | None
     supabase_jwt_audience: str
     supabase_jwt_issuer: str
+    llm_api_key: str | None
+    llm_base_url: str
+    llm_model: str
+    llm_timeout_seconds: float
 
 
 def _required(name: str) -> str:
@@ -28,4 +32,8 @@ def get_settings() -> Settings:
         supabase_jwt_secret=os.environ.get("SUPABASE_JWT_SECRET") or None,
         supabase_jwt_audience=os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated"),
         supabase_jwt_issuer=os.environ.get("SUPABASE_JWT_ISSUER") or f"{supabase_url}/auth/v1",
+        llm_api_key=os.environ.get("LLM_API_KEY") or None,
+        llm_base_url=os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+        llm_model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        llm_timeout_seconds=float(os.environ.get("LLM_TIMEOUT_SECONDS", "20")),
     )

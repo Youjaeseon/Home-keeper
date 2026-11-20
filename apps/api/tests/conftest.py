@@ -1,3 +1,4 @@
+import base64
 import os
 import re
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,10 @@ RUNTIME_PASSWORD = "career_pair_test_only"
 RUNTIME_URL = (
     f"postgresql://career_pair_runtime:{RUNTIME_PASSWORD}"
     f"@{_parts.hostname or 'localhost'}:{_parts.port or 5432}/{DB_NAME}"
+)
+
+PNG_1X1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6n0sAAAAASUVORK5CYII="
 )
 
 TEST_JWT_SECRET = "test-only-supabase-jwt-secret-with-enough-length"
@@ -117,6 +122,29 @@ def record_factory(client, token_for):
         )
         assert response.status_code == 201, response.text
         return response.json()
+
+    return create
+
+
+@pytest.fixture
+def analyzed_record_factory(client, token_for, record_factory):
+    def create(user_id, **fields):
+        record_id = record_factory(user_id)["record_id"]
+        data = {
+            "photo_roles": ["overview"],
+            "external_analysis_consent": "false",
+            "location": fields.get("location", "안방 창틀 아래"),
+            "material": fields.get("material", "실리콘"),
+            "symptoms": fields.get("symptoms", "검은 곰팡이 의심 얼룩이 번져 있어요"),
+        }
+        response = client.post(
+            f"/records/{record_id}/analyze",
+            headers=auth_headers(token_for(user_id)),
+            data=data,
+            files=[("photos", ("overview.png", PNG_1X1, "image/png"))],
+        )
+        assert response.status_code == 200, response.text
+        return record_id
 
     return create
 

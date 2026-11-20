@@ -17,6 +17,8 @@ APP_TABLES = {
     "provider_work_types",
     "profiles",
     "support_programs",
+    "chat_rooms",
+    "chat_messages",
 }
 
 
@@ -55,6 +57,7 @@ def test_initial_migration_is_recorded(admin):
     assert "007_profiles_and_regions.sql" in versions
     assert "008_support_programs.sql" in versions
     assert "009_support_program_seed.sql" in versions
+    assert "010_chat_and_provider_accounts.sql" in versions
 
 
 def test_records_material_column(admin):
@@ -241,6 +244,12 @@ def test_reverse_provider_indexes_exist(admin):
     assert "regions_parent_id_idx" in names
     assert "support_programs_region_deadline_idx" in names
     assert "support_programs_source_synced_idx" in names
+    assert "providers_account_user_id_key" in names
+    assert "chat_rooms_requester_provider_key" in names
+    assert "chat_rooms_requester_last_message_idx" in names
+    assert "chat_rooms_provider_last_message_idx" in names
+    assert "chat_messages_room_created_idx" in names
+    assert "chat_messages_room_client_message_id_key" in names
 
 
 def test_support_program_schema_and_seeded_programs(admin):
@@ -436,6 +445,11 @@ def test_runtime_role_has_only_required_privileges():
         assert conn.execute("SELECT count(*) FROM support_programs").fetchone() is not None
 
         for table, privilege in (
+            ("chat_rooms", "SELECT"),
+            ("chat_rooms", "INSERT"),
+            ("chat_rooms", "UPDATE"),
+            ("chat_messages", "SELECT"),
+            ("chat_messages", "INSERT"),
             ("questions", "INSERT"),
             ("questions", "UPDATE"),
             ("profiles", "INSERT"),
@@ -457,3 +471,122 @@ def test_runtime_role_has_only_required_privileges():
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 conn.execute(statement)
             conn.rollback()
+
+
+def test_provider_account_link_and_chat_schema(admin):
+    columns = {
+        row["column_name"]: row
+        for row in admin.execute(
+            """
+            SELECT column_name, is_nullable FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'providers'
+            """
+        ).fetchall()
+    }
+    assert columns["account_user_id"]["is_nullable"] == "YES"
+
+    definition = admin.execute(
+        """
+        SELECT pg_get_constraintdef(oid) AS definition
+        FROM pg_constraint WHERE conname = 'providers_account_user_id_fkey'
+        """
+    ).fetchone()["definition"]
+    assert "REFERENCES auth.users(id)" in definition
+    assert "ON DELETE SET NULL" in definition
+
+    # Two providers cannot claim the same login; unlinked providers stay allowed.
+    user_id = uuid4()
+    admin.execute("INSERT INTO auth.users (id) VALUES (%s)", (user_id,))
+    first, second = uuid4(), uuid4()
+    admin.execute(
+        "INSERT INTO providers (id, name, phone, account_user_id) VALUES (%s, 'A', '0', %s)",
+        (first, user_id),
+    )
+    admin.execute(
+        "INSERT INTO providers (id, name, phone) VALUES (%s, 'B', '0')",
+        (second,),
+    )
+    admin.execute(
+        "INSERT INTO providers (id, name, phone) VALUES (%s, 'C', '0')",
+        (uuid4(),),
+    )
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        admin.execute(
+            "INSERT INTO providers (name, phone, account_user_id) VALUES ('D', '0', %s)",
+            (user_id,),
+        )
+
+
+def test_chat_tables_constraints_and_work_type_seed(admin):
+    work_types = {
+        row["name"] for row in admin.execute("SELECT name FROM work_types").fetchall()
+    }
+    assert {"곰팡이 제거", "균열 보수", "벽지·도장 보수", "원인 점검"} <= work_types
+
+    requester_id = uuid4()
+    provider_user_id = uuid4()
+    for user_id in (requester_id, provider_user_id):
+        admin.execute("INSERT INTO auth.users (id) VALUES (%s) ON CONFLICT DO NOTHING", (user_id,))
+    provider_id = uuid4()
+    admin.execute(
+        "INSERT INTO providers (id, name, phone, account_user_id) VALUES (%s, '업체', '0', %s)",
+        (provider_id, provider_user_id),
+    )
+    room_id = uuid4()
+    admin.execute(
+        "INSERT INTO chat_rooms (id, requester_id, provider_id) VALUES (%s, %s, %s)",
+        (room_id, requester_id, provider_id),
+    )
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        admin.execute(
+            "INSERT INTO chat_rooms (requester_id, provider_id) VALUES (%s, %s)",
+            (requester_id, provider_id),
+        )
+
+    client_id = uuid4()
+    admin.execute(
+        """
+        INSERT INTO chat_messages
+            (room_id, sender_id, sender_role, message_type, content, client_message_id)
+        VALUES (%s, %s, 'requester', 'text', '안녕하세요', %s)
+        """,
+        (room_id, requester_id, client_id),
+    )
+    with pytest.raises(psycopg.errors.UniqueViolation):
+        admin.execute(
+            """
+            INSERT INTO chat_messages
+                (room_id, sender_id, sender_role, message_type, content, client_message_id)
+            VALUES (%s, %s, 'requester', 'text', '다른 내용', %s)
+            """,
+            (room_id, requester_id, client_id),
+        )
+    with pytest.raises(psycopg.errors.CheckViolation):
+        admin.execute(
+            """
+            INSERT INTO chat_messages
+                (room_id, sender_id, sender_role, message_type, content, client_message_id)
+            VALUES (%s, %s, 'admin', 'text', 'x', %s)
+            """,
+            (room_id, requester_id, uuid4()),
+        )
+    admin.rollback()
+    with pytest.raises(psycopg.errors.CheckViolation):
+        admin.execute(
+            """
+            INSERT INTO chat_messages
+                (room_id, sender_id, sender_role, message_type, content, client_message_id)
+            VALUES (%s, %s, 'requester', 'text', '   ', %s)
+            """,
+            (room_id, requester_id, uuid4()),
+        )
+    admin.rollback()
+    with pytest.raises(psycopg.errors.CheckViolation):
+        admin.execute(
+            """
+            INSERT INTO chat_messages
+                (room_id, sender_id, sender_role, message_type, content, client_message_id)
+            VALUES (%s, %s, 'requester', 'text', %s, %s)
+            """,
+            (room_id, requester_id, "x" * 2001, uuid4()),
+        )

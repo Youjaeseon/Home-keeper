@@ -567,3 +567,160 @@ class RecordOut(BaseModel):
     drafts: DraftsOut = Field(
         description="임대인 점검 요청문(`landlord`)과 업체 견적 요청문(`provider`) 정보."
     )
+
+
+DraftKind = Literal["landlord", "provider"]
+ChatSenderRole = Literal["requester", "provider"]
+ChatMessageType = Literal["text", "record_summary"]
+
+
+class DraftResponse(BaseModel):
+    """점검·견적 요청문 생성 응답."""
+
+    kind: DraftKind = Field(description="요청문 종류. `landlord` 또는 `provider`입니다.")
+    text: str = Field(description="생성 또는 재사용된 요청문 본문(plain text).")
+    input_revision: int = Field(description="요청문 생성에 사용한 기록 입력 버전.")
+    diagnosis_generation: int = Field(description="요청문 생성에 사용한 진단 생성 번호.")
+
+
+class DraftTemplateResponse(BaseModel):
+    """모델 호출 없이 만든 요청문 기본 양식."""
+
+    kind: DraftKind = Field(description="요청문 종류. `landlord` 또는 `provider`입니다.")
+    text: str = Field(description="현재 기록의 확인된 사실을 채운 기본 양식 본문(plain text).")
+    input_revision: int = Field(description="양식을 만든 시점의 기록 입력 버전.")
+    diagnosis_generation: int | None = Field(
+        description="양식에 반영한 진단 생성 번호. 진단이 없으면 `null`입니다."
+    )
+
+
+class WorkTypeOut(BaseModel):
+    """업체 검색에 사용하는 작업 종류."""
+
+    work_type_id: UUID = Field(description="작업 종류 UUID.")
+    name: str = Field(description="화면에 표시할 작업 이름(예: `곰팡이 제거`).")
+
+
+class ProviderOut(BaseModel):
+    """업체 검색 결과의 업체 후보."""
+
+    provider_id: UUID = Field(description="업체 UUID. 샘플 후보는 고정 시연용 UUID입니다.")
+    name: str = Field(description="업체명.")
+    phone: str | None = Field(
+        description="공개 전화번호. 샘플 후보처럼 확인된 연락처가 없으면 `null`입니다."
+    )
+    chat_available: bool = Field(
+        description="사전 등록된 업체 계정이 연결되어 앱 내 채팅이 가능한지 여부. 샘플은 항상 `false`입니다."
+    )
+    is_sample: bool = Field(
+        description="실제 후보가 없을 때 반환한 시연용 샘플 후보인지 여부."
+    )
+
+
+class ProviderSearchResponse(BaseModel):
+    """업체 검색 응답."""
+
+    providers: list[ProviderOut] = Field(description="지역·작업이 모두 일치하는 업체 후보 목록.")
+    is_sample: bool = Field(
+        description="후보 전체가 시연용 샘플인지 여부. 실제 후보가 하나라도 있으면 `false`입니다."
+    )
+
+
+class ChatRoomCreateRequest(BaseModel):
+    """채팅방 생성·재사용 요청."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: UUID = Field(description="채팅할 실제 업체의 UUID(`GET /providers`).")
+    record_id: UUID | None = Field(
+        default=None,
+        description="같이 공유할 본인 하자 기록 UUID. 생략하면 방만 만들거나 재사용합니다.",
+    )
+
+
+class ChatRoomOut(BaseModel):
+    """채팅방 정보."""
+
+    room_id: UUID = Field(description="채팅방 UUID.")
+    requester_id: UUID = Field(description="요청인(기록 소유자) 사용자 UUID.")
+    provider_id: UUID = Field(description="업체 UUID.")
+    provider_name: str = Field(description="업체명.")
+    latest_record_id: UUID | None = Field(
+        description="가장 최근에 공유한 하자 기록 UUID. 공유한 기록이 없으면 `null`입니다."
+    )
+    last_message_at: datetime | None = Field(
+        description="마지막 메시지 시각(UTC). 메시지가 없으면 `null`입니다."
+    )
+    created_at: datetime = Field(description="채팅방 생성 시각(UTC).")
+    updated_at: datetime = Field(description="채팅방 마지막 갱신 시각(UTC).")
+
+
+class ChatRoomListItem(ChatRoomOut):
+    """채팅 목록의 채팅방 항목."""
+
+    counterpart_name: str = Field(
+        description="상대방 표시 이름. 업체에게는 요청인 닉네임(프로필이 없으면 `요청인`)입니다."
+    )
+    last_message_preview: str | None = Field(
+        description="최근 메시지 본문 앞 80자. 메시지가 없으면 `null`입니다."
+    )
+
+
+class ChatMessageCreateRequest(BaseModel):
+    """채팅 메시지 전송 요청."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_message_id: UUID = Field(
+        description="클라이언트가 생성한 메시지 고유 UUID(재전송 멱등성 식별자)."
+    )
+    content: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="메시지 본문. 공백만 입력할 수 없으며 최대 2000자입니다.",
+    )
+
+    @field_validator("content")
+    @classmethod
+    def content_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("메시지는 공백일 수 없어요.")
+        return value
+
+
+class ChatMessageOut(BaseModel):
+    """저장된 채팅 메시지."""
+
+    message_id: UUID = Field(description="메시지 UUID.")
+    room_id: UUID = Field(description="메시지가 속한 채팅방 UUID.")
+    sender_id: UUID = Field(description="발신자 사용자 UUID(토큰에서 결정).")
+    sender_role: ChatSenderRole = Field(
+        description="발신자 역할. 요청인은 `requester`, 연결된 업체 계정은 `provider`입니다."
+    )
+    message_type: ChatMessageType = Field(
+        description="메시지 종류. 일반 텍스트는 `text`, 하자 분석 요약은 `record_summary`입니다."
+    )
+    record_id: UUID | None = Field(
+        description="`record_summary` 메시지가 연결된 하자 기록 UUID. 텍스트 메시지는 `null`입니다."
+    )
+    content: str = Field(description="메시지 본문.")
+    payload: Any = Field(
+        default=None,
+        description="`record_summary` 메시지의 구조화 요약(하자 입력·진단 결과). 텍스트 메시지는 `null`입니다.",
+    )
+    client_message_id: UUID = Field(
+        description="재전송 멱등성 식별 UUID. 서버가 만든 요약 메시지는 서버 발급 UUID입니다."
+    )
+    created_at: datetime = Field(description="메시지 생성 시각(UTC).")
+
+
+class ChatMessageListResponse(BaseModel):
+    """채팅 메시지 이력 페이지."""
+
+    messages: list[ChatMessageOut] = Field(
+        description="`created_at`, `id` 오름차순으로 정렬된 메시지 목록."
+    )
+    limit: int = Field(description="요청한 페이지 크기.")
+    offset: int = Field(description="요청한 건너뛸 메시지 수.")
+    has_more: bool = Field(description="다음 페이지가 남아 있는지 여부.")

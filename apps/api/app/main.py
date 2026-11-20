@@ -6,8 +6,11 @@ from fastapi.responses import JSONResponse
 from scalar_fastapi import add_scalar_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.chat import router as chat_router
+from app.drafts import router as drafts_router
 from app.errors import ApiError
 from app.profile import router as profile_router
+from app.providers import router as providers_router
 from app.records import router as records_router
 from app.schemas import HealthResponse
 from app.support_programs import router as support_programs_router
@@ -44,6 +47,16 @@ _API_DESCRIPTION = """
 - `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·외부 분석 동의를 multipart로 받아 샘플 진단을 저장합니다.
 - 현재는 실제 사진 분석이나 LLM을 호출하지 않으며, `photo_analysis.applied=false`, `detections=[]`, `source=sample`로 실제 분석이 아님을 표시합니다.
 
+### 점검·견적 요청문
+- `POST /records/{record_id}/drafts/{kind}`는 저장된 입력과 진단으로 `landlord`(임대인 점검) 또는 `provider`(업체 견적) 요청문을 생성합니다. 입력 버전과 진단 생성 번호가 모두 같은 기존 요청문은 재사용하며, `regenerate=true`일 때만 모델을 다시 호출합니다.
+- 생성 중 입력·진단이 바뀌면 `409`로 저장을 거부하고, 모델 실패 시 기존 요청문을 유지합니다. 모델 키 미설정은 `503`, 호출 실패는 `502`, 제한 시간 초과는 `504`입니다.
+- `GET /records/{record_id}/drafts/{kind}/template`은 모델 호출 없이 확인된 사실을 채운 기본 양식을 반환합니다. 진단이 없어도 사용할 수 있습니다.
+
+### 업체 검색과 1:1 채팅
+- `GET /work-types`, `GET /providers`는 지역과 작업이 모두 일치하는 실제 업체를 찾고, 실제 후보가 없을 때만 `is_sample=true` 샘플 후보를 반환합니다. `chat_available`은 사전 등록된 업체 계정 연결 여부입니다.
+- `POST /chat/rooms`는 요청인–업체 방을 만들거나 재사용하며, `record_id`를 보내면 서버가 만든 하자 요약을 공유합니다. `GET/POST /chat/rooms/{room_id}/messages`는 참여자만 접근할 수 있고 `client_message_id`로 재전송을 멱등 처리합니다.
+- 실시간 수신 방식은 미확정이며, 목록·이력 REST 조회를 반복하는 폴링 계약만 제공합니다.
+
 ### 공통 오류 형식
 - 모든 오류는 `{ "code": string, "message": string, "input_revision"?: number }` 형식으로 반환됩니다.
 """.strip()
@@ -62,6 +75,18 @@ _OPENAPI_TAGS = [
         "description": "프로필 지역·상위 지역·전국 주거 지원 사업 소식지 API. 출처 확인 시점과 마감 종류를 함께 제공하며, 공고 데이터를 클라이언트가 수정하는 API는 없습니다.",
     },
     {
+        "name": "drafts",
+        "description": "임대인 점검·업체 견적 요청문 생성과 모델 호출 없는 기본 양식 API. 본인 기록만 사용하며 편집본 저장 API는 없습니다.",
+    },
+    {
+        "name": "providers",
+        "description": "업체 검색용 작업 종류·지역 필터와 채팅 가능 여부를 포함한 업체 후보 조회 API.",
+    },
+    {
+        "name": "chat",
+        "description": "요청인–업체 1:1 채팅방 목록·생성·재사용, 하자 요약 공유, 메시지 이력·전송 API. 참여자만 접근하며 실시간 수신 방식은 미확정입니다.",
+    },
+    {
         "name": "health",
         "description": "서버 상태 확인용 엔드포인트(인증 불필요).",
     },
@@ -78,6 +103,9 @@ app = FastAPI(
 app.include_router(records_router)
 app.include_router(profile_router)
 app.include_router(support_programs_router)
+app.include_router(drafts_router)
+app.include_router(providers_router)
+app.include_router(chat_router)
 add_scalar_reference(app, route="/docs")
 
 

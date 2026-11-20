@@ -2,6 +2,8 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.schemas import (
+    ChatMessageCreateRequest,
+    ChatRoomCreateRequest,
     MessageCreateRequest,
     MessageUpdateRequest,
     ProfileUpsertRequest,
@@ -35,8 +37,11 @@ def test_openapi_metadata_tags_and_security():
     assert spec["info"]["description"].strip()
 
     tags = {tag["name"]: tag for tag in spec["tags"]}
-    assert {"records", "profile", "support-programs", "health"} <= set(tags)
-    for name in ("records", "profile", "support-programs", "health"):
+    expected_tags = {
+        "records", "profile", "support-programs", "drafts", "providers", "chat", "health"
+    }
+    assert expected_tags <= set(tags)
+    for name in expected_tags:
         assert tags[name]["description"].strip()
 
     bearer = spec["components"]["securitySchemes"]["HTTPBearer"]
@@ -79,6 +84,34 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
             "409",
             "422",
         },
+        ("/records/{record_id}/drafts/{kind}", "post"): {
+            "200",
+            "401",
+            "404",
+            "409",
+            "422",
+            "502",
+            "503",
+            "504",
+        },
+        ("/records/{record_id}/drafts/{kind}/template", "get"): {
+            "200",
+            "401",
+            "404",
+            "422",
+        },
+        ("/work-types", "get"): {"200", "401"},
+        ("/providers", "get"): {"200", "401", "422"},
+        ("/chat/rooms", "get"): {"200", "401"},
+        ("/chat/rooms", "post"): {"200", "401", "404", "422"},
+        ("/chat/rooms/{room_id}/messages", "get"): {"200", "401", "404", "422"},
+        ("/chat/rooms/{room_id}/messages", "post"): {
+            "200",
+            "401",
+            "404",
+            "409",
+            "422",
+        },
     }
 
     actual_operations = set()
@@ -105,10 +138,11 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
                     == "#/components/schemas/ErrorResponse"
                 )
             if "409" in responses:
-                assert (
-                    responses["409"]["content"]["application/json"]["schema"]["$ref"]
-                    == "#/components/schemas/ConflictErrorResponse"
-                )
+                # Record endpoints carry input_revision; chat conflicts do not.
+                assert responses["409"]["content"]["application/json"]["schema"]["$ref"] in {
+                    "#/components/schemas/ConflictErrorResponse",
+                    "#/components/schemas/ErrorResponse",
+                }
 
     assert actual_operations == set(expected_statuses)
 
@@ -134,6 +168,8 @@ def test_openapi_request_examples_validate_and_schemas_are_documented():
         ("/records/{record_id}/messages", "post"): MessageCreateRequest,
         ("/records/{record_id}/messages/{message_id}", "put"): MessageUpdateRequest,
         ("/me/profile", "put"): ProfileUpsertRequest,
+        ("/chat/rooms", "post"): ChatRoomCreateRequest,
+        ("/chat/rooms/{room_id}/messages", "post"): ChatMessageCreateRequest,
     }
     for (path, method), model in request_models.items():
         examples = spec["paths"][path][method]["requestBody"]["content"][
