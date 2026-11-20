@@ -69,6 +69,17 @@ npm run mobile    # Expo 개발 서버
 - 상태 확인: `GET http://127.0.0.1:8000/health`
 - API 문서: `http://127.0.0.1:8000/docs` (Scalar)
 
+### Scalar에서 로그인하고 API 실행하기
+
+`apps/api/.env`에 `SUPABASE_PUBLISHABLE_KEY`를 설정합니다. 모바일의 `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`와 같은 공개 키를 사용하며, service role 키는 사용하지 않습니다. 환경변수 변경 후 API 서버를 재시작합니다.
+
+1. `/docs`의 Authentication에서 `SupabaseLogin`을 선택합니다.
+2. Password 흐름의 Username에 Supabase 계정 이메일, Password에 비밀번호를 입력합니다. Client ID와 Client Secret은 비워 둡니다.
+3. 토큰 발급 버튼을 누르면 `/auth/token`이 Supabase 로그인을 중계하고 Scalar가 받은 토큰을 인증이 필요한 요청에 적용합니다.
+4. 원하는 API의 Test Request에서 경로·본문을 채우고 Send를 누릅니다. 토큰이 만료되면 다시 로그인합니다.
+
+기존 `HTTPBearer` 토큰 직접 입력도 사용할 수 있습니다. 로그인은 이메일·비밀번호 계정용이며, MFA 추가 인증과 토큰 자동 갱신은 지원하지 않습니다. 비밀번호는 API를 거쳐 Supabase로 전달되므로 로컬에서는 localhost를, 외부 배포에서는 HTTPS를 사용합니다. 토큰 응답은 캐시하지 않으며 Scalar 인증값의 영구 저장도 활성화하지 않습니다.
+
 `npm run api`는 실제 기기에서 접근할 수 있도록 `0.0.0.0`에 바인딩합니다. 신뢰하는 네트워크에서만 실행하고, 인증은 그대로 필요합니다. 서버는 요청 본문, 비밀번호, 액세스 토큰을 로그에 남기지 않습니다. 기본 uvicorn 액세스 로그에는 메서드와 경로만 남습니다.
 
 모바일 앱은 Expo Go 또는 시뮬레이터에서 실행합니다. `apps/mobile/.env`의 `EXPO_PUBLIC_API_URL`은 실행 대상에 맞춰야 합니다.
@@ -164,7 +175,7 @@ psql postgresql://localhost:5432/career_pair \
 
 IPv4 네트워크에서는 대시보드 **Connect → Session pooler**의 호스트와 5432 포트를 사용합니다. 전용 역할의 풀러 사용자 이름은 `career_pair_runtime.<project-ref>`이며 `sslmode=require`를 붙입니다. 호스트의 `aws-0`/`aws-1` 부분은 프로젝트 연결 정보에 맞춰야 합니다. [공식 연결 문서](https://supabase.com/docs/guides/database/connecting-to-postgres)를 참고하세요.
 
-현재 개발 환경은 **Home Keeper** (`lprqztpobrlhetbjkcks`, Sydney)에 연결되어 있습니다. 마이그레이션 001–005와 런타임 로그인 설정은 적용 완료했으며, 005의 `questions` INSERT/UPDATE 권한과 RLS 정책을 실제 DB에서 확인했습니다. `006_records_material.sql`–`010_chat_and_provider_accounts.sql`은 관리자 비밀번호가 저장되어 있지 않아 **Home Keeper에는 아직 적용하지 않았습니다.** 006 적용 전에는 `material` 컬럼을 참조하는 조회·수정·분석이, 007 전에는 프로필·지역·기록 목록 API가, 008·009 전에는 소식지 API가, 010 전에는 업체 검색·채팅 API가 실제 Supabase에서 실패합니다. 관리자 연결로 006–010을 순서대로 적용해야 합니다. 인증은 ES256/JWKS를 사용하므로 `SUPABASE_JWT_SECRET`은 비워 둡니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
+현재 개발 환경은 **Home Keeper** (`lprqztpobrlhetbjkcks`, Sydney)에 연결되어 있습니다. 2026-11-20에 Supabase 플러그인으로 006–010을 적용했으며, 마이그레이션 001–010이 모두 적용된 상태입니다. `records.material`, 프로필·지원 사업·채팅 테이블과 런타임 계정의 조회, 새 테이블 4개의 RLS 정책을 실제 DB에서 확인했습니다. 지원 사업 4건과 작업 종류 4건의 시드도 확인했습니다. 인증은 ES256/JWKS를 사용하므로 `SUPABASE_JWT_SECRET`은 비워 둡니다. API와 모바일의 Supabase URL을 맞췄으며, 모바일 publishable key로 Auth health·settings 응답 200을 확인했습니다. 모바일 API 주소는 우선 `http://127.0.0.1:8000`으로 설정했습니다. 실제 기기에서는 Mac LAN IP로 변경해야 합니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
 
 ## 테스트
 
@@ -197,7 +208,7 @@ TEST_DATABASE_NAME=career_pair_ci_test \
 npm run typecheck --workspace @career-pair/mobile
 ```
 
-Expo Router 타입 생성 후 통과했습니다. 실제 기기/시뮬레이터에서 Supabase 로그인 후 프로필 저장·사진 선택·제출·결과 표시·기록 재열람 흐름은 이번 환경에서 실행하지 못했습니다. Home Keeper에는 006–010 마이그레이션이 아직 적용되지 않아 실제 Supabase 대상 분석·프로필·목록·소식지·업체 검색·채팅 호출도 검증하지 못했습니다.
+Expo Router 타입 생성 후 통과했습니다. 실제 기기/시뮬레이터에서 Supabase 로그인 후 프로필 저장·사진 선택·제출·결과 표시·기록 재열람 흐름은 이번 환경에서 실행하지 못했습니다. Home Keeper의 스키마와 런타임 조회·Auth 서버 연결은 확인했지만, 실제 사용자 토큰으로 분석·프로필·목록·소식지·업체 검색·채팅 API를 호출하는 흐름은 검증하지 못했습니다.
 
 ## 소식지 시드·보조금24 동기화
 
@@ -232,4 +243,4 @@ DATABASE_URL='postgresql://career_pair_runtime:...@localhost:5432/career_pair' \
   - [경기청년포털 자립준비청년 주거비 지원사업](https://youth.gg.go.kr/gg/intro/youth-policy-educational-testing.do?articleNo=9010&mode=view)
   - [용인청년포털 부동산 중개보수 감면](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026021000000000000055001)
   - [용인청년포털 청년월세 지원](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026032300000000000061001)
-- 실제 `GOV24_API_KEY`로 `serviceList` **10,891건**을 조회하고, 주거 제목 필터·지역 확정 후 **41건을 로컬 개발 DB에 upsert**하는 것까지 확인했습니다. Home Keeper에는 `support_programs` 마이그레이션이 아직 없어 실제 Supabase 동기화는 별도 적용 후 가능합니다. 운영 응답의 주거 키워드·지역·기한 해석은 첫 실동기화 결과를 계속 점검해야 합니다.
+- 실제 `GOV24_API_KEY`로 `serviceList` **10,891건**을 조회하고, 주거 제목 필터·지역 확정 후 **41건을 로컬 개발 DB에 upsert**하는 것까지 확인했습니다. Home Keeper에도 `support_programs` 마이그레이션과 시드 4건을 적용했으며, 실제 Supabase 대상 보조금24 동기화는 아직 실행하지 않았습니다. 운영 응답의 주거 키워드·지역·기한 해석은 첫 실동기화 결과를 계속 점검해야 합니다.
