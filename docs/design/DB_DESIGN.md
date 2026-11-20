@@ -1,12 +1,12 @@
 # MVP DB 설계 초안
 
-합의한 저장 규칙을 기준으로 정리한 테이블 설계다. 아래 테이블 표는 전체 설계 요약이며, 현재 실제 DB에 적용된 컬럼·타입은 초기 마이그레이션(`001`–`006`)과 구현 확정 사항을 함께 확인한다. 접근·생성·실패 처리 규칙은 [백엔드 설계](BACKEND_DESIGN.md)를 따른다.
+합의한 저장 규칙을 기준으로 정리한 테이블 설계다. 아래 테이블 표는 전체 설계 요약이며, 현재 실제 DB에 적용된 컬럼·타입은 마이그레이션(`001`–`007`)과 구현 확정 사항을 함께 확인한다. 접근·생성·실패 처리 규칙은 [백엔드 설계](BACKEND_DESIGN.md)를 따른다.
 
 ## 문서 범위
 
-아래 구현 확정 사항은 현재 마이그레이션(`001`–`006`)에 반영된 내용이다.
+아래 구현 확정 사항은 현재 마이그레이션(`001`–`007`)에 반영된 내용이다.
 
-2026년 11월 20일 팀 회의 변경 사항을 반영해 `records.material`과 샘플 일괄 분석 결과 저장을 구현했고, `profiles`(닉네임·역할·거주 지역·선택 등록 주소·거주 형태), `providers.account_user_id`, `support_programs`(소식지 주거 지원 사업), `chat_rooms`, `chat_messages`(업체–요청인 1:1 채팅) 추가는 후속 마이그레이션 대상으로 설계했다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행 방법은 [README](../../README.md)를 따른다.
+2026년 11월 20일 팀 회의 변경 사항을 반영해 `records.material`, 샘플 일괄 분석 결과 저장, 회원 프로필(`profiles`)과 시연 지역 시드를 구현했다. `providers.account_user_id`, `support_programs`(소식지 주거 지원 사업), `chat_rooms`, `chat_messages`(업체–요청인 1:1 채팅) 추가는 후속 마이그레이션 대상으로 설계했다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행 방법은 [README](../../README.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -17,14 +17,14 @@
 - 질문·메시지 순서는 `records.conversation_sequence`에서 함께 발급한다. 각 테이블의 `(record_id, sequence)` 유일 제약은 유지하고, 두 테이블 사이의 순서는 기록 행 잠금과 같은 트랜잭션에서 조정한다. *(현재 MVP 미사용/보류)*
 - `messages`는 `(record_id, question_id)` 복합 외래키로 같은 기록의 질문만 참조한다. `sender = 'user'`인 행은 `client_message_id`가 필수다. *(현재 MVP 미사용/보류)*
 - `messages.input_revision`은 그 메시지가 반영된 뒤의 기록 입력 버전이다. *(현재 MVP 미사용/보류)*
-- 런타임 역할 `career_pair_runtime`은 마이그레이션이 `NOLOGIN`으로 만들고 현재 구현된 API에 필요한 DML만 부여한다(기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 업체·지역·작업 참조 테이블 `SELECT`). 질문 INSERT/UPDATE는 `005_next_question_grants.sql`에서 추가하고, `records.material`은 `006_records_material.sql`로 추가한다. 기록의 테이블 단위 SELECT/UPDATE와 RLS 정책이 새 컬럼에도 적용되므로 별도 컬럼 권한은 추가하지 않는다. 로그인 비밀번호는 관리자가 별도로 설정한다. 새 기능이 더 많은 권한을 필요로 하면 후속 마이그레이션에서 명시적으로 부여한다. Supabase Data API 역할(`anon`, `authenticated`, `service_role`)이 있으면 앱 테이블 권한과 향후 테이블 기본 권한을 회수한다.
+- 런타임 역할 `career_pair_runtime`은 마이그레이션이 `NOLOGIN`으로 만들고 현재 구현된 API에 필요한 DML만 부여한다(기록 `SELECT/INSERT/UPDATE`, 질문 `SELECT/INSERT/UPDATE/DELETE`, 메시지 `SELECT/INSERT/UPDATE/DELETE`, 프로필 `SELECT/INSERT/UPDATE`, 업체·지역·작업 참조 테이블 `SELECT`). 질문 INSERT/UPDATE는 `005_next_question_grants.sql`에서 추가하고, `records.material`은 `006_records_material.sql`, `profiles`와 용인 지역 시드는 `007_profiles_and_regions.sql`에서 추가한다. 기록의 테이블 단위 SELECT/UPDATE와 RLS 정책이 새 컬럼에도 적용되므로 별도 컬럼 권한은 추가하지 않는다. 로그인 비밀번호는 관리자가 별도로 설정한다. 새 기능이 더 많은 권한을 필요로 하면 후속 마이그레이션에서 명시적으로 부여한다. Supabase Data API 역할(`anon`, `authenticated`, `service_role`)이 있으면 앱 테이블 권한과 향후 테이블 기본 권한을 회수한다.
 - 앱 테이블에는 `003_backend_rls.sql`이 RLS를 켜고 `career_pair_runtime`만 통과시키는 정책을 둔다. Data API 역할은 권한 회수로 막고, 사용자별 접근 제어는 FastAPI의 소유권/참여자 검사로 수행한다.
 
 ## 테이블
 
 | 테이블 | 상태 | 주요 컬럼 |
 | --- | --- | --- |
-| `profiles` | 구현 예정 | `user_id uuid PK/FK auth.users(id)`, `nickname text NOT NULL`, `role text NOT NULL`, `region_id uuid NOT NULL FK regions(id)`, `address text NULL`, `housing_type text NOT NULL`, `created_at timestamptz`, `updated_at timestamptz` |
+| `profiles` | 구현됨 (`007`) | `user_id uuid PK/FK auth.users(id)`, `nickname text NOT NULL`, `role text NOT NULL`, `region_id uuid NOT NULL FK regions(id)`, `address text NULL`, `housing_type text NOT NULL`, `created_at timestamptz`, `updated_at timestamptz` |
 | `records` | 구현됨 (`material` 포함) | `id uuid PK`, `owner_id uuid`, `location text`, `material text NULL`, `symptoms text`, `photo_observations jsonb`, `input_revision bigint`, `next_question_result jsonb` *(레거시)*, `next_question_revision bigint` *(레거시)*, `diagnosis jsonb`, `diagnosis_revision bigint`, `diagnosis_generation bigint`, `landlord_draft text`, `landlord_draft_revision bigint`, `landlord_draft_diagnosis_generation bigint`, `provider_draft text`, `provider_draft_revision bigint`, `provider_draft_diagnosis_generation bigint`, `conversation_sequence bigint` *(레거시)*, `created_at timestamptz`, `updated_at timestamptz` |
 | `support_programs` | 구현 예정 | `id uuid PK`, `external_id text UNIQUE NULL`, `source text NOT NULL`, `title text NOT NULL`, `summary text NOT NULL`, `organization_name text NOT NULL`, `region_scope text NOT NULL`, `region_id uuid NULL FK regions(id)`, `target_housing_types text[]`, `deadline_text text NOT NULL`, `deadline_date date NULL`, `apply_method text NULL`, `detail_url text NULL`, `source_attribution text NOT NULL`, `synced_at timestamptz NULL`, `created_at timestamptz`, `updated_at timestamptz` |
 | `providers` | 구현됨 (`account_user_id` 추가 예정) | `id uuid PK`, `name text NOT NULL`, `phone text NOT NULL`, `account_user_id uuid NULL UNIQUE FK auth.users(id)` *(추가 예정)* |
@@ -43,18 +43,20 @@
 
 샘플 일괄 분석은 `photo_observations`에 `source="sample"`, `applied=false`, 안내 문구, 사진별 역할과 `status="not_analyzed"`만 저장한다. 탐지 후보·신뢰도·bbox/좌표는 저장하지 않는다. `diagnosis`에는 구조화 진단과 `source="sample"`을 저장하고, `diagnosis_revision`은 입력 반영 후 버전, `diagnosis_generation`은 성공할 때마다 증가한 값을 기록한다. 원본 사진은 DB에 저장하지 않으며 FastAPI의 업로드 임시 파일은 성공·실패 모두 닫는다.
 
-`diagnosis` JSONB는 `observations`, `severity_score`(`0`~`100` 또는 `null`), `severity_level`(`low`, `medium`, `high`, `undetermined`), `reason`, `causes`, `estimation_notice`, `recommended_action`(`self_care`, `inspection`, `provider_consult`), `care_steps`, `supplies`, `prevention_tips`, `unknowns`, `work_type_id`(샘플에서 `null` 가능), `work_type_reason`, `source`를 포함한다.
+`diagnosis` JSONB는 `observations`, `suspected_types`(의심 하자 유형 목록), `severity_score`(`0`~`100` 또는 `null`), `severity_level`(`low`, `medium`, `high`, `undetermined`), `reason`, `causes`, `estimation_notice`, `recommended_action`(`self_care`, `inspection`, `provider_consult`), `care_steps`, `supplies`, `prevention_tips`, `unknowns`, `work_type_id`(샘플에서 `null` 가능), `work_type_reason`, `source`를 포함한다.
 
-## 회원 프로필 추가 설계 (`profiles`, 구현 예정)
+## 회원 프로필 (`profiles`, 구현 완료)
 
-`profiles`는 회원 한 명의 닉네임, 역할, 현재 거주 지역, 선택 등록 주소, 거주 형태를 저장할 예정인 테이블이다. 기존 마이그레이션(`001`–`005`)에는 없으며 후속 마이그레이션으로 추가한다.
+`profiles`는 회원 한 명의 닉네임, 역할, 현재 거주 지역, 선택 등록 주소, 거주 형태를 저장하는 테이블이다. `007_profiles_and_regions.sql`에서 추가했으며 `user_id`가 기본키다.
 
-- `role`: `CHECK (role IN ('requester', 'provider'))`, 기본값 `'requester'`. 일반 회원가입은 `'requester'`만 생성하며 시연용 업체 계정은 `'provider'`로 사전 등록한다.
-- `region_id`: `regions(id)` 참조 (`NOT NULL`).
+- `role`: `CHECK (role IN ('requester', 'provider'))`, 기본값 `'requester'`. FastAPI의 프로필 저장은 새 행을 `'requester'`로 만들고 기존 역할은 덮어쓰지 않는다. 일반 회원가입은 `'requester'`만 생성하며 시연용 업체 계정은 `'provider'`로 사전 등록한다.
+- `nickname`: 공백만 입력할 수 없도록 `CHECK (length(btrim(nickname)) > 0)`.
+- `region_id`: `regions(id)` 참조 (`NOT NULL`). `007`은 시연 지역 용인(`name='yongin'`, `display_name='경기도 용인시'`)을 `ON CONFLICT (name) DO NOTHING`으로 시드한다.
 - `address`: 선택 입력 (`text NULL`). 상세 등록 주소를 계속 유지할지 거주 지역만 수집할지는 팀 추가 논의 항목이다.
 - `housing_type`: `CHECK (housing_type IN ('monthly_rent', 'jeonse', 'semi_jeonse', 'owned', 'other'))` (`월세`, `전세`, `반전세`, `자가`, `기타`).
+- `updated_at`: 프로필을 저장할 때 서버가 갱신한다.
 
-계정 생성과 프로필 저장은 별도 단계이며, 저장 실패 시 같은 사용자 ID로 다시 저장한다. 프로필이 없는 기존 계정에는 프로필 등록을 안내한다. 상세 주소를 외부 AI 모델 입력에 자동 포함하지 않으며, 프로필 갱신으로 과거 기록과 요청문을 일괄 수정하지 않는다.
+계정 생성과 프로필 저장은 별도 단계이며, `PUT /me/profile`은 같은 사용자 ID로 upsert해 저장 실패 후 재시도해도 한 행만 유지한다. 프로필이 없는 기존 계정에는 프로필 등록을 안내한다. 상세 주소를 외부 AI 모델 입력에 자동 포함하지 않으며, 프로필 갱신으로 과거 기록과 요청문을 일괄 수정하지 않는다.
 
 ## 소식지 추가 설계 (`support_programs`, 구현 예정)
 
@@ -83,14 +85,15 @@
 ## 권한 및 RLS 정책
 
 - `profiles`, `support_programs`, `chat_rooms`, `chat_messages` 모두 기존 앱 테이블과 동일하게 Supabase Data API(`anon`, `authenticated`, `service_role`) 권한을 회수하고, `career_pair_runtime` 역할만 필요한 DML 권한을 부여해 RLS를 통과시키는 구조를 기본으로 둔다.
-  - `profiles`: `SELECT, INSERT, UPDATE`
+  - `profiles`(구현 완료): `SELECT, INSERT, UPDATE`
   - `support_programs`: `SELECT, INSERT, UPDATE` (동기화 작업 시 백엔드 갱신 허용)
   - `chat_rooms`, `chat_messages`: `SELECT, INSERT, UPDATE`
 - *(예외 참고)* 만약 팀원 협의 결과 채팅 실시간 수신 방식으로 `Supabase Realtime`을 채택한다면, `chat_rooms`와 `chat_messages`에 한해 `authenticated` 참여자 본인만 조회할 수 있는 예외 RLS 정책을 별도로 검토해야 한다. `FastAPI REST 폴링` 또는 `FastAPI WebSocket`을 선택하면 기존 Data API 차단 경계를 그대로 유지한다.
 
 ## 제약과 인덱스
 
-- `records(owner_id)` 및 `(owner_id, updated_at DESC)`에 인덱스를 두어 `내 정보`의 내 하자 분석 기록 목록 조회를 지원한다.
+- `records(owner_id)` 및 `(owner_id, updated_at DESC)`에 인덱스를 두어 `내 정보`의 내 하자 분석 기록 목록 조회를 지원한다. `(owner_id, updated_at DESC)` 인덱스는 `007_profiles_and_regions.sql`에서 추가했다.
+- `profiles(region_id)` 인덱스를 두어 지역별 조회를 지원한다. `007_profiles_and_regions.sql`에서 추가했다.
 - `support_programs(region_scope, region_id, deadline_date)`에 인덱스를 두어 거주 지역+전국 필터링과 마감 하단 정렬을 지원한다.
 - `chat_rooms(requester_id, provider_id)` 유일 제약과 `chat_rooms(requester_id, last_message_at DESC)`, `chat_rooms(provider_id, last_message_at DESC)` 인덱스를 둔다.
 - `chat_messages(room_id, client_message_id)` 유일 제약과 `chat_messages(room_id, created_at, id)` 인덱스를 둔다.

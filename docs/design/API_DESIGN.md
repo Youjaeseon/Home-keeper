@@ -4,9 +4,9 @@
 
 ## 문서 범위
 
-현재 코드에 구현된 기록 API(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`)와 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`)의 계약은 아래 구현 확정 사항과 일괄 분석 섹션을 따른다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
+현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
 
-회원 프로필, 소식지, 실제 모델 기반 일괄 분석·진단, 내 기록 목록, 요청문 생성, 업체 검색과 1:1 채팅 경로는 2026년 11월 20일 변경 사항을 반영한 후속 구현 설계다. 실행과 호출 절차는 [README](../../README.md)를 따른다.
+소식지, 실제 모델 기반 일괄 분석·진단, 요청문 생성, 업체 검색과 1:1 채팅 경로는 2026년 11월 20일 변경 사항을 반영한 후속 구현 설계다. 실행과 호출 절차는 [README](../../README.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -19,16 +19,20 @@
 - 공통 오류 형식은 `{ "code", "message", "input_revision"? }`이다. 처리하지 못한 서버·DB 오류는 내용을 노출하지 않고 500 `internal_error`로 반환한다.
 - *(MVP 미사용/보류)* `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`의 구현 확정 사항은 문서 하단 레거시 섹션에 유지한다.
 
-## 회원가입과 프로필 (구현 예정)
+## 회원가입과 프로필 (프로필 API 구현 완료)
 
 일반 회원가입은 `요청인` 전용이다. 앱에서 Supabase Auth로 **이메일·비밀번호** 계정을 만들고, 회원가입 과정에서 `닉네임`, `거주 지역`(필수), `등록 주소`(선택), `거주 형태`(`월세`, `전세`, `반전세`, `자가`, `기타`)를 입력받는다. 인증 가능한 세션을 얻은 뒤 FastAPI에 프로필을 저장한다. 이메일 확인이 필요한 환경은 확인 후 동일 계정으로 프로필 등록을 완료한다. 계정 생성 후 프로필 저장에 실패하면 프로필 저장만 재시도한다. 시연용 `업체` 계정은 Supabase Auth와 `profiles`(`role="provider"`)에 사전 등록한다.
 
 | API | 동작 |
 | --- | --- |
-| `GET /me/profile` | 인증된 본인의 `nickname`, `role`, `region_id`, `address`, `housing_type`을 조회한다. 미등록이면 프로필이 없음을 반환(`404`)해 등록 화면으로 이어간다. |
-| `PUT /me/profile` | `nickname`, `region_id`, `address`(선택/null 가능), `housing_type`을 받아 인증된 본인의 프로필을 등록·수정한다. `user_id`는 토큰에서 결정하고 `role`은 클라이언트가 변경할 수 없다. |
+| `GET /me/profile` | 인증된 본인의 `nickname`, `role`, `region_id`, `address`, `housing_type`을 조회한다. 미등록이면 `404`(`not_found`)를 반환해 앱이 등록 화면으로 이어간다. |
+| `PUT /me/profile` | `nickname`, `region_id`, `address`(선택/null 가능), `housing_type`을 받아 인증된 본인의 프로필을 등록·수정한다. `user_id`는 토큰에서 결정하고 `role`은 요청에서 받지 않는다. |
 
-`housing_type` 허용값은 `monthly_rent`(월세), `jeonse`(전세), `semi_jeonse`(반전세), `owned`(자가), `other`(기타)다.
+구현 확정 사항:
+- `PUT /me/profile`은 `(user_id)` 기준 upsert다. 같은 사용자로 다시 호출하면 한 행을 수정하며, 저장 실패 후 같은 계정으로 재시도해도 중복 프로필이 생기지 않는다.
+- 새 프로필의 `role`은 서버가 `requester`로 정한다. 요청에 `role` 또는 `user_id`가 있으면 추가 필드로 거부하며(`422`), 기존 업체 계정의 `provider` 역할은 일반 프로필 저장으로 바뀌지 않는다.
+- `nickname`은 앞뒤 공백을 제거하고, 공백만 입력하면 `422`다. `address`는 앞뒤 공백을 제거하고 빈 문자열이면 `null`로 저장한다.
+- `region_id`는 `GET /regions`에 있는 지역 UUID여야 하며, 없으면 `422`다. `housing_type` 허용값은 `monthly_rent`(월세), `jeonse`(전세), `semi_jeonse`(반전세), `owned`(자가), `other`(기타)다.
 
 주소·지역이 필요한 화면(임대인 점검 요청, 업체 찾기)에서 앱은 등록 주소와 거주 지역을 보여주고 맞는지 확인한다. 다르면 위 프로필 저장 API로 수정한 뒤 사용한다. 프로필 미등록 상태에서도 기존 계정의 로그인과 기록 조회는 가능하며, 프로필이 필요한 행동에서 등록을 안내한다.
 
@@ -53,12 +57,14 @@
 5. **채팅 탭**: `GET /chat/rooms`로 채팅 목록을 보고 `GET/POST /chat/rooms/{room_id}/messages`로 대화를 이어간다.
 6. **내 정보 탭**: `GET/PUT /me/profile`로 프로필을 조회·수정하고, `GET /records`로 내 하자 분석 기록 목록을 불러와 과거 기록의 결과 페이지를 다시 연다.
 
-## 내 정보와 하자 분석 기록 목록 (`GET /records`, 구현 예정)
+## 내 정보와 하자 분석 기록 목록 (`GET /records`, 구현 완료)
 
-`내 정보` 페이지의 **내 하자 분석 기록 목록**을 조회한다. 본인이 소유한 기록만 `updated_at` 내림차순으로 반환한다.
+`내 정보` 페이지의 **내 하자 분석 기록 목록**을 조회한다. 본인이 소유한 기록만 `updated_at` 내림차순(같으면 `created_at`, `id` 내림차순)으로 반환한다.
 
-- 항목 필드: `record_id`, `location`, `material`, `symptoms`, `suspected_types`(예: `["곰팡이"]`), `severity_score`, `severity_level`, `updated_at`.
+- 응답은 배열이며 항목 필드는 `record_id`, `location`, `material`, `symptoms`, `suspected_types`(예: `["곰팡이"]`), `severity_score`, `severity_level`, `created_at`, `updated_at`이다.
+- 전체 진단·입력 버전·대화는 포함하지 않는다. 진단이 없으면 `suspected_types=[]`, `severity_score=null`, `severity_level=null`이다.
 - 목록에서 항목을 선택하면 기존 `GET /records/{record_id}`로 전체 상세를 불러와 분석 결과 페이지를 다시 표시한다.
+- 다른 사용자의 기록은 목록에 포함하지 않는다.
 
 ## 일괄 분석과 진단 (`POST /records/{record_id}/analyze`, 샘플 구현 완료)
 
@@ -94,6 +100,7 @@
   },
   "diagnosis": {
     "observations": "사진 분석은 수행되지 않았습니다. 입력한 위치(안방 창틀 아래), 재질(실리콘), 검은 곰팡이 의심 얼룩을 기준으로 만든 샘플 관찰 요약입니다.",
+    "suspected_types": ["곰팡이"],
     "severity_score": 75,
     "severity_level": "high",
     "reason": "입력값 기준 샘플 심각도 75%(high)입니다. 곰팡이 관련 입력이 있었지만 실제 사진 분석 없이 만든 참고용 수치입니다.",
@@ -155,9 +162,9 @@
 - `GET /support-programs/{program_id}`:
   - 소식지 상세 요약 페이지에 필요한 지원 내용, 선정 기준·대상 거주 형태, 신청기한(`deadline_text`, `is_closed`), `apply_method`, `detail_url`(외부 브라우저 열기용), `source_attribution`을 반환한다.
 
-## 업체 조회 (`GET /regions`, `GET /work-types`, `GET /providers`, 구현 예정)
+## 업체 조회 (`GET /regions` 구현 완료, `GET /work-types`, `GET /providers` 구현 예정)
 
-`GET /regions`는 회원 프로필의 거주 지역 선택과 소식지·업체 검색에 사용할 지역 ID와 시·군·구가 포함된 표시 이름을 반환한다. `GET /work-types`는 작업 ID와 이름을 반환한다. 앱은 진단의 추천 작업을 미리 선택한다.
+`GET /regions`는 회원 프로필의 거주 지역 선택과 소식지·업체 검색에 사용할 지역 ID와 시·군·구가 포함된 표시 이름을 반환한다. 응답은 `{ "region_id", "name", "display_name" }` 배열이며 `display_name` 순으로 정렬한다. 마이그레이션 `007_profiles_and_regions.sql`은 시연 지역 `용인`(`name="yongin"`, `display_name="경기도 용인시"`)을 중복 없이 시드한다. `GET /work-types`는 작업 ID와 이름을 반환한다. 앱은 진단의 추천 작업을 미리 선택한다.
 
 업체 검색 전 앱은 등록 주소·거주 지역이 맞는지 확인하고 확인한 거주 지역 ID를 사용한다. `GET /providers?region_id=<UUID>&work_type_id=<UUID>`는 출장 가능 지역과 작업이 모두 맞는 업체를 반환한다.
 
@@ -186,7 +193,7 @@
 | 인증 실패 또는 만료 | 401 |
 | 기록·프로필·지원 사업·채팅방을 찾지 못했거나 접근 권한 없음 | 404 |
 | 입력 버전 충돌, 진단 교체 충돌, 동일 메시지 ID의 내용 충돌 | 409 |
-| 요청 필드·거주 형태·검색 코드·업로드 파일이 유효하지 않음 | 422 |
+| 요청 필드·거주 형태·검색 코드·업로드 파일이 유효하지 않거나 프로필의 지역·닉네임이 유효하지 않음 | 422 |
 | 외부 모델 또는 공공 API 호출·응답 형식 오류 | 502 |
 | 외부 모델 또는 공공 API 응답 제한 시간 초과 | 504 |
 

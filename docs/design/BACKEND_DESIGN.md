@@ -2,7 +2,7 @@
 
 ## 문서 범위
 
-이 문서는 2026년 11월 20일 팀 회의 변경 사항을 반영한 MVP 전체의 백엔드 처리 규칙을 설명한다. 현재 저장소에 구현된 기능은 인증, 하자 기록 CRUD(`material` 포함), 사진·위치·재질 기반 **샘플 일괄 분석**, 그리고 **현재 MVP 흐름에서는 사용하지 않는 레거시/보류 상태의 대화·시연용 다음 질문 API**(`messages`, `next-question`)다. 회원 프로필, 소식지, 실제 모델 기반 사진 분석·진단, 내 기록 목록, 요청문 생성, 업체 검색과 1:1 채팅은 후속 구현 대상이다.
+이 문서는 2026년 11월 20일 팀 회의 변경 사항을 반영한 MVP 전체의 백엔드 처리 규칙을 설명한다. 현재 저장소에 구현된 기능은 인증, 하자 기록 CRUD(`material` 포함), 내 기록 목록(`GET /records`), 회원 프로필(`GET/PUT /me/profile`)·지역 목록(`GET /regions`), 사진·위치·재질 기반 **샘플 일괄 분석**, 그리고 **현재 MVP 흐름에서는 사용하지 않는 레거시/보류 상태의 대화·시연용 다음 질문 API**(`messages`, `next-question`)다. 소식지, 실제 모델 기반 사진 분석·진단, 요청문 생성, 업체 검색과 1:1 채팅은 후속 구현 대상이다.
 
 실행과 검증 절차는 [README](../../README.md), 테이블과 제약은 [DB 설계](DB_DESIGN.md), 앱 연동 계약은 [API 설계](API_DESIGN.md)를 따른다.
 
@@ -12,7 +12,7 @@ Expo 앱은 Supabase Auth(이메일·비밀번호)로 회원가입·로그인한
 
 앱은 프로필, 소식지, 하자 기록, 업체 검색, 채팅을 FastAPI에 요청한다. FastAPI는 요청의 액세스 토큰을 검증하고, 기록의 조회·수정·분석·초안 생성에서는 검증된 사용자와 기록 소유자가 일치하는지 확인하며, 채팅에서는 참여자(요청인 또는 연결된 업체 계정) 여부를 확인한다.
 
-## 회원 프로필과 등록 주소 (구현 예정)
+## 회원 프로필과 등록 주소 (구현 완료)
 
 회원가입 과정에서 `닉네임`, `거주 지역`, `등록 주소`(선택 입력), `거주 형태`(`월세`, `전세`, `반전세`, `자가`, `기타`)를 등록한다. `거주 지역`은 소식지 기본 노출과 업체 검색에 쓸 지역 ID와 연결하고, `등록 주소`는 주택을 식별하는 선택 문구로 저장한다. 집 안에서 하자가 생긴 위치는 하자 기록의 `location`으로 별도 관리한다. *(상세 등록 주소를 계속 유지할지 거주 지역만 수집할지는 팀 추가 논의 항목으로 둔다.)*
 
@@ -21,6 +21,12 @@ Expo 앱은 Supabase Auth(이메일·비밀번호)로 회원가입·로그인한
 소식지와 업체 검색은 확인한 거주 지역 ID를 사용한다. 상세 `등록 주소`는 질문·진단·요청문 생성용 LLM 입력에서 제외한다. 주소가 들어갈 임대인 점검 요청문은 주소를 제외한 초안을 생성한 뒤 앱에서 확인한 주소를 반영한다. 주소를 수정한 요청문도 사용자 편집본과 같은 방식으로 현재 화면에서 유지한다. 거주 형태가 `자가`인 요청인의 결과 화면에서는 임대인 점검 요청문을 기본 숨긴다.
 
 FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID로 접근을 제한한다. 프로필 변경은 하자 입력 버전(`input_revision`)과 구분하며, 기존 기록이나 요청문을 자동으로 새 주소로 바꾸지 않는다. 실제 주소의 외부 DB 보관과 보유기간은 개인정보 검토의 미결정 사항으로 남긴다.
+
+프로필 API 구현 세부:
+- `GET /me/profile`은 미등록 시 `404`, `PUT /me/profile`은 사용자 ID 기준 upsert다. 저장 실패 후 재시도해도 한 행만 유지한다.
+- 새 프로필의 역할은 서버가 `requester`로 정하며 요청의 `role`/`user_id`는 받지 않는다. 기존 `provider` 역할은 덮어쓰지 않는다.
+- `nickname`은 공백 제거 후 비어 있으면 `422`, `address`는 공백이면 `null`, `region_id`는 `regions`에 존재해야 하며 `housing_type`은 허용값만 받는다.
+- `GET /regions`는 지역 ID·이름·표시 이름을 `display_name` 순으로 반환하고, `007_profiles_and_regions.sql`이 시연 지역 용인을 시드한다.
 
 ## 하자 기록의 생성과 저장
 
@@ -34,8 +40,8 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 
 | 저장 단위 | 상태 | 저장할 값 |
 | --- | --- | --- |
-| 회원 프로필 (`profiles`) | 구현 예정 | 사용자 ID, 닉네임, 역할(`requester`/`provider`), 거주 지역 ID, 선택 등록 주소, 거주 형태(`monthly_rent`/`jeonse`/`semi_jeonse`/`owned`/`other`), 수정 시각. 로그인한 사용자 본인만 조회·수정한다. |
-| 하자 기록 (`records`) | 구현됨 (`material` 추가 예정) | 기록 ID, 소유자 ID, 위치·재질·선택 증상 메모, 사진 관찰 요약, 최신 진단(JSONB), 최신 점검 요청문, 최신 견적 요청문 |
+| 회원 프로필 (`profiles`) | 구현됨 (`007`) | 사용자 ID, 닉네임, 역할(`requester`/`provider`), 거주 지역 ID, 선택 등록 주소, 거주 형태(`monthly_rent`/`jeonse`/`semi_jeonse`/`owned`/`other`), 수정 시각. 로그인한 사용자 본인만 조회·수정한다. |
+| 하자 기록 (`records`) | 구현됨 (`material` 포함) | 기록 ID, 소유자 ID, 위치·재질·선택 증상 메모, 사진 관찰 요약, 최신 진단(JSONB), 최신 점검 요청문, 최신 견적 요청문 |
 | 소식지 지원 사업 (`support_programs`) | 구현 예정 | 지원 사업 ID, 외부 ID, 출처(`gov24_api`/`seed`), 제목, 요약, 소관기관, 지역 구분(`national`/`local`), 지역 ID, 대상 거주 형태, 신청기한 원문·마감일, 신청방법, 원문 URL, 출처 표기 |
 | 업체 (`providers` 등) | 테이블 구현됨 (`account_user_id` 추가 예정) | 업체 ID, 업체명, 연락처, 사전 등록 업체 계정 사용자 ID, 출장 지역 연결, 작업 종류 연결 |
 | 채팅방·메시지 (`chat_rooms`, `chat_messages`) | 구현 예정 | 채팅방 ID, 요청인 ID, 업체 ID, 최근 연결 기록 ID, 발신자 ID·역할, 메시지 유형(`text`/`record_summary`), 연결 기록 ID, 본문·요약 페이로드, `client_message_id` |
@@ -136,11 +142,11 @@ DB 저장을 직접 허용한다는 별도 문구는 확인되지 않았으나, 
 
 | 메서드와 경로 | 상태 | 입력 | 성공 응답 |
 | --- | --- | --- | --- |
-| `GET /me/profile` | 구현 예정 | 없음 | `nickname`, `role`, `region_id`, `address`, `housing_type` |
-| `PUT /me/profile` | 구현 예정 | `nickname`, `region_id`, `address`, `housing_type` | 저장된 프로필 |
+| `GET /me/profile` | 구현됨 | 없음 | `nickname`, `role`, `region_id`, `address`, `housing_type`; 미등록 시 `404` |
+| `PUT /me/profile` | 구현됨 | `nickname`, `region_id`, `address`, `housing_type` | 저장된 프로필 (사용자 ID 기준 upsert, 역할 서버 결정) |
 | `GET /support-programs` | 구현 예정 | `region_id?`, `status?` | 거주 지역+전국 지원 사업 목록 (`deadline_text`, `is_closed`, 마감 하단 정렬) |
 | `GET /support-programs/{program_id}` | 구현 예정 | 없음 | 상세 요약, 신청기한·방법, 원문 URL, 출처 |
-| `GET /records` | 구현 예정 | 없음 | 내 하자 분석 기록 목록 (최신순, 요약·심각도% 포함) |
+| `GET /records` | 구현됨 | 없음 | 내 하자 분석 기록 목록 (최근 수정순, 위치·재질·증상·의심 유형·심각도% 요약) |
 | `POST /records` | 구현됨 | 없음 | `record_id`, `input_revision` |
 | `GET /records/{record_id}` | 구현됨 | 없음 | 저장된 입력(위치·재질·증상), 진단·요청문 및 각 결과의 입력 버전 |
 | `PATCH /records/{record_id}` | 구현됨 | 변경할 위치·재질·증상 | 저장된 값, `input_revision` |
@@ -148,8 +154,8 @@ DB 저장을 직접 허용한다는 별도 문구는 확인되지 않았으나, 
 | `POST /records/{record_id}/diagnosis` | 구현 예정 | `regenerate?` | 최신 진단 재사용 또는 재생성 결과(`diagnosis_generation` 포함) |
 | `POST /records/{record_id}/drafts/{kind}` | 구현 예정 | 요청문 종류(`landlord` \| `provider`) | 요청문과 입력 버전·진단 생성 번호 |
 | `GET /records/{record_id}/drafts/{kind}/template` | 구현 예정 | 요청문 종류(`landlord` \| `provider`) | 현재 기록의 확인된 사실을 채운 기본 양식 |
-| `GET /regions`, `GET /work-types` | 구현 예정 | 없음 | 검색·프로필에 사용하는 ID와 화면 표시 이름 |
-| `GET /providers` | 구현 예정 | `region_id`, `work_type_id` | 업체 후보 목록(`채팅 가능 여부`, 전화번호, `is_sample`) |
+| `GET /regions` | 구현됨 | 없음 | 지역 ID·이름·시·군·구 표시 이름 |
+| `GET /work-types`, `GET /providers` | 구현 예정 | 없음 / `region_id`, `work_type_id` | 작업 목록 / 업체 후보 목록(`채팅 가능 여부`, 전화번호, `is_sample`) |
 | `GET /chat/rooms`, `POST /chat/rooms` | 구현 예정 | 생성 시 `provider_id`, `record_id?` | 채팅방 목록 또는 생성·재사용된 방(하자 요약 자동 공유) |
 | `GET /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/messages` | 구현 예정 | 메시지 전송 시 `client_message_id`, `content` | 채팅 메시지 목록 또는 저장된 메시지 |
 | `POST /records/{record_id}/messages`, `PUT .../messages/{message_id}`, `POST .../next-question` | 구현됨 (MVP 미사용/보류) | 기존 AI 질문 대화 요청 | 기존 메시지·시연 질문 응답 |
