@@ -24,6 +24,7 @@
 | [용어집](GLOSSARY.md) | 요청인, 업체, 거주 형태, 소식지, 주거 지원 사업, 하자 기록 등의 의미 |
 | [프로젝트 계획](docs/plans/PROJECT_PLAN.md) | 제출 요건, 전체 일정, 검증표와 결정 이력 |
 | [AI 아이디어 비교](docs/ideas/AI_IDEAS.md) | 후속 기능 후보와 검토 근거 |
+| [커밋 규칙](docs/COMMIT_CONVENTION.md) | 커밋 메시지 형식, 타입·스코프 기준과 분리 원칙 |
 
 현재 구현은 기록 API(위치·재질·증상), **사진·위치·재질 일괄 분석 샘플 API**, **회원 프로필·지역·내 기록 목록 API**, **주거 지원 사업 소식지 목록·상세·보조금24 수동 동기화**, DB(`001`–`009`), 모바일 로그인·프로필·분석 입력·결과·기록 목록 화면입니다. 설계 문서에 있는 소식지 모바일 화면, 실제 모델 기반 분석·진단, 요청문 생성, 업체 검색과 1:1 채팅, 회원가입 화면과 4개 탭은 후속 구현 대상입니다. 실행·환경 설정은 이 README를, 적용된 DB 구조는 [마이그레이션](apps/api/migrations/)을 함께 확인합니다.
 
@@ -58,6 +59,7 @@ apps/
     src/lib/       Supabase·FastAPI 클라이언트
     .env.example
 docs/
+  COMMIT_CONVENTION.md 커밋 메시지 규칙
   plans/           MVP·프로젝트 계획
   design/          백엔드·DB·API 설계
   ideas/           AI 기능 후보 비교
