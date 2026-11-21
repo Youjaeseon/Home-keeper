@@ -92,21 +92,29 @@ export type DiagnosisResult = {
   unknowns: string[];
   work_type_id: string | null;
   work_type_reason: string;
-  source: 'sample';
+  source: 'llm' | 'sample';
+};
+
+export type VisionObservation = {
+  suspected_types: string[];
+  summary: string;
+  approximate_location: string | null;
+  unreadable_reason: string | null;
 };
 
 export type AnalyzePhoto = {
   role: 'overview' | 'closeup';
-  status: 'not_analyzed' | 'analyzed';
-  source: 'sample' | 'yolo' | 'yolo_sam';
+  status: 'not_analyzed' | 'analyzed' | 'failed';
+  source: 'sample' | 'yolo' | 'yolo_sam' | 'vision_llm';
   detections: unknown[];
+  vision_observation: VisionObservation | null;
 };
 
 export type PhotoAnalysis = {
   applied: boolean;
   notice: string | null;
   photos: AnalyzePhoto[];
-  source: 'sample' | 'yolo' | 'yolo_sam';
+  source: 'sample' | 'yolo' | 'yolo_sam' | 'vision_llm' | 'yolo_vision_llm';
 };
 
 export type AnalyzeResponse = {
@@ -115,7 +123,15 @@ export type AnalyzeResponse = {
   diagnosis_generation: number;
   photo_analysis: PhotoAnalysis;
   diagnosis: DiagnosisResult;
-  source: 'sample' | 'yolo' | 'yolo_sam';
+  source: 'sample' | 'yolo' | 'yolo_sam' | 'vision_llm' | 'yolo_vision_llm';
+};
+
+export type DiagnosisResponse = {
+  record_id: string;
+  input_revision: number;
+  diagnosis_generation: number;
+  diagnosis: DiagnosisResult;
+  source: 'llm' | 'sample';
 };
 
 export type RecordDetail = {
@@ -254,5 +270,15 @@ export function analyzeRecord(
   return apiRequest<AnalyzeResponse>(`/records/${recordId}/analyze`, {
     method: 'POST',
     body: form,
+  });
+}
+
+export function regenerateDiagnosis(
+  recordId: string,
+  regenerate = false,
+): Promise<DiagnosisResponse> {
+  const query = regenerate ? '?regenerate=true' : '';
+  return apiRequest<DiagnosisResponse>(`/records/${recordId}/diagnosis${query}`, {
+    method: 'POST',
   });
 }

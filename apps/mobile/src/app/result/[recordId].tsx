@@ -85,9 +85,7 @@ export default function ResultScreen() {
   }
 
   const diagnosis = detail?.diagnosis?.diagnosis ?? null;
-  const isSample =
-    diagnosis?.source === 'sample' ||
-    detail?.photo_observations?.source === 'sample';
+  const isSample = diagnosis?.source === 'sample';
 
   return (
     <SafeAreaView style={styles.screen}>
