@@ -12,7 +12,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { ApiError, getMyProfile, messageOf } from '@/lib/api';
+import {
+  ApiError,
+  type Profile,
+  type ProviderDetail,
+  getMyProfile,
+  getProviderDetail,
+  messageOf,
+} from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
 export default function IndexScreen() {
@@ -117,6 +124,7 @@ function LoginScreen() {
 
 function HomeScreen({ session }: { session: Session }) {
   const router = useRouter();
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [profileStatus, setProfileStatus] = useState<'loading' | 'ready' | 'error'>(
     'loading',
   );
@@ -129,8 +137,10 @@ function HomeScreen({ session }: { session: Session }) {
       setProfileStatus('loading');
       setProfileError(null);
       getMyProfile()
-        .then(() => {
-          if (active) setProfileStatus('ready');
+        .then((nextProfile) => {
+          if (!active) return;
+          setProfile(nextProfile);
+          setProfileStatus('ready');
         })
         .catch((error: unknown) => {
           if (!active) return;
@@ -153,6 +163,18 @@ function HomeScreen({ session }: { session: Session }) {
       pathname: '/analyze',
       params: { session: Date.now().toString() },
     });
+  }
+
+  function findProviders() {
+    if (profileStatus !== 'ready' || !profile) return;
+    router.push({
+      pathname: '/providers',
+      params: { regionId: profile.region_id },
+    });
+  }
+
+  if (profileStatus === 'ready' && profile?.role === 'provider') {
+    return <ProviderHome session={session} profile={profile} />;
   }
 
   return (
@@ -227,6 +249,145 @@ function HomeScreen({ session }: { session: Session }) {
             {profileStatus === 'loading' ? '프로필 확인 중…' : '새 분석 시작'}
           </Text>
         </Pressable>
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={profileStatus !== 'ready'}
+          onPress={findProviders}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            profileStatus !== 'ready' && styles.disabled,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.secondaryButtonText}>업체 찾기</Text>
+        </Pressable>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+function ProviderHome({
+  session,
+  profile,
+}: {
+  session: Session;
+  profile: Profile;
+}) {
+  const router = useRouter();
+  const [detail, setDetail] = useState<ProviderDetail | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!profile.provider_id) {
+      setError('연결된 업체 정보가 없어요. 관리자에게 업체 계정 연결을 요청해 주세요.');
+      setStatus('error');
+      return () => {
+        active = false;
+      };
+    }
+    setStatus('loading');
+    setError(null);
+    getProviderDetail(profile.provider_id)
+      .then((nextDetail) => {
+        if (!active) return;
+        setDetail(nextDetail);
+        setStatus('ready');
+      })
+      .catch((loadError) => {
+        if (!active) return;
+        setError(messageOf(loadError));
+        setStatus('error');
+      });
+    return () => {
+      active = false;
+    };
+  }, [profile.provider_id]);
+
+  return (
+    <SafeAreaView style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.form}>
+        <View style={styles.headerRow}>
+          <View style={styles.headerText}>
+            <Text style={styles.title}>업체 홈</Text>
+            <Text style={styles.subtitle}>{session.user.email}</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => router.push('/profile')}
+              style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.textButtonLabel}>내 정보</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => supabase.auth.signOut()}
+              style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.textButtonLabel}>로그아웃</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {status === 'loading' ? (
+          <View style={styles.card}>
+            <ActivityIndicator />
+            <Text style={styles.bodyText}>업체 정보를 불러오는 중…</Text>
+          </View>
+        ) : status === 'error' ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>업체 정보를 불러오지 못했어요</Text>
+            <Text style={styles.error}>{error}</Text>
+          </View>
+        ) : detail ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{detail.name}</Text>
+            <Text style={styles.bodyText}>
+              ★ {detail.rating.toFixed(1)} · 리뷰 {detail.review_count} · 경력{' '}
+              {detail.career_years === null ? '미확인' : `${detail.career_years}년`}
+            </Text>
+            {detail.description ? (
+              <Text style={styles.bodyText}>{detail.description}</Text>
+            ) : null}
+            <Text style={styles.label}>특화 분야</Text>
+            <Text style={styles.bodyText}>
+              {detail.work_types.map((item) => item.name).join(', ') || '미등록'}
+            </Text>
+            <Text style={styles.label}>출장 가능 지역</Text>
+            <Text style={styles.bodyText}>
+              {detail.regions.map((item) => item.display_name).join(', ') || '미등록'}
+            </Text>
+            {detail.address ? (
+              <Text style={styles.bodyText}>주소 {detail.address}</Text>
+            ) : null}
+            {detail.business_hours ? (
+              <Text style={styles.bodyText}>영업시간 {detail.business_hours}</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>받은 견적 요청서</Text>
+          <Text style={styles.bodyText}>
+            4단계에서 공개 견적 요청서와 제안서 기능이 열리면 이곳에서 확인할 수
+            있어요.
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>1:1 채팅</Text>
+          <Text style={styles.bodyText}>
+            요청인과의 채팅은 채팅 화면에서 확인할 수 있어요. 새 메시지는 채팅
+            목록에서 알려드려요.
+          </Text>
+        </View>
+
+        <Text style={styles.subtitle}>
+          요청인용 분석 기능은 업체 계정에서 제공하지 않아요.
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -326,6 +487,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#208AEF',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+  },
+  secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#208AEF',
   },
   textButton: {
     paddingVertical: 6,

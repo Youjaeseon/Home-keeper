@@ -50,6 +50,7 @@ export type Profile = {
   region_id: string;
   address: string | null;
   housing_type: HousingType;
+  provider_id: string | null;
 };
 
 export type ProfileInput = {
@@ -63,6 +64,49 @@ export type Region = {
   region_id: string;
   name: string;
   display_name: string;
+};
+
+export type WorkType = {
+  work_type_id: string;
+  name: string;
+};
+
+export type ProviderSummary = {
+  provider_id: string;
+  name: string;
+  phone: string | null;
+  rating: number;
+  review_count: number;
+  description: string | null;
+  specialty_work_types: WorkType[];
+  chat_available: boolean;
+  is_sample: boolean;
+};
+
+export type ProviderDetail = {
+  provider_id: string;
+  name: string;
+  phone: string | null;
+  rating: number;
+  review_count: number;
+  description: string | null;
+  address: string | null;
+  business_hours: string | null;
+  career_years: number | null;
+  chat_available: boolean;
+  regions: Region[];
+  work_types: WorkType[];
+  is_sample: false;
+};
+
+export type ProviderSearchResponse = {
+  providers: ProviderSummary[];
+  is_sample: boolean;
+};
+
+export type ProviderQuery = {
+  regionId: string;
+  workTypeId?: string | null;
 };
 
 export type RecordListItem = {
@@ -352,4 +396,23 @@ export function getSupportPrograms({
 
 export function getSupportProgram(programId: string): Promise<SupportProgramDetail> {
   return apiRequest<SupportProgramDetail>(`/support-programs/${programId}`);
+}
+
+export function getWorkTypes(): Promise<WorkType[]> {
+  return apiRequest<WorkType[]>('/work-types');
+}
+
+export function getProviders({
+  regionId,
+  workTypeId,
+}: ProviderQuery): Promise<ProviderSearchResponse> {
+  const params = new URLSearchParams({ region_id: regionId });
+  if (workTypeId) {
+    params.set('work_type_id', workTypeId);
+  }
+  return apiRequest<ProviderSearchResponse>(`/providers?${params}`);
+}
+
+export function getProviderDetail(providerId: string): Promise<ProviderDetail> {
+  return apiRequest<ProviderDetail>(`/providers/${providerId}`);
 }

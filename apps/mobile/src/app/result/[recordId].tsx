@@ -11,8 +11,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  ApiError,
   type DiagnosisResult,
   type RecordDetail,
+  getMyProfile,
   getRecord,
   messageOf,
 } from '@/lib/api';
@@ -51,6 +53,7 @@ export default function ResultScreen() {
   const [detail, setDetail] = useState<RecordDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [profileRegionId, setProfileRegionId] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -62,9 +65,19 @@ export default function ResultScreen() {
     let active = true;
     setLoading(true);
     setError(null);
-    getRecord(recordId)
-      .then((nextDetail) => {
-        if (active) setDetail(nextDetail);
+    Promise.all([
+      getRecord(recordId),
+      getMyProfile().catch((profileError) => {
+        if (profileError instanceof ApiError && profileError.status === 404) {
+          return null;
+        }
+        return null;
+      }),
+    ])
+      .then(([nextDetail, nextProfile]) => {
+        if (!active) return;
+        setDetail(nextDetail);
+        setProfileRegionId(nextProfile?.region_id ?? null);
       })
       .catch((loadError) => {
         if (active) setError(messageOf(loadError));
@@ -86,6 +99,18 @@ export default function ResultScreen() {
 
   const diagnosis = detail?.diagnosis?.diagnosis ?? null;
   const isSample = diagnosis?.source === 'sample';
+
+  function openProviders() {
+    if (!diagnosis) return;
+    const regionId = detail?.region_id ?? profileRegionId;
+    router.push({
+      pathname: '/providers',
+      params: {
+        ...(regionId ? { regionId } : {}),
+        ...(diagnosis.work_type_id ? { workTypeId: diagnosis.work_type_id } : {}),
+      },
+    });
+  }
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -208,6 +233,17 @@ export default function ResultScreen() {
               <Text style={styles.cardTitle}>추천 작업</Text>
               <Text style={styles.bodyText}>{diagnosis.work_type_reason}</Text>
             </View>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={openProviders}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.secondaryButtonText}>추천 업체 보기</Text>
+            </Pressable>
 
             <Pressable
               accessibilityRole="button"
@@ -412,6 +448,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  secondaryButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 50,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#208AEF',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+  },
+  secondaryButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#208AEF',
   },
   pressed: {
     opacity: 0.75,
