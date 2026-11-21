@@ -7,7 +7,7 @@ from psycopg.types.json import Jsonb
 from app.auth import get_current_user
 from app.config import get_settings
 from app.db import read_transaction, transaction
-from app import diagnosis, llm
+from app import diagnosis, llm, storage
 from app.errors import (
     diagnosis_llm_failed,
     diagnosis_llm_timeout,
@@ -520,6 +520,7 @@ def get_record(
             "region_id": record["region_id"],
             "region_name": record["region_name"],
             "photo_observations": record["photo_observations"],
+            "photos": storage.signed_photos(record["photo_files"]),
             "input_revision": current_revision,
             "questions": questions,
             "messages": messages,
@@ -778,46 +779,66 @@ def analyze_record(
             except llm.LlmError:
                 raise diagnosis_llm_failed() from None
 
-        with transaction() as conn:
-            record = _lock_record(conn, record_id, owner_id)
-            if record["input_revision"] != snapshot_revision:
-                raise revision_conflict(record["input_revision"])
+        uploaded_paths: list[str] = []
+        photo_files: list[dict] = []
+        if storage.is_configured():
+            try:
+                for photo, role in zip(photos, photo_roles, strict=True):
+                    item = storage.store_photo(photo, owner_id, record_id, role)
+                    photo_files.append(item)
+                    uploaded_paths.append(item["storage_path"])
+            except Exception:
+                for path in uploaded_paths:
+                    storage.delete_photo(path)
+                raise
 
-            changed = (
-                location != record["location"]
-                or material != record["material"]
-                or symptoms != record["symptoms"]
-                or selected_region_id != record["region_id"]
-            )
-            new_revision = record["input_revision"] + (1 if changed else 0)
-            updated = conn.execute(
-                """
-                UPDATE records
-                SET location = %s,
-                    material = %s,
-                    symptoms = %s,
-                    region_id = %s,
-                    photo_observations = %s,
-                    diagnosis = %s,
-                    diagnosis_revision = %s,
-                    diagnosis_generation = diagnosis_generation + 1,
-                    input_revision = %s,
-                    updated_at = now()
-                WHERE id = %s
-                RETURNING input_revision, diagnosis_generation
-                """,
-                (
-                    location,
-                    material,
-                    symptoms,
-                    selected_region_id,
-                    Jsonb(photo_analysis),
-                    Jsonb(diagnosis_result),
-                    new_revision,
-                    new_revision,
-                    record_id,
-                ),
-            ).fetchone()
+        try:
+            with transaction() as conn:
+                record = _lock_record(conn, record_id, owner_id)
+                if record["input_revision"] != snapshot_revision:
+                    raise revision_conflict(record["input_revision"])
+
+                changed = (
+                    location != record["location"]
+                    or material != record["material"]
+                    or symptoms != record["symptoms"]
+                    or selected_region_id != record["region_id"]
+                )
+                new_revision = record["input_revision"] + (1 if changed else 0)
+                updated = conn.execute(
+                    """
+                    UPDATE records
+                    SET location = %s,
+                        material = %s,
+                        symptoms = %s,
+                        region_id = %s,
+                        photo_observations = %s,
+                        photo_files = %s,
+                        diagnosis = %s,
+                        diagnosis_revision = %s,
+                        diagnosis_generation = diagnosis_generation + 1,
+                        input_revision = %s,
+                        updated_at = now()
+                    WHERE id = %s
+                    RETURNING input_revision, diagnosis_generation
+                    """,
+                    (
+                        location,
+                        material,
+                        symptoms,
+                        selected_region_id,
+                        Jsonb(photo_analysis),
+                        Jsonb(photo_files),
+                        Jsonb(diagnosis_result),
+                        new_revision,
+                        new_revision,
+                        record_id,
+                    ),
+                ).fetchone()
+        except Exception:
+            for path in uploaded_paths:
+                storage.delete_photo(path)
+            raise
 
         return {
             "record_id": record_id,

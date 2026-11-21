@@ -19,6 +19,8 @@ APP_TABLES = {
     "support_programs",
     "chat_rooms",
     "chat_messages",
+    "quote_requests",
+    "quote_proposals",
 }
 
 
@@ -62,6 +64,7 @@ def test_initial_migration_is_recorded(admin):
     assert "012_records_region.sql" in versions
     assert "013_provider_details.sql" in versions
     assert "014_yongin_provider_seed.sql" in versions
+    assert "015_quote_requests_and_proposals.sql" in versions
 
 
 def test_records_material_column(admin):
@@ -96,6 +99,44 @@ def test_records_region_column_and_index(admin):
     ).fetchone()
     assert index is not None
     assert "WHERE (region_id IS NOT NULL)" in index["indexdef"]
+
+
+def test_records_photo_files_column(admin):
+    column = admin.execute(
+        """
+        SELECT data_type, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'records'
+          AND column_name = 'photo_files'
+        """
+    ).fetchone()
+    assert column["data_type"] == "jsonb"
+    assert column["is_nullable"] == "NO"
+    assert column["column_default"] == "'[]'::jsonb"
+
+
+def test_quote_request_constraints_and_indexes(admin):
+    names = {
+        row["indexname"]
+        for row in admin.execute(
+            "SELECT indexname FROM pg_indexes WHERE schemaname = 'public'"
+        ).fetchall()
+    }
+    for name in (
+        "quote_requests_record_open_key",
+        "quote_requests_match_idx",
+        "quote_requests_requester_idx",
+        "quote_proposals_request_provider_key",
+        "quote_proposals_request_accepted_key",
+    ):
+        assert name in names
+    fk = admin.execute(
+        """
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'quote_requests_accepted_proposal_fkey'
+        """
+    ).fetchone()
+    assert fk is not None
 
 
 def test_provider_detail_columns_and_rating_index(admin):

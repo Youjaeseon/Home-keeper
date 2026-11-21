@@ -18,6 +18,9 @@ class Settings:
     yolo_model_path: str | None = None
     model_api_key: str | None = None
     sam_timeout_seconds: float = 30
+    supabase_storage_bucket: str = "defect-photos"
+    supabase_storage_key: str | None = None
+    storage_signed_url_ttl_seconds: int = 300
 
 
 def _required(name: str) -> str:
@@ -44,4 +47,13 @@ def get_settings() -> Settings:
         yolo_model_path=os.environ.get("YOLO_MODEL_PATH") or None,
         model_api_key=os.environ.get("MODEL_API_KEY") or None,
         sam_timeout_seconds=float(os.environ.get("SAM_TIMEOUT_SECONDS", "30")),
+        supabase_storage_bucket=os.environ.get("SUPABASE_STORAGE_BUCKET", "defect-photos"),
+        supabase_storage_key=(
+            os.environ.get("SUPABASE_STORAGE_KEY")
+            or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+            or None
+        ),
+        storage_signed_url_ttl_seconds=int(
+            os.environ.get("STORAGE_SIGNED_URL_TTL_SECONDS", "300")
+        ),
     )

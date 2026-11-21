@@ -435,6 +435,128 @@ class DiagnosisResponse(BaseModel):
     )
 
 
+class SignedPhotoOut(BaseModel):
+    """비공개 Storage 사진의 단기 Signed URL."""
+
+    role: Literal["overview", "closeup"] = Field(
+        description="사진 역할. `overview`는 전체, `closeup`은 근접 사진입니다."
+    )
+    url: str = Field(description="단기 만료 Signed URL.")
+    expires_at: datetime = Field(description="Signed URL 만료 시각(UTC).")
+    width: int = Field(description="저장된 사진 너비(px).")
+    height: int = Field(description="저장된 사진 높이(px).")
+
+
+class QuoteRequestCreateRequest(BaseModel):
+    """견적 요청서 생성 요청."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    record_id: UUID = Field(description="요청서로 공개할 본인 하자 기록 UUID.")
+    region_id: UUID | None = Field(
+        default=None,
+        description="요청 지역 UUID. 생략하면 기록의 지역, 그것도 없으면 프로필 거주 지역을 사용합니다.",
+    )
+    work_type_id: UUID | None = Field(
+        default=None,
+        description="희망 특화 분야 UUID. 생략하면 진단의 추천 작업, 그것도 없으면 `원인 점검`을 사용합니다.",
+    )
+    address: str | None = Field(
+        default=None, description="선택 장소·주소 메모. 없으면 `null`입니다."
+    )
+    memo: str | None = Field(
+        default=None,
+        description="선택 요청 메모. 생략하면 기록의 증상 메모를 사용합니다.",
+    )
+
+
+class QuoteProposalCreateRequest(BaseModel):
+    """업체 제안서 제출 요청."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    min_price: int = Field(ge=0, description="최소 견적 금액(원 단위).")
+    max_price: int = Field(ge=0, description="최대 견적 금액(원 단위). 최소 금액 이상이어야 합니다.")
+    memo: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="제안 조건·작업 범위 메모. 공백만 입력할 수 없으며 최대 2000자입니다.",
+    )
+
+    @model_validator(mode="after")
+    def validate_price_range(self):
+        if self.max_price < self.min_price:
+            raise ValueError("최대 금액은 최소 금액 이상이어야 해요.")
+        return self
+
+    @field_validator("memo")
+    @classmethod
+    def memo_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("제안 메모는 공백일 수 없어요.")
+        return value
+
+
+class QuoteProposalOut(BaseModel):
+    """견적 요청서에 도착한 업체 제안서."""
+
+    proposal_id: UUID = Field(description="제안서 UUID.")
+    created_at: datetime = Field(description="제안서를 보낸 시각(UTC).")
+    provider: "ProviderOut" = Field(description="제안 업체 정보.")
+    min_price: int = Field(description="최소 견적 금액(원).")
+    max_price: int = Field(description="최대 견적 금액(원).")
+    memo: str = Field(description="제안 조건·작업 범위 메모.")
+    status: Literal["pending", "accepted", "rejected"] = Field(
+        description="제안 상태. `pending`은 대기, `accepted`는 수락, `rejected`는 마감입니다."
+    )
+
+
+class QuoteRequestSummary(BaseModel):
+    """견적 요청서 목록 항목."""
+
+    request_id: UUID = Field(description="견적 요청서 UUID.")
+    record_id: UUID = Field(description="요청서로 공개한 하자 기록 UUID.")
+    region_id: UUID = Field(description="요청 지역 UUID.")
+    region_name: str = Field(description="요청 지역 표시명.")
+    work_type_id: UUID = Field(description="희망 특화 분야 UUID.")
+    work_type_name: str = Field(description="희망 특화 분야 이름.")
+    address: str | None = Field(description="선택 장소·주소 메모. 없으면 `null`입니다.")
+    location: str = Field(description="집 안 하자 위치.")
+    material: str | None = Field(description="표면 재질. 없으면 `null`입니다.")
+    memo: str | None = Field(description="요청 메모. 없으면 `null`입니다.")
+    photos: list[SignedPhotoOut] = Field(
+        description="요청서 발행 시점 사진 스냅샷의 단기 Signed URL 목록."
+    )
+    severity_score: int | None = Field(description="AI 심각도 퍼센트. 판단 보류면 `null`입니다.")
+    severity_level: Literal["low", "medium", "high", "undetermined"] | None = Field(
+        description="AI 심각도 단계. 판단 보류면 `undetermined`입니다."
+    )
+    suspected_types: list[str] = Field(description="AI가 의심한 하자 유형 목록.")
+    status: Literal["open", "accepted", "cancelled"] = Field(
+        description="요청서 상태. `open`은 진행 중, `accepted`는 수락 완료, `cancelled`는 취소입니다."
+    )
+    accepted_proposal_id: UUID | None = Field(
+        description="수락된 제안서 UUID. 수락 전이면 `null`입니다."
+    )
+    proposal_count: int = Field(description="요청서에 도착한 제안서 수(요청인 목록 기준).")
+    my_proposal_id: UUID | None = Field(
+        default=None, description="업체 목록에서 본인이 보낸 제안서 UUID. 없으면 `null`입니다."
+    )
+    my_proposal_status: Literal["pending", "accepted", "rejected"] | None = Field(
+        default=None, description="업체 목록에서 본인 제안서 상태. 없으면 `null`입니다."
+    )
+    created_at: datetime = Field(description="요청서 생성 시각(UTC).")
+
+
+class QuoteRequestDetailOut(QuoteRequestSummary):
+    """견적 요청서 상세."""
+
+    proposals: list[QuoteProposalOut] = Field(
+        description="요청인은 도착한 모든 제안서, 업체는 본인 제안서만 반환합니다."
+    )
+
+
 class ProfileOut(BaseModel):
     """로그인한 사용자의 주거 프로필."""
 
@@ -620,6 +742,10 @@ class RecordOut(BaseModel):
     photo_observations: Any = Field(
         default=None,
         description="사진 분석으로 저장된 관찰 결과 JSON(원본 사진·좌표 미저장, 미분석 시 `null`).",
+    )
+    photos: list["SignedPhotoOut"] = Field(
+        default_factory=list,
+        description="비공개 Storage 사진의 단기 Signed URL 목록. Storage 미설정이면 빈 배열입니다.",
     )
     input_revision: int = Field(description="현재 기록 입력 버전.")
     questions: list[QuestionOut] = Field(
@@ -841,3 +967,7 @@ class ChatMessageListResponse(BaseModel):
     limit: int = Field(description="요청한 페이지 크기.")
     offset: int = Field(description="요청한 건너뛸 메시지 수.")
     has_more: bool = Field(description="다음 페이지가 남아 있는지 여부.")
+
+
+QuoteProposalOut.model_rebuild()
+RecordOut.model_rebuild()

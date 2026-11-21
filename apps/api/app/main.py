@@ -14,6 +14,7 @@ from app.docs_auth import router as docs_auth_router
 from app.errors import ApiError
 from app.profile import router as profile_router
 from app.providers import router as providers_router
+from app.quotes import router as quotes_router
 from app.records import router as records_router
 from app.schemas import HealthResponse
 from app.support_programs import router as support_programs_router
@@ -51,6 +52,14 @@ _API_DESCRIPTION = """
 - `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·분석 지역·외부 분석 동의를 multipart로 받아 사진 관찰과 구조화 진단을 저장합니다. `region_id`를 생략하면 기존 기록 또는 프로필 거주 지역을 스냅샷으로 저장합니다.
 - `YOLO_MODEL_PATH` 설정 시 실제 사진 탐지를 수행하고, 동의·키가 있으면 Meta SAM 3.1로 분할해 화면 점유 비율을 계산합니다. YOLO가 읽지 못한 사진만 비전 LLM이 독립 관찰합니다. 두 모델 경로가 모두 미설정이면 샘플 모드입니다.
 - `POST /records/{record_id}/diagnosis`는 저장된 사진 관찰과 현재 입력으로 진단을 생성하거나, 입력 버전이 같은 기존 진단을 재사용합니다. `regenerate=true`면 다시 생성합니다.
+
+### 하자 사진 Storage
+- 하자 사진은 Supabase Storage 비공개 버킷에 저장하고, 기록 소유자·요청인·참여 업체에게만 단기 Signed URL을 발급합니다. 서버 키가 없으면 업로드와 Signed URL 발급을 생략합니다.
+
+### 견적 요청서·제안서
+- `POST /quote-requests`는 요청인이 하자 기록을 지역·특화 분야 기반 1:N 공개 요청서로 등록합니다. 같은 기록의 진행 중 요청서는 1건만 허용합니다.
+- `GET /quote-requests`, `GET /quote-requests/{request_id}`는 역할에 따라 목록·상세를 분기하고, 요청인은 모든 제안서를, 업체는 본인 제안서만 볼 수 있습니다.
+- 업체는 `POST /quote-requests/{request_id}/proposals`로 제안서 1건을 보내고, 요청인은 `.../accept`로 1건을 수락하거나 `.../cancel`로 취소합니다. 수락 시 나머지 대기 제안서는 자동 마감됩니다.
 
 ### 점검·견적 요청문
 - `POST /records/{record_id}/drafts/{kind}`는 저장된 입력과 진단으로 `landlord`(임대인 점검) 또는 `provider`(업체 견적) 요청문을 생성합니다. 입력 버전과 진단 생성 번호가 모두 같은 기존 요청문은 재사용하며, `regenerate=true`일 때만 모델을 다시 호출합니다.
@@ -93,6 +102,10 @@ _OPENAPI_TAGS = [
         "description": "작업 종류·지역 필터와 별점순 업체 후보 조회, 업체 상세 API. 인증된 사용자만 조회하며 샘플 후보와 실제 업체를 구분합니다.",
     },
     {
+        "name": "quote-requests",
+        "description": "지역·특화 분야 기반 공개 견적 요청서와 업체 제안서·수락 API. 요청인과 참여 업체만 접근하며 사진은 단기 Signed URL로 제공합니다.",
+    },
+    {
         "name": "chat",
         "description": "요청인–업체 1:1 채팅방 목록·생성·재사용, 하자 요약 공유, 메시지 이력·전송, 방별 미읽음 수·읽음 처리 API. 참여자만 접근하며 실시간 수신은 인증된 WebSocket으로 제공합니다.",
     },
@@ -116,6 +129,7 @@ app.include_router(profile_router)
 app.include_router(support_programs_router)
 app.include_router(drafts_router)
 app.include_router(providers_router)
+app.include_router(quotes_router)
 app.include_router(chat_router)
 app.include_router(docs_auth_router)
 add_scalar_reference(

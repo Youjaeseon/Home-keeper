@@ -104,3 +104,43 @@ def chat_message_conflict() -> ApiError:
         "message_conflict",
         "같은 메시지 ID로 다른 내용이 이미 저장되었습니다.",
     )
+
+
+def diagnosis_required() -> ApiError:
+    return ApiError(
+        409,
+        "diagnosis_required",
+        "진단 결과가 없어 견적 요청서를 만들 수 없습니다. 먼저 분석을 완료해 주세요.",
+    )
+
+
+def request_already_open() -> ApiError:
+    return ApiError(
+        409,
+        "request_already_open",
+        "이 기록에는 이미 공개된 견적 요청서가 있습니다.",
+    )
+
+
+def request_not_open() -> ApiError:
+    return ApiError(
+        409,
+        "request_not_open",
+        "진행 중인 견적 요청서가 아닙니다.",
+    )
+
+
+def proposal_already_exists() -> ApiError:
+    return ApiError(
+        409,
+        "proposal_already_exists",
+        "이 요청서에 이미 제안서를 보냈습니다.",
+    )
+
+
+def proposal_not_pending() -> ApiError:
+    return ApiError(
+        409,
+        "proposal_not_pending",
+        "이미 처리된 제안서입니다.",
+    )
