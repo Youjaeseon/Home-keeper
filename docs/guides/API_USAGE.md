@@ -21,7 +21,7 @@
 | 진단·요청문 모델 응답 제한 시간 초과 | 504 |
 | 예기치 않은 서버/DB 오류(업체 검색 DB 오류 포함) | 500 |
 
-기록의 `input_revision`은 0에서 시작합니다. 위치·재질·증상, 사용자 메시지 추가, 사용자 메시지 내용 수정, 일괄 분석의 입력 변경처럼 실제 입력이 바뀔 때만 1씩 증가합니다. 같은 값을 다시 저장하거나 같은 메시지를 재전송하거나 같은 입력으로 다시 분석하면 증가하지 않습니다. 분석은 성공할 때마다 `diagnosis_generation`을 올립니다.
+기록의 `input_revision`은 0에서 시작합니다. 위치·재질·증상·분석 지역, 사용자 메시지 추가, 사용자 메시지 내용 수정, 일괄 분석의 입력 변경처럼 실제 입력이 바뀔 때만 1씩 증가합니다. 같은 값을 다시 저장하거나 같은 메시지를 재전송하거나 같은 입력으로 다시 분석하면 증가하지 않습니다. 분석은 성공할 때마다 `diagnosis_generation`을 올립니다.
 
 `GET /records/{record_id}` 응답의 `diagnosis`, `next_question`, `drafts`에는 생성 당시 `input_revision`(과 요청문의 경우 `diagnosis_generation`)과 `is_current`가 들어 있습니다. 입력이 바뀐 뒤에는 `is_current`가 false이므로 앱이 이전 결과임을 표시할 수 있습니다.
 
@@ -76,20 +76,20 @@ curl -s http://127.0.0.1:8000/me/profile \
 
 프로필이 없을 때 `GET /me/profile`은 404를 반환합니다. 새 프로필의 역할은 서버가 `requester`로 정하며, 기존 업체 계정의 `provider` 역할은 이 API로 바뀌지 않습니다.
 
-소식지는 프로필의 거주 지역·상위 지역·전국 공고를 반환합니다. `status=active`는 마감된 공고를 제외합니다.
+소식지는 프로필의 거주 지역·상위 지역·전국 공고를 페이지 단위로 반환합니다. `status=active`는 마감된 공고를 제외하고, `limit`은 기본 5·최대 50, `offset`은 0부터입니다.
 
 ```bash
-curl -s http://127.0.0.1:8000/support-programs \
+curl -s "http://127.0.0.1:8000/support-programs?status=active&limit=5&offset=0" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 
-PROGRAM_ID=$(curl -s "http://127.0.0.1:8000/support-programs?status=active" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.[0].id')
+PROGRAM_ID=$(curl -s "http://127.0.0.1:8000/support-programs?status=active&limit=5" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.items[0].id')
 
 curl -s "http://127.0.0.1:8000/support-programs/$PROGRAM_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-목록 항목에는 `housing_type_matched`, `deadline_text`, `deadline_date`, `deadline_kind`, `is_closed`, `source_attribution`, `source_checked_at`이 들어갑니다. 상세에는 지원 대상·내용·선정 기준·신청 방법과 `source_checked_at`·`synced_at`이 추가됩니다. 공고 데이터를 직접 수정하는 API는 없습니다.
+목록 응답은 `{ "items": [...], "total": 41, "limit": 5, "offset": 0, "has_more": true }`입니다. `total`은 `status` 필터를 적용한 전체 수이고 `has_more = (offset + len(items)) < total`입니다. `offset`이 `total` 이상이면 `items=[]`, 정확한 `total`, `has_more=false`를 반환합니다. 항목에는 `housing_type_matched`, `deadline_text`, `deadline_date`, `deadline_kind`, `is_closed`, `source_attribution`, `source_checked_at`이 들어갑니다. 상세에는 지원 대상·내용·선정 기준·신청 방법과 `source_checked_at`·`synced_at`이 추가됩니다. 공고 데이터를 직접 수정하는 API는 없습니다.
 
 ```bash
 RECORD_ID=$(curl -s -X POST http://127.0.0.1:8000/records \
@@ -128,7 +128,7 @@ curl -s http://127.0.0.1:8000/records \
 
 ## 사진·위치·재질 일괄 분석
 
-`POST /records/{record_id}/analyze`는 multipart/form-data로 사진 1~2장, 사진 역할, 위치, 재질, 선택 증상 메모, 외부 분석 동의 여부(생략 시 `true`)를 받습니다. `YOLO_MODEL_PATH` 설정 시 YOLO 탐지를 수행하고, 동의와 `MODEL_API_KEY`가 있으면 Meta SAM 3.1로 분할합니다. YOLO가 탐지하지 못했거나 실행할 수 없는 사진만 동의와 `LLM_API_KEY`가 있을 때 비전 LLM이 독립 관찰합니다. 두 모델 경로가 모두 미설정이면 샘플 모드입니다. `YOLO_MODEL_PATH`만 켜고 `LLM_API_KEY`가 없으면 `503`(`llm_unavailable`)입니다.
+`POST /records/{record_id}/analyze`는 multipart/form-data로 사진 1~2장, 사진 역할, 위치, 재질, 선택 증상 메모, 선택 분석 지역(`region_id`), 외부 분석 동의 여부(생략 시 `true`)를 받습니다. `region_id`를 생략하면 기존 기록의 지역, 그것도 없으면 프로필 거주 지역을 스냅샷으로 저장하고, 지역이 실제로 바뀌면 `input_revision`이 증가합니다. `YOLO_MODEL_PATH` 설정 시 YOLO 탐지를 수행하고, 동의와 `MODEL_API_KEY`가 있으면 Meta SAM 3.1로 분할합니다. YOLO가 탐지하지 못했거나 실행할 수 없는 사진만 동의와 `LLM_API_KEY`가 있을 때 비전 LLM이 독립 관찰합니다. 두 모델 경로가 모두 미설정이면 샘플 모드입니다. `YOLO_MODEL_PATH`만 켜고 `LLM_API_KEY`가 없으면 `503`(`llm_unavailable`)입니다.
 
 ```bash
 curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/analyze"   -H "Authorization: Bearer $ACCESS_TOKEN"   -F "photos=@/path/to/overview.jpg;type=image/jpeg"   -F "photo_roles=overview"   -F "external_analysis_consent=false"   -F "location=안방 창틀 아래"   -F "material=실리콘"   -F "symptoms=닦아도 검은 얼룩이 다시 생겨요"
@@ -164,7 +164,7 @@ curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/diagnosis?regenerate=t
 
 응답은 `{ "record_id", "input_revision", "diagnosis_generation", "diagnosis", "source" }`입니다. `source`는 `llm` 또는 `sample`이며 `diagnosis.source`와 같습니다. 재생성 또는 입력 변경 상태에서 위치·재질이 비어 있으면 `422`, 생성 중 입력이 바뀌면 `409 revision_conflict`, 모델 키 미설정은 기존 진단이 있어도 항상 `503`, 호출·형식 오류는 `502`, 제한 시간 초과는 `504`입니다. 실패해도 기존 진단은 유지됩니다. 판단 보류 시 `severity_score=null`, `severity_level=undetermined`, `suspected_types=[]`, `원인 점검` 작업이 저장됩니다.
 
-모바일은 `apps/mobile/src/app/analyze.tsx`에서 사진 선택·입력·동의를 받아 기록 생성 후 분석을 호출하고, `apps/mobile/src/app/result/[recordId].tsx`에서 저장된 결과를 다시 조회해 표시합니다. `regenerateDiagnosis` 함수가 진단 재생성 API를 호출합니다. FormData 전송 시 `Content-Type`을 직접 지정하지 않아 fetch가 boundary를 설정합니다.
+모바일은 `apps/mobile/src/app/analyze.tsx`에서 프로필 지역을 기본 선택한 `분석 지역 확인` 카드로 지역을 확인·선택하고(변경 시 프로필 지역도 함께 저장 가능), 사진 선택·입력·동의를 받아 기록 생성 후 분석을 호출합니다. `apps/mobile/src/app/result/[recordId].tsx`에서 저장된 결과를 다시 조회해 표시합니다. `regenerateDiagnosis` 함수가 진단 재생성 API를 호출합니다. FormData 전송 시 `Content-Type`을 직접 지정하지 않아 fetch가 boundary를 설정합니다.
 
 `POST /records/{record_id}/next-question`는 현재 서버의 입력과 대화만 사용하며, 클라이언트가 사용자 ID나 대화 전체를 다시 보내지 않습니다. 질문·선택지는 서버가 `source="sample"`로 표시해 반환합니다. 실제 LLM이 아니라 아래 두 질문을 사용하는 시연 규칙입니다.
 
@@ -317,8 +317,8 @@ curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/next-question" \
 - 마이그레이션은 로컬 개발을 위해 `auth.users(id)` 스텁을 만들 수 있게 했습니다. Supabase에서는 기존 테이블이 그대로 쓰입니다.
 - Supabase의 런타임 DB 연결·RLS·Data API 권한 회수와 ES256 JWKS 조회를 확인했습니다. 실제 사용자 로그인 토큰을 이용한 전체 인증 흐름은 아직 검증하지 않았습니다. 통합 테스트는 로컬 PostgreSQL과 HS256 토큰으로 실행합니다. `005_next_question_grants.sql`은 Home Keeper에 적용했고 적용 이력과 질문 INSERT/UPDATE 권한을 확인했습니다.
 - `POST /records/{record_id}/analyze`는 사진과 입력을 multipart로 받아 사진 관찰과 구조화 진단을 저장합니다. YOLO·SAM·비전 LLM 보조 관찰과 텍스트 진단을 분리하고, 원본 사진은 저장하지 않습니다. 입력 스냅샷으로 결과를 만든 뒤 저장 직전에 `input_revision`을 재확인하고, 사진 관찰 상태·진단 결과와 `diagnosis_generation`을 같은 트랜잭션에 저장합니다. `POST /records/{record_id}/diagnosis`는 입력 버전이 같은 진단을 재사용하거나 재생성하며, 실패 시 기존 진단을 보존합니다.
-- 회원 프로필 API·화면, 거주 형태, 내 기록 목록과 과거 결과 재열람, 주거 지원 사업 소식지 백엔드(목록·상세·검증 시드·보조금24 수동 동기화), 요청문 생성·기본 양식, 업체 검색, 1:1 채팅 REST·WebSocket·방별 미읽음 수 백엔드는 구현했습니다. 소식지·요청문·업체 검색·채팅 모바일 화면, 사진 원본 비공개 스토리지, 실제 업체·계정 데이터, 회원가입 화면과 4개 탭은 아직 구현하지 않았습니다. 사진 원본 Storage, 소식지 페이지네이션·주기 동기화, 업체 평점·상세, 견적 요청서·제안서·수락은 확정 설계만 있고 코드는 없습니다. 현재 `next-question` 코드의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 처리하는 레거시/보류 구현이며, 변경된 MVP의 지원 하자 유형은 `균열·벗겨짐·곰팡이`, 시연 지역은 `용인`입니다.
-- `records.material`(`006`), `profiles`·용인 지역 시드(`007`), 지역 상하 관계·지원 사업(`008`), 검증 시드(`009`), 업체 계정·채팅·작업 종류 시드(`010`), 채팅 읽음 시각(`011`)은 로컬 테스트 DB에 적용해 검증했습니다(006–009는 로컬 개발 DB에도 적용). Home Keeper의 006–011 적용 여부는 관리자 접근으로 별도 확인해야 합니다.
+- 회원 프로필 API·화면, 거주 형태, 내 기록 목록과 과거 결과 재열람, 주거 지원 사업 소식지 백엔드(목록·상세·검증 시드·보조금24 수동 동기화), 요청문 생성·기본 양식, 업체 검색, 1:1 채팅 REST·WebSocket·방별 미읽음 수 백엔드는 구현했습니다. 소식지·요청문·업체 검색·채팅 모바일 화면, 사진 원본 비공개 스토리지, 실제 업체·계정 데이터, 회원가입 화면과 4개 탭은 아직 구현하지 않았습니다. 사진 원본 Storage, 소식지 주기 동기화, 업체 평점·상세, 견적 요청서·제안서·수락은 확정 설계만 있고 코드는 없습니다. 현재 `next-question` 코드의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 처리하는 레거시/보류 구현이며, 변경된 MVP의 지원 하자 유형은 `균열·벗겨짐·곰팡이`, 시연 지역은 `용인`입니다.
+- `records.material`(`006`), `profiles`·용인 지역 시드(`007`), 지역 상하 관계·지원 사업(`008`), 검증 시드(`009`), 업체 계정·채팅·작업 종류 시드(`010`), 채팅 읽음 시각(`011`), 기록 지역 스냅샷(`012`)은 로컬 테스트 DB에 적용해 검증했습니다(006–009는 로컬 개발 DB에도 적용). Home Keeper의 006–012 적용 여부는 관리자 접근으로 별도 확인해야 합니다.
 - 요청문 생성은 `app/llm.py`의 OpenAI 호환 Chat Completions 호출만 사용하고, 외부 모델에는 기록의 하자 입력·진단 결과만 보냅니다. 프로필 개인정보는 보내지 않고 증상 메모의 이메일·휴대전화 번호는 제거합니다. 프롬프트·응답·요청 본문은 로그에 남기지 않습니다. 실제 키 호출은 검증하지 않았고 테스트는 고정 응답을 사용합니다. 증상 메모 원문을 외부 모델 입력으로 계속 사용할지와 동의·고지 방식은 팀 회의 전 미확정이며, 현재 동작은 유지합니다.
 - 채팅은 FastAPI REST와 인증된 WebSocket(`/chat/ws`)을 제공합니다. 방별 미읽음 수와 읽음 처리를 구현했고, 읽음 시점은 방 이력 조회 직후입니다. 푸시 알림은 추가하지 않았습니다. `records/messages`(AI 추가 질문)와 `chat_messages`(업체 채팅)는 별도 테이블입니다.
 - 보조금24 동기화는 실제 `GOV24_API_KEY`로 `serviceList` 10,891건을 조회하고 주거 제목 필터·지역 확정 후 41건을 로컬 개발 DB에 upsert하는 것까지 확인했습니다. Home Keeper에는 008·009 마이그레이션이 없어 실제 Supabase 동기화는 아직 실행하지 못했습니다. 운영 응답의 주거 키워드·지역명·기한 문구는 첫 적용 후 계속 점검해야 합니다.

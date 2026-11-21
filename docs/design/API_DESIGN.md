@@ -13,9 +13,9 @@
 2026년 11월 19일 MVP 구현에서 아래를 확정했다.
 
 - `POST /records`는 201과 `record_id`, `input_revision`(최초 0)을 반환한다.
-- `GET /records/{record_id}`는 저장된 입력(`location`, `material`, `symptoms`, `photo_observations`)과 `diagnosis`, `drafts`의 생성 당시 버전 및 `is_current`를 반환한다. *(구현본에는 레거시 `questions`, `messages`, `next_question` 필드도 함께 포함된다.)*
-- `PATCH /records/{record_id}`는 `location`·`material`·`symptoms`를 받고 `input_revision`을 요구하지 않는다. 실제 값이 바뀔 때만 버전을 올리며, 명시한 `null`은 값을 지운다.
-- `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·외부 분석 동의(기본 `true`)를 multipart로 받아 사진 관찰과 구조화 진단을 저장한다. 두 모델 경로가 모두 미설정이면 샘플 모드다. 자세한 계약은 아래 일괄 분석 섹션을 따른다.
+- `GET /records/{record_id}`는 저장된 입력(`location`, `material`, `symptoms`, `region_id`, `region_name`, `photo_observations`)과 `diagnosis`, `drafts`의 생성 당시 버전 및 `is_current`를 반환한다. *(구현본에는 레거시 `questions`, `messages`, `next_question` 필드도 함께 포함된다.)*
+- `PATCH /records/{record_id}`는 `location`·`material`·`symptoms`·`region_id`를 받고 `input_revision`을 요구하지 않는다. 실제 값이 바뀔 때만 버전을 올리며, 명시한 `null`은 값을 지운다. `region_id`는 `regions`에 존재해야 한다.
+- `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·분석 지역·외부 분석 동의(기본 `true`)를 multipart로 받아 사진 관찰과 구조화 진단을 저장한다. `region_id`를 생략하면 기존 기록 또는 프로필 거주 지역을 스냅샷으로 저장한다. 두 모델 경로가 모두 미설정이면 샘플 모드다. 자세한 계약은 아래 일괄 분석 섹션을 따른다.
 - `POST /records/{record_id}/diagnosis`는 `regenerate=false`이고 진단 입력 버전이 현재 입력과 같으면 모델을 호출하지 않고 기존 진단을 반환한다. 재생성은 `regenerate=true`이며 실패 시 기존 진단을 유지한다.
 - 공통 오류 형식은 `{ "code", "message", "input_revision"? }`이다. 처리하지 못한 서버·DB 오류는 내용을 노출하지 않고 500 `internal_error`로 반환한다.
 - 요청문은 `input_revision`과 `diagnosis_generation`이 모두 같은 저장본만 재사용하고, `regenerate=true`일 때만 모델을 다시 호출한다. 실패 시 기존 저장본과 기본 양식을 유지한다.
@@ -55,15 +55,15 @@
 
 로그인 후 앱은 FastAPI 요청에 `Authorization: Bearer <access_token>`을 보낸다. 모든 API(`GET /health` 제외)는 인증을 확인하고, 기록·채팅 API는 소유권 또는 참여 권한을 확인한다. 사용자 ID는 검증한 토큰(`sub`)에서 결정한다.
 
-`input_revision`은 기록 입력의 버전이다. 입력(`location`, `material`, `symptoms`, `photo_observations`) 변경은 버전 증가와 함께 원자적으로 처리하고, 생성 결과는 사용한 입력 버전이 현재 버전과 일치할 때 저장한다. 버전 충돌은 `409`로 반환한다.
+`input_revision`은 기록 입력의 버전이다. 입력(`location`, `material`, `symptoms`, `region_id`, `photo_observations`) 변경은 버전 증가와 함께 원자적으로 처리하고, 생성 결과는 사용한 입력 버전이 현재 버전과 일치할 때 저장한다. 버전 충돌은 `409`로 반환한다.
 
 ## 기본 순서 (요청인 앱 4개 탭 기준)
 
 로그인 후 요청인 앱은 **`소식지` · `분석`(기본 탭) · `채팅` · `내 정보`** 4개 탭을 제공한다.
 
 1. 회원가입 후 프로필 저장을 완료하거나 기존 계정으로 로그인한다.
-2. **소식지 탭**: `GET /support-programs`로 사용자 거주 지역 + 전국 주거 지원 사업을 조회한다. 마감 공고는 `마감` 배지·흐림 처리와 하단 정렬로 표시하고, 카드 클릭 시 `GET /support-programs/{program_id}` 상세 요약과 외부 원문 URL을 연다. *(백엔드 구현 완료, 모바일 화면 후속)*
-3. **분석 탭**: `POST /records`로 기록을 만들고, 한 화면에서 사진 1~2장(1장 필수) + 위치 + 재질 + 선택 증상 메모를 입력해 `POST /records/{record_id}/analyze`를 호출한다. 현재 서버는 실제 사진/LLM 호출 없이 입력값 기반 샘플 결과를 저장·반환하며 `source=sample`로 표시한다(실제 모델 연동은 후속).
+2. **소식지 탭**: `GET /support-programs`로 사용자 거주 지역 + 전국 주거 지원 사업을 페이지 단위(`limit`, `offset`)로 조회한다. 마감 공고는 `마감` 배지·흐림 처리와 하단 정렬로 표시하고, 카드 클릭 시 `GET /support-programs/{program_id}` 상세 요약과 외부 원문 URL을 연다. *(백엔드 구현 완료, 모바일 화면 후속)*
+3. **분석 탭**: `POST /records`로 기록을 만들고, 분석 전 지역을 확인한 뒤 한 화면에서 사진 1~2장(1장 필수) + 위치 + 재질 + 선택 증상 메모를 입력해 `POST /records/{record_id}/analyze`를 호출한다. 선택한 지역은 기록 스냅샷으로 저장한다. 두 모델 경로가 모두 미설정이면 샘플 결과(`source=sample`)로 동작한다.
 4. **분석 결과 페이지**: 심각도(`0~100%` 또는 `판단 보류`), `추정 원인`(AI 추정 안내·미확인 정보 포함), `해결방안`, `재발 방지책`을 확인한다.
    - `자가`가 아닌 거주 형태라면 필요 시 `POST /records/{record_id}/drafts/landlord`로 임대인 점검 요청문을 생성·복사한다.
    - 업체 상담이 필요하면 `GET /providers`로 업체를 조회한 뒤 실제 업체의 `채팅하기`로 `POST /chat/rooms`를 호출해 1:1 채팅방을 열고 하자 분석 요약을 자동 공유한다.
@@ -74,10 +74,18 @@
 
 `내 정보` 페이지의 **내 하자 분석 기록 목록**을 조회한다. 본인이 소유한 기록만 `updated_at` 내림차순(같으면 `created_at`, `id` 내림차순)으로 반환한다.
 
-- 응답은 배열이며 항목 필드는 `record_id`, `location`, `material`, `symptoms`, `suspected_types`(예: `["곰팡이"]`), `severity_score`, `severity_level`, `created_at`, `updated_at`이다.
-- 전체 진단·입력 버전·대화는 포함하지 않는다. 진단이 없으면 `suspected_types=[]`, `severity_score=null`, `severity_level=null`이다.
+- 응답은 배열이며 항목 필드는 `record_id`, `location`, `material`, `symptoms`, `region_id`, `region_name`, `suspected_types`(예: `["곰팡이"]`), `severity_score`, `severity_level`, `created_at`, `updated_at`이다. 지역이 없으면 `region_id`·`region_name`은 `null`이다.
+- 전체 진단·입력 버전·대화는 포함하지 않는다. 진단이 없으면 `suspected_types=[]`, `severity_score=null`, `severity_level=null`이다. `region_name`은 `regions.display_name`이다.
 - 목록에서 항목을 선택하면 기존 `GET /records/{record_id}`로 전체 상세를 불러와 분석 결과 페이지를 다시 표시한다.
 - 다른 사용자의 기록은 목록에 포함하지 않는다.
+
+## 소식지 목록 페이지네이션 (`GET /support-programs`, 구현 완료)
+
+- **쿼리**: `status`(`all` | `active`, 기본 `all`), `limit`(1~50, 기본 5), `offset`(0 이상, 기본 0)
+- **응답**: `items`, `total`, `limit`, `offset`, `has_more`
+- `total`은 `status` 필터를 적용한 전체 수이고 `has_more = (offset + len(items)) < total`이다.
+- `REPEATABLE READ` 트랜잭션에서 같은 `visible` CTE로 total과 페이지를 각각 조회하므로, `offset >= total`이어도 빈 `items`와 정확한 `total`, `has_more=false`를 반환한다.
+- 기존 정렬(`is_closed ASC`, `housing_type_matched DESC`, 확정 마감일 오름차순, `source_checked_at DESC`, `title ASC`, `id ASC`)과 시드 중복 제거 규칙은 유지한다.
 
 ## 일괄 분석과 진단 (`POST /records/{record_id}/analyze`, 구현 완료)
 
@@ -154,7 +162,7 @@
 ```
 
 - **샘플 모드의 의미**: 두 모델 경로가 모두 미설정일 때만 `photo_analysis.applied=false`, 사진 상태 `not_analyzed`, `detections=[]`다. 관찰 요약·심각도·원인은 입력값만 사용한 참고용 샘플이며, 응답·진단의 `source`와 화면 안내로 실제 분석이 아님을 표시한다.
-- **입력과 버전**: 제출한 `location`·`material`·`symptoms`가 실제로 달라지면 `input_revision`을 1 올리고 `diagnosis_generation`을 증가시킨다. 같은 입력이면 버전은 유지하고 생성 번호만 증가한다. 분석 중 다른 입력 변경이 발생하면 아무것도 저장하지 않고 `409`(`revision_conflict`)와 현재 `input_revision`을 반환한다. 사진 원본은 DB·로그에 저장하지 않는다. 원본 사진의 비공개 Storage 보관은 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md)에 따라 구현 예정이다.
+- **입력과 버전**: 제출한 `location`·`material`·`symptoms`·`region_id`가 실제로 달라지면 `input_revision`을 1 올리고 `diagnosis_generation`을 증가시킨다. 같은 입력이면 버전은 유지하고 생성 번호만 증가한다. 분석 중 다른 입력 변경이 발생하면 아무것도 저장하지 않고 `409`(`revision_conflict`)와 현재 `input_revision`을 반환한다. 사진 원본은 DB·로그에 저장하지 않는다. 원본 사진의 비공개 Storage 보관은 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md)에 따라 구현 예정이다.
 - **판단 보류**: 사진 흔적·비전 관찰·증상이 모두 없거나 모델이 근거 부족으로 `severity_score=null`을 반환하면 `severity_score=null`, `severity_level="undetermined"`, `suspected_types=[]`, 권장 대응 `inspection` 또는 `provider_consult`, `원인 점검` 작업으로 저장한다. `self_care`가 오면 `inspection`으로 보정한다.
 - **심각도·용어·작업 검증**: 유효한 심각도는 서버가 `low`(0~39)·`medium`(40~69)·`high`(70~100)로 강제 정규화한다. 의심 유형은 `크랙`→`균열`, `박리`→`벗겨짐`으로 정규화한다. 작업 ID·이름이 DB `work_types`와 일치할 때만 저장하고 미일치·복합 원인은 `원인 점검`으로 폴백한다.
 - **진단 실패**: `LLM_API_KEY`가 있는데 진단 호출·JSON 검증이 실패하면 `502`(`llm_error`), 제한 시간 초과는 `504`(`llm_timeout`)이며 기존 저장 결과를 유지한다. `YOLO_MODEL_PATH`만 있고 `LLM_API_KEY`가 없으면 `503`(`llm_unavailable`)이다.
@@ -177,7 +185,7 @@
 이번 세션에는 코드·마이그레이션을 추가하지 않았다.
 
 - **사진 Storage**: 비공개 버킷 업로드와 소유권 확인 후 단기 Signed URL 발급. 사진 경로는 기록 소유자와 연결한다.
-- **소식지 페이지네이션·주기 동기화**: `GET /support-programs`에 안정적인 페이지네이션을 추가하고 보조금24 동기화를 주기 실행으로 확장한다.
+- **소식지 주기 동기화**: 보조금24 동기화를 수동 명령에서 주기 실행으로 확장한다. 페이지네이션은 구현 완료다.
 - **업체 평점·상세**: `GET /providers/{provider_id}` 상세와 평점 집계를 추가한다. 평점은 수락·완료된 매칭에서만 만든다.
 - **견적 요청서·제안서·수락**: 요청서 생성·목록·상세, 업체 제안서 제출, 요청인의 1건 수락 API를 추가한다. 지역·작업 종류가 맞는 업체에 공개하며 수락 시 나머지 제안을 종료한다.
 

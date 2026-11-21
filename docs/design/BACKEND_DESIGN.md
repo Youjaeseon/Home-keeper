@@ -30,7 +30,7 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 
 ## 하자 기록의 생성과 저장
 
-사용자가 새 하자 기록을 시작하면 FastAPI가 기록 ID를 발급한다. 분석 페이지에서는 AI 채팅창을 없애고 한 화면에서 같은 하자의 **사진 1~2장**(전체·근접, 1장 필수·2장째 선택), **위치**, **재질**, **선택 증상 메모**를 함께 입력받아 처리한다. `내 정보` 페이지의 **내 하자 분석 기록 목록**을 위해 `GET /records`로 본인 기록 목록(최신 수정순)을 조회해 과거 분석 결과 페이지를 다시 열 수 있게 한다.
+사용자가 새 하자 기록을 시작하면 FastAPI가 기록 ID를 발급한다. 분석 페이지에서는 AI 채팅창을 없애고 한 화면에서 같은 하자의 **사진 1~2장**(전체·근접, 1장 필수·2장째 선택), **분석 지역 확인**, **위치**, **재질**, **선택 증상 메모**를 함께 입력받아 처리한다. `내 정보` 페이지의 **내 하자 분석 기록 목록**을 위해 `GET /records`로 본인 기록 목록(최신 수정순)을 조회해 과거 분석 결과 페이지를 다시 열 수 있게 한다. `records.region_id`(`012`)에는 분석 전 확인한 지역을 스냅샷으로 저장하며, 이후 프로필 지역이 바뀌어도 기존 기록의 지역은 유지한다.
 
 사진 분석에서는 사진별 관찰 상태, 탐지 라벨(`raw_label` 포함), 신뢰도, 화면 점유 비율, bbox·마스크, 비전 LLM 관찰 요약을 DB에 저장한다. 현재는 원본 사진을 저장하지 않으며, 견적 요청서 공유·결과 재열람을 위한 비공개 Storage 저장은 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md)에 따라 구현 예정이다. 원본 사진과 프롬프트·모델 응답은 로그에 남기지 않는다.
 
@@ -41,7 +41,7 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 | 저장 단위 | 상태 | 저장할 값 |
 | --- | --- | --- |
 | 회원 프로필 (`profiles`) | 구현됨 (`007`) | 사용자 ID, 닉네임, 역할(`requester`/`provider`), 거주 지역 ID, 선택 등록 주소, 거주 형태(`monthly_rent`/`jeonse`/`semi_jeonse`/`owned`/`other`), 수정 시각. 로그인한 사용자 본인만 조회·수정한다. |
-| 하자 기록 (`records`) | 구현됨 (`material` 포함) | 기록 ID, 소유자 ID, 위치·재질·선택 증상 메모, 사진별 관찰 상태·탐지·`area_ratio`·마스크·비전 관찰, 최신 진단(JSONB), 최신 점검 요청문, 최신 견적 요청문 |
+| 하자 기록 (`records`) | 구현됨 (`material`, 지역 스냅샷 `012`) | 기록 ID, 소유자 ID, 분석 지역 스냅샷, 위치·재질·선택 증상 메모, 사진별 관찰 상태·탐지·`area_ratio`·마스크·비전 관찰, 최신 진단(JSONB), 최신 점검 요청문, 최신 견적 요청문 |
 | 소식지 지원 사업 (`support_programs`) | 구현됨 (`008`·`009`) | 지원 사업 ID, 외부 ID, 출처(`gov24_api`/`seed`), 제목, 요약, 소관기관, 지역 구분(`national`/`local`), 지역 ID, 대상 거주 형태 태그, 지원 대상·내용, 선정 기준, 신청 방법, 신청기한 원문·마감일·종류, 원문 URL, 출처 표기, 출처 확인 시각, 동기화 시각 |
 | 업체 (`providers` 등) | 구현됨 (`account_user_id`는 `010`) | 업체 ID, 업체명, 연락처, 사전 등록 업체 계정 사용자 ID, 출장 지역 연결, 작업 종류 연결 |
 | 채팅방·메시지 (`chat_rooms`, `chat_messages`) | 구현됨 (`010`, 읽음 시각 `011`) | 채팅방 ID, 요청인 ID, 업체 ID, 최근 연결 기록 ID, 참여자별 마지막 읽음 시각, 발신자 ID·역할, 메시지 유형(`text`/`record_summary`), 연결 기록 ID, 본문·요약 페이로드, `client_message_id` |
@@ -96,7 +96,7 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 - **수동 동기화**: `python -m app.support_sync` 또는 루트의 `npm run api:sync-support-programs` 하나만 제공한다. API 키가 없으면 아무 것도 쓰지 않고 종료하며, 키가 있으면 `serviceList`의 모든 페이지를 먼저 수집한 뒤 한 트랜잭션에서 주거 관련 행만 `external_id`(서비스ID) 기준으로 upsert한다. 페이지 수·전체 건수 검증에 실패하거나 타임아웃·인증 오류가 나면 기존 행을 삭제·덮어쓰지 않는다. 삭제 API와 DELETE 권한은 두지 않는다.
 - **보조금24 데이터 해석**: 서비스명에 주거 관련 키워드가 있는 사업만 반영한다. `소관기관명`이 등록 지역 표시명과 정확히 일치할 때만 `local`로 저장하고, 중앙행정기관은 `national`로 분류한다. 다른 시·군·구명이 붙은 지역 사업은 등록 지역으로 확정할 수 없으면 건너뛴다. 거주 형태·자격도 원문에 명시된 경우만 태그하고 임의 판정하지 않는다. `신청기한`은 명확한 단일 날짜만 `deadline_date`로 변환하고, 정확한 상시·연중 문구만 `always_open`, 나머지는 `unknown`으로 보존한다.
 - **시드 폴백**: API 키 미설정·지연·장애나 지자체 공고 누락에 대비해 공식 원문으로 확인한 전국·경기도·용인시 공고 4건을 `source='seed'`로 둔다. 고정 `external_id`와 `ON CONFLICT DO NOTHING`으로 반복 적용해도 중복되지 않는다. 구체적인 원문 URL은 [DB 설계](DB_DESIGN.md#소식지-support_programs-구현-완료)에 기록했다.
-- **지역·정렬**: 사용자의 프로필 지역과 `regions.parent_id` 상위 지역, 전국 공고를 함께 반환한다. 진행 중 공고를 먼저, 그중 거주 형태 태그가 일치하는 공고를 먼저, 확정 마감일이 이른 순으로 정렬하고 마감 공고는 하단에 둔다. 태그 일치는 신청 자격을 확정하지 않는다.
+- **지역·정렬·페이지**: 사용자의 프로필 지역과 `regions.parent_id` 상위 지역, 전국 공고를 함께 반환한다. `limit`(기본 5, 최대 50)·`offset` 페이지와 `total`·`has_more`를 제공하며, 같은 `visible` CTE를 `REPEATABLE READ` 트랜잭션에서 개수·페이지에 재사용해 빈 페이지에서도 total이 정확하다. 진행 중 공고를 먼저, 그중 거주 형태 태그가 일치하는 공고를 먼저, 확정 마감일이 이른 순으로 정렬하고 마감 공고는 하단에 둔다. 태그 일치는 신청 자격을 확정하지 않는다.
 - **마감 판단**: `deadline_kind='fixed'`이고 `deadline_date`가 한국 시간 기준 오늘보다 이전일 때만 `is_closed=true`다. 마감일 당일은 아직 마감이 아니며, `always_open`·`unknown`은 진행 중으로 표시하되 `deadline_kind`로 구분한다. 마감 공고도 상세 조회할 수 있다.
 - **상세·출처**: 상세 응답에는 지원 대상·내용·선정 기준·신청 방법·신청기한·공식 URL과 `source_attribution`, `source_checked_at`, `synced_at`을 포함한다. `detail_url`은 DB CHECK와 동기화 검증 모두에서 http/https만 허용한다.
 - **오류 처리**: 프로필 미등록 목록 조회는 404, 없는 공고 상세는 404, 잘못된 쿼리·UUID는 422다. DB 오류를 빈 목록으로 대체하지 않는다. 클라이언트가 공고를 생성·수정·삭제하는 API는 없다.
@@ -120,7 +120,7 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 이번 세션 코드는 1단계(사진 관찰·텍스트 진단)만 구현했다. 아래는 회의에서 확정한 2~4단계 설계이며 아직 마이그레이션·API·화면 코드가 없다.
 
 - **사진 Storage**: 하자 사진을 Supabase Storage 비공개 버킷에 저장하고 소유권 확인 후 단기 Signed URL만 발급한다. 견적 요청서 공유·결과 재열람에 사용하며, 보유기간·삭제 정책은 개인정보 검토와 함께 확정한다([ADR 0002](../adr/0002-private-storage-for-defect-photos.md)).
-- **소식지 페이지네이션·주기 동기화**: 목록 API에 안정적인 페이지네이션을 추가하고, 보조금24 동기화를 수동 명령에서 주기 실행으로 확장한다. 동기화 실패 시 기존 행을 유지하는 규칙은 그대로 둔다.
+- **소식지 주기 동기화**: 보조금24 동기화를 수동 명령에서 주기 실행으로 확장한다. 동기화 실패 시 기존 행을 유지하는 규칙은 그대로 둔다. 목록 페이지네이션은 구현 완료다.
 - **업체 평점·상세**: 업체별 평점 집계와 상세 프로필(소개, 작업 종류, 출장 지역, 최근 활동)을 제공한다. 평점은 수락·완료된 매칭에서만 생성하고 임의 후기를 허용하지 않는다.
 - **견적 요청서·제안서·수락**: 하자 기록을 지역·특화 분야 기반 1:N 공개 요청서로 등록하고, 업체가 제안서(작업 범위·일정·금액)를 제출하며, 요청인이 1건을 수락해 매칭을 확정한다. 수락 시 나머지 제안은 종료한다([ADR 0003](../adr/0003-open-quote-request-and-proposal-matching.md)).
 
@@ -179,13 +179,13 @@ DB 저장을 직접 허용한다는 별도 문구는 확인되지 않았으나, 
 | --- | --- | --- | --- |
 | `GET /me/profile` | 구현됨 | 없음 | `nickname`, `role`, `region_id`, `address`, `housing_type`; 미등록 시 `404` |
 | `PUT /me/profile` | 구현됨 | `nickname`, `region_id`, `address`, `housing_type` | 저장된 프로필 (사용자 ID 기준 upsert, 역할 서버 결정) |
-| `GET /support-programs` | 구현됨 | `status?`(`all`/`active`) | 프로필 지역·상위 지역·전국 공고 목록 (`housing_type_matched`, `deadline_kind`, `is_closed`, 출처 확인 시각 포함) |
+| `GET /support-programs` | 구현됨 | `status?`(`all`/`active`), `limit?`(기본 5, 최대 50), `offset?` | 프로필 지역·상위 지역·전국 공고 페이지(`items`, `total`, `limit`, `offset`, `has_more`) |
 | `GET /support-programs/{program_id}` | 구현됨 | 없음 | 상세 요약, 지원 대상·내용·신청 방법, 신청기한·원문 URL·출처·확인 시점 |
-| `GET /records` | 구현됨 | 없음 | 내 하자 분석 기록 목록 (최근 수정순, 위치·재질·증상·의심 유형·심각도% 요약) |
+| `GET /records` | 구현됨 | 없음 | 내 하자 분석 기록 목록 (최근 수정순, 지역 스냅샷·위치·재질·증상·의심 유형·심각도% 요약) |
 | `POST /records` | 구현됨 | 없음 | `record_id`, `input_revision` |
-| `GET /records/{record_id}` | 구현됨 | 없음 | 저장된 입력(위치·재질·증상), 진단·요청문 및 각 결과의 입력 버전 |
-| `PATCH /records/{record_id}` | 구현됨 | 변경할 위치·재질·증상 | 저장된 값, `input_revision` |
-| `POST /records/{record_id}/analyze` | 구현됨 | 사진 1~2장(전체·근접), `location`, `material`, `symptoms?`, `external_analysis_consent?`(기본 `true`) | 사진별 관찰 상태·`source`·`detections`(`label`, `raw_label`, `confidence`, `area_ratio`, `bbox`, `mask`, `vision_observation`), 구조화 진단(`source="llm"` 또는 `"sample"`), `input_revision`, `diagnosis_generation`, 사진 분석 출처(`yolo`, `yolo_sam`, `vision_llm`, `yolo_vision_llm`, `sample`) |
+| `GET /records/{record_id}` | 구현됨 | 없음 | 저장된 입력(지역·위치·재질·증상), 진단·요청문 및 각 결과의 입력 버전 |
+| `PATCH /records/{record_id}` | 구현됨 | 변경할 위치·재질·증상·지역 | 저장된 값, `input_revision` |
+| `POST /records/{record_id}/analyze` | 구현됨 | 사진 1~2장(전체·근접), `location`, `material`, `symptoms?`, `region_id?`, `external_analysis_consent?`(기본 `true`) | 사진별 관찰 상태·`source`·`detections`(`label`, `raw_label`, `confidence`, `area_ratio`, `bbox`, `mask`, `vision_observation`), 구조화 진단(`source="llm"` 또는 `"sample"`), `input_revision`, `diagnosis_generation`, 사진 분석 출처(`yolo`, `yolo_sam`, `vision_llm`, `yolo_vision_llm`, `sample`) |
 | `POST /records/{record_id}/diagnosis` | 구현됨 | `regenerate?` | 최신 진단 재사용 또는 재생성 결과(`record_id`, `input_revision`, `diagnosis_generation`, `diagnosis`, `source`) |
 | `POST /records/{record_id}/drafts/{kind}` | 구현됨 | 요청문 종류(`landlord` \| `provider`), `regenerate?` | 요청문과 입력 버전·진단 생성 번호(모델 실패 시 502/503/504, 기존 값 유지) |
 | `GET /records/{record_id}/drafts/{kind}/template` | 구현됨 | 요청문 종류(`landlord` \| `provider`) | 현재 기록의 확인된 사실을 채운 기본 양식 |

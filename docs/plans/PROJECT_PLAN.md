@@ -227,7 +227,7 @@ Expo에서 사진(1~2장)과 위치·재질·선택 증상 메모를 `POST /reco
 
 ## 2~4단계 확정 설계 (구현 예정)
 
-이번 세션에는 코드를 추가하지 않았다. 사진 비공개 Storage·단기 Signed URL, 소식지 페이지네이션·주기 동기화, 업체 평점·상세, 견적 요청서·제안서·수락 매칭을 확정 설계로 둔다. 매칭은 지역·특화 분야가 맞는 업체에 1:N으로 공개하고 제안서 중 1건만 수락한다. 근거는 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md), [ADR 0003](../adr/0003-open-quote-request-and-proposal-matching.md)를 따른다.
+2단계로 분석 전 지역 확인(`records.region_id` 스냅샷, `012`)과 소식지 목록 페이지네이션(`limit`/`offset`, `total`/`has_more`)을 구현했다. 사진 비공개 Storage·단기 Signed URL, 소식지 주기 동기화, 업체 평점·상세, 견적 요청서·제안서·수락 매칭은 확정 설계로 둔다. 매칭은 지역·특화 분야가 맞는 업체에 1:N으로 공개하고 제안서 중 1건만 수락한다. 근거는 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md), [ADR 0003](../adr/0003-open-quote-request-and-proposal-matching.md)를 따른다.
 
 ## 다음에 결정할 사항
 
