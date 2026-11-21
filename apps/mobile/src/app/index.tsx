@@ -16,8 +16,10 @@ import {
   ApiError,
   type Profile,
   type ProviderDetail,
+  type QuoteRequestSummary,
   getMyProfile,
   getProviderDetail,
+  getQuoteRequests,
   messageOf,
 } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
@@ -276,6 +278,7 @@ function ProviderHome({
 }) {
   const router = useRouter();
   const [detail, setDetail] = useState<ProviderDetail | null>(null);
+  const [quotes, setQuotes] = useState<QuoteRequestSummary[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState<string | null>(null);
 
@@ -305,6 +308,20 @@ function ProviderHome({
       active = false;
     };
   }, [profile.provider_id]);
+
+  useEffect(() => {
+    let active = true;
+    getQuoteRequests()
+      .then((nextQuotes) => {
+        if (active) setQuotes(nextQuotes);
+      })
+      .catch(() => {
+        if (active) setQuotes([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -371,10 +388,41 @@ function ProviderHome({
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>받은 견적 요청서</Text>
-          <Text style={styles.bodyText}>
-            4단계에서 공개 견적 요청서와 제안서 기능이 열리면 이곳에서 확인할 수
-            있어요.
-          </Text>
+          {quotes.length === 0 ? (
+            <Text style={styles.bodyText}>
+              아직 지역·특화 분야가 맞는 공개 요청서가 없어요.
+            </Text>
+          ) : (
+            quotes.map((quote) => (
+              <Pressable
+                key={quote.request_id}
+                accessibilityRole="button"
+                onPress={() => router.push(`/quote-requests/${quote.request_id}`)}
+                style={({ pressed }) => [styles.quoteCard, pressed && styles.pressed]}
+              >
+                <View style={styles.quoteHeader}>
+                  <Text style={styles.quoteTitle}>{quote.work_type_name}</Text>
+                  <Text style={styles.quoteStatus}>
+                    {quote.my_proposal_status === 'pending'
+                      ? '제안 대기'
+                      : quote.my_proposal_status === 'accepted'
+                        ? '수락됨'
+                        : quote.my_proposal_status === 'rejected'
+                          ? '마감됨'
+                          : '제안 가능'}
+                  </Text>
+                </View>
+                <Text style={styles.bodyText}>
+                  {quote.region_name} · {quote.location}
+                </Text>
+                <Text style={styles.bodyText}>
+                  {quote.severity_score === null
+                    ? 'AI 위험도 판단 보류'
+                    : `AI 위험도 ${quote.severity_score}%`}
+                </Text>
+              </Pressable>
+            ))
+          )}
         </View>
 
         <View style={styles.card}>
@@ -487,6 +535,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  quoteCard: {
+    borderTopWidth: 1,
+    borderTopColor: '#E2E4E8',
+    paddingTop: 10,
+    gap: 4,
+  },
+  quoteHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  quoteTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#15171A',
+  },
+  quoteStatus: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#208AEF',
   },
   secondaryButton: {
     alignItems: 'center',

@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -100,6 +101,14 @@ export default function ResultScreen() {
   const diagnosis = detail?.diagnosis?.diagnosis ?? null;
   const isSample = diagnosis?.source === 'sample';
 
+  function openQuoteRequest() {
+    if (!detail) return;
+    router.push({
+      pathname: '/quote-requests/new',
+      params: { recordId: detail.record_id },
+    });
+  }
+
   function openProviders() {
     if (!diagnosis) return;
     const regionId = detail?.region_id ?? profileRegionId;
@@ -185,6 +194,24 @@ export default function ResultScreen() {
               </View>
             ) : null}
 
+            {detail?.photos?.length ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>하자 사진</Text>
+                <View style={styles.photoRow}>
+                  {detail.photos.map((photo) => (
+                    <Image
+                      key={`${photo.role}-${photo.url}`}
+                      source={{ uri: photo.url }}
+                      style={styles.photo}
+                      accessibilityLabel={
+                        photo.role === 'overview' ? '전체 하자 사진' : '근접 하자 사진'
+                      }
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
             <View style={styles.summaryCard}>
               <Text style={styles.cardTitle}>심각도</Text>
               <Text style={styles.severity}>
@@ -233,6 +260,17 @@ export default function ResultScreen() {
               <Text style={styles.cardTitle}>추천 작업</Text>
               <Text style={styles.bodyText}>{diagnosis.work_type_reason}</Text>
             </View>
+
+            <Pressable
+              accessibilityRole="button"
+              onPress={openQuoteRequest}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.primaryButtonText}>견적 요청서 보내기</Text>
+            </Pressable>
 
             <Pressable
               accessibilityRole="button"
@@ -448,6 +486,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  photoRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  photo: {
+    flex: 1,
+    aspectRatio: 1,
+    borderRadius: 10,
+    backgroundColor: '#EEF0F3',
   },
   secondaryButton: {
     alignItems: 'center',

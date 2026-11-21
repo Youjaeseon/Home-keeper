@@ -104,6 +104,83 @@ export type ProviderSearchResponse = {
   is_sample: boolean;
 };
 
+export type SignedPhoto = {
+  role: 'overview' | 'closeup';
+  url: string;
+  expires_at: string;
+  width: number;
+  height: number;
+};
+
+export type QuoteProposal = {
+  proposal_id: string;
+  created_at: string;
+  provider: ProviderSummary;
+  min_price: number;
+  max_price: number;
+  memo: string;
+  status: 'pending' | 'accepted' | 'rejected';
+};
+
+export type QuoteRequestSummary = {
+  request_id: string;
+  record_id: string;
+  region_id: string;
+  region_name: string;
+  work_type_id: string;
+  work_type_name: string;
+  address: string | null;
+  location: string;
+  material: string | null;
+  memo: string | null;
+  photos: SignedPhoto[];
+  severity_score: number | null;
+  severity_level: SeverityLevel | null;
+  suspected_types: string[];
+  status: 'open' | 'accepted' | 'cancelled';
+  accepted_proposal_id: string | null;
+  proposal_count: number;
+  my_proposal_id: string | null;
+  my_proposal_status: 'pending' | 'accepted' | 'rejected' | null;
+  created_at: string;
+};
+
+export type QuoteRequestDetail = QuoteRequestSummary & {
+  proposals: QuoteProposal[];
+};
+
+export type QuoteRequestInput = {
+  record_id: string;
+  region_id?: string | null;
+  work_type_id?: string | null;
+  address?: string | null;
+  memo?: string | null;
+};
+
+export type QuoteProposalInput = {
+  min_price: number;
+  max_price: number;
+  memo: string;
+};
+
+export type DraftTemplate = {
+  kind: 'landlord' | 'provider';
+  text: string;
+  input_revision: number;
+  diagnosis_generation: number | null;
+};
+
+export type ChatRoom = {
+  room_id: string;
+  requester_id: string;
+  provider_id: string;
+  provider_name: string;
+  latest_record_id: string | null;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ProviderQuery = {
   regionId: string;
   workTypeId?: string | null;
@@ -189,6 +266,7 @@ export type RecordDetail = {
   region_id: string | null;
   region_name: string | null;
   photo_observations: PhotoAnalysis | null;
+  photos: SignedPhoto[];
   input_revision: number;
   questions: unknown[];
   messages: unknown[];
@@ -415,4 +493,61 @@ export function getProviders({
 
 export function getProviderDetail(providerId: string): Promise<ProviderDetail> {
   return apiRequest<ProviderDetail>(`/providers/${providerId}`);
+}
+
+export function getDraftTemplate(recordId: string): Promise<DraftTemplate> {
+  return apiRequest<DraftTemplate>(`/records/${recordId}/drafts/provider/template`);
+}
+
+export function createQuoteRequest(
+  input: QuoteRequestInput,
+): Promise<QuoteRequestDetail> {
+  return apiRequest<QuoteRequestDetail>('/quote-requests', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function getQuoteRequests(): Promise<QuoteRequestSummary[]> {
+  return apiRequest<QuoteRequestSummary[]>('/quote-requests');
+}
+
+export function getQuoteRequestDetail(requestId: string): Promise<QuoteRequestDetail> {
+  return apiRequest<QuoteRequestDetail>(`/quote-requests/${requestId}`);
+}
+
+export function submitQuoteProposal(
+  requestId: string,
+  input: QuoteProposalInput,
+): Promise<QuoteProposal> {
+  return apiRequest<QuoteProposal>(`/quote-requests/${requestId}/proposals`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function acceptQuoteProposal(
+  requestId: string,
+  proposalId: string,
+): Promise<QuoteRequestDetail> {
+  return apiRequest<QuoteRequestDetail>(
+    `/quote-requests/${requestId}/proposals/${proposalId}/accept`,
+    { method: 'POST' },
+  );
+}
+
+export function cancelQuoteRequest(requestId: string): Promise<QuoteRequestDetail> {
+  return apiRequest<QuoteRequestDetail>(`/quote-requests/${requestId}/cancel`, {
+    method: 'POST',
+  });
+}
+
+export function createChatRoom(input: {
+  provider_id: string;
+  record_id?: string | null;
+}): Promise<ChatRoom> {
+  return apiRequest<ChatRoom>('/chat/rooms', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
 }
