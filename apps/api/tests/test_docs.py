@@ -49,7 +49,7 @@ def test_openapi_metadata_tags_and_security():
 
     tags = {tag["name"]: tag for tag in spec["tags"]}
     expected_tags = {
-        "records", "profile", "support-programs", "drafts", "providers", "chat", "health"
+        "records", "diagnosis", "profile", "support-programs", "drafts", "providers", "chat", "health"
     }
     assert expected_tags <= set(tags)
     for name in expected_tags:
@@ -94,7 +94,19 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
             "404",
             "409",
             "422",
+            "502",
             "503",
+            "504",
+        },
+        ("/records/{record_id}/diagnosis", "post"): {
+            "200",
+            "401",
+            "404",
+            "409",
+            "422",
+            "502",
+            "503",
+            "504",
         },
         ("/records/{record_id}/drafts/{kind}", "post"): {
             "200",

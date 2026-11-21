@@ -298,21 +298,40 @@ class DraftsOut(BaseModel):
     )
 
 
+class VisionObservationOut(BaseModel):
+    """비전 LLM의 독립 사진 관찰 요약."""
+
+    suspected_types: list[str] = Field(
+        description="사진에서 보인 의심 하자 유형. `균열`, `벗겨짐`, `곰팡이` 중 해당 항목이며 없으면 빈 배열입니다."
+    )
+    summary: str = Field(description="사진에서 보인 흔적 요약. 판독 불가 시 빈 문자열입니다.")
+    approximate_location: str | None = Field(
+        description="사진 안에서의 대략적 위치 요약. 판단할 수 없으면 `null`입니다."
+    )
+    unreadable_reason: str | None = Field(
+        description="흐림·어두움 등으로 판독할 수 없을 때의 이유. 판독했으면 `null`입니다."
+    )
+
+
 class AnalyzePhotoOut(BaseModel):
     """사진 일괄 분석의 사진별 처리 상태."""
 
     role: Literal["overview", "closeup"] = Field(
         description="사진 역할. `overview`는 전체, `closeup`은 근접 사진입니다."
     )
-    status: Literal["not_analyzed", "analyzed"] = Field(
-        description="사진 분석 상태. 샘플 모드에서는 실제 분석을 하지 않으므로 항상 `not_analyzed`입니다."
+    status: Literal["not_analyzed", "analyzed", "failed"] = Field(
+        description="사진 분석 상태. `not_analyzed`는 분석 미수행, `failed`는 YOLO·비전 LLM 모두 실패 또는 판독 불가입니다."
     )
-    source: Literal["sample", "yolo", "yolo_sam"] = Field(
-        description="사진 분석 출처: sample, yolo, yolo_sam."
+    source: Literal["sample", "yolo", "yolo_sam", "vision_llm"] = Field(
+        description="사진 분석 출처: sample, yolo, yolo_sam, vision_llm."
     )
     detections: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="탐지 목록. object_id, class_id, label, confidence, bbox(반열린 xyxy), image_size, source, segmentation_status, mask를 포함합니다. mask는 null 또는 COCO RLE(size=[높이,너비], counts)와 시각화용 svg_path, 원본 기준 반열린 bounds, source입니다. segmentation_status는 completed, no_mask, failed, unavailable, skipped_no_consent입니다. 샘플에서는 빈 배열입니다.",
+        description="탐지 목록. object_id, class_id, label, raw_label, confidence, bbox(반열린 xyxy), image_size, area_ratio, source, segmentation_status, mask를 포함합니다. area_ratio는 이미지 전체 면적 대비 점유 비율(0~1)입니다. mask는 null 또는 COCO RLE(size=[높이,너비], counts)와 시각화용 svg_path, 원본 기준 반열린 bounds, source입니다. segmentation_status는 completed, no_mask, failed, unavailable, skipped_no_consent입니다. 샘플·비전 LLM 분석에서는 빈 배열입니다.",
+    )
+    vision_observation: VisionObservationOut | None = Field(
+        default=None,
+        description="YOLO가 읽지 못한 사진을 비전 LLM이 독립 관찰한 요약. 비전 LLM을 호출하지 않았거나 실패하면 `null`입니다.",
     )
 
 
@@ -328,8 +347,10 @@ class AnalyzePhotoAnalysisOut(BaseModel):
     photos: list[AnalyzePhotoOut] = Field(
         description="업로드한 사진별 역할과 처리 상태 목록."
     )
-    source: Literal["sample", "yolo", "yolo_sam"] = Field(
-        description="사진 분석 출처: sample, yolo, yolo_sam."
+    source: Literal[
+        "sample", "yolo", "yolo_sam", "vision_llm", "yolo_vision_llm"
+    ] = Field(
+        description="사진 분석 출처. 사진마다 YOLO와 비전 LLM이 섞이면 `yolo_vision_llm`입니다."
     )
 
 
@@ -366,8 +387,8 @@ class AnalyzeDiagnosisOut(BaseModel):
         description="추천 작업 종류의 UUID. 샘플 모드에서는 작업 목록이 없으면 `null`입니다."
     )
     work_type_reason: str = Field(description="추천 작업과 원인 점검을 권장하는 이유.")
-    source: Literal["sample"] = Field(
-        description="샘플 결과 표시. 값은 항상 `sample`입니다."
+    source: Literal["llm", "sample"] = Field(
+        description="진단 출처. 실제 모델 생성이면 `llm`, 샘플 규칙이면 `sample`입니다."
     )
 
 
@@ -385,8 +406,22 @@ class AnalyzeResponse(BaseModel):
         description="사진별 분석 상태. 샘플 모드에서는 실제 사진 분석을 수행하지 않습니다."
     )
     diagnosis: AnalyzeDiagnosisOut = Field(description="저장된 구조화 진단 결과.")
-    source: Literal["sample", "yolo", "yolo_sam"] = Field(
+    source: Literal[
+        "sample", "yolo", "yolo_sam", "vision_llm", "yolo_vision_llm"
+    ] = Field(
         description="사진 분석 출처. 진단 출처는 diagnosis.source로 별도 표시합니다."
+    )
+
+
+class DiagnosisResponse(BaseModel):
+    """진단 생성·재사용 응답."""
+
+    record_id: UUID = Field(description="진단한 하자 기록의 UUID.")
+    input_revision: int = Field(description="응답 시점의 기록 입력 버전.")
+    diagnosis_generation: int = Field(description="진단 생성 번호.")
+    diagnosis: AnalyzeDiagnosisOut = Field(description="저장 또는 재사용된 구조화 진단 결과.")
+    source: Literal["llm", "sample"] = Field(
+        description="진단 출처. 실제 모델 생성이면 `llm`, 기존 샘플 진단 재사용이면 `sample`입니다."
     )
 
 

@@ -74,6 +74,7 @@ def test_analyze_one_photo_stores_sample_diagnosis_and_material(
             "status": "not_analyzed",
             "source": "sample",
             "detections": [],
+            "vision_observation": None,
         }
     ]
     assert "bbox" not in response.text

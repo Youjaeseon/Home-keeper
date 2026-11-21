@@ -21,6 +21,7 @@ MASK_TEXT = "<0f>0<|box;x1=1;y1=2;x2=4;y2=5;w=20;h=10|><|mask;x=0;y=0;data=2,2,!
 def settings(monkeypatch):
     settings = SimpleNamespace(
         yolo_model_path="models/best.pt", model_api_key="test-key", sam_timeout_seconds=1,
+        llm_api_key="test-key", llm_model="vision-model", vision_llm_model=None,
     )
     monkeypatch.setattr(vision, "get_settings", lambda: settings)
     return settings
@@ -126,12 +127,18 @@ def test_empty_and_failed_sam_keep_yolo_detections(
 
 def test_no_detections_skip_sam(monkeypatch, settings):
     monkeypatch.setattr(vision, "_detect", lambda *_: [])
+    monkeypatch.setattr(
+        vision.llm, "generate_json",
+        lambda *a, **k: observation(),
+    )
     async def forbidden(*_):
         pytest.fail("SAM called without detections")
     monkeypatch.setattr(vision, "_segment", forbidden)
     upload = photo()
     result = vision.analyze_photos([upload], ["overview"], True)
     assert result["photos"][0]["detections"] == []
+    assert result["photos"][0]["status"] == "analyzed"
+    assert result["photos"][0]["source"] == "vision_llm"
     upload.file.close()
 
 
@@ -157,16 +164,42 @@ def test_exif_orientation_is_applied_before_detection(monkeypatch, settings):
         sizes.append(image.size)
         return []
     monkeypatch.setattr(vision, "_detect", detect)
+    monkeypatch.setattr(vision.llm, "generate_json", lambda *a, **k: observation())
     vision.analyze_photos([upload], ["overview"], True)
     assert sizes == [(10, 20)]
     upload.file.close()
 
 
-def test_api_saves_real_detection_and_mask_with_sample_diagnosis(
+def diagnosis_result():
+    return {
+        "observations": "사진과 입력에서 곰팡이 흔적을 확인했습니다.",
+        "suspected_types": ["곰팡이"],
+        "severity_score": 55,
+        "severity_level": "medium",
+        "reason": "표면 곰팡이 의심",
+        "causes": ["결로 가능성"],
+        "estimation_notice": "AI 추정 안내",
+        "recommended_action": "inspection",
+        "care_steps": ["환기"],
+        "supplies": ["마스크"],
+        "prevention_tips": ["환기 유지"],
+        "unknowns": ["누수 여부"],
+        "work_type_id": None,
+        "work_type_reason": "원인 점검 필요",
+        "source": "llm",
+    }
+
+
+def test_api_saves_real_detection_and_mask_with_llm_diagnosis(
     monkeypatch, settings, client, user_factory, token_for, record_factory,
 ):
+    from app import llm
+
     monkeypatch.setattr("app.records.get_settings", lambda: settings)
     monkeypatch.setattr(vision, "_detect", lambda *_: [detection()])
+    monkeypatch.setattr(
+        "app.diagnosis.generate_diagnosis", lambda *_: diagnosis_result()
+    )
     mock_api(monkeypatch, MASK_TEXT)
     user_id = user_factory()
     record_id = record_factory(user_id)["record_id"]
@@ -183,24 +216,131 @@ def test_api_saves_real_detection_and_mask_with_sample_diagnosis(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["source"] == "yolo_sam"
-    assert body["diagnosis"]["source"] == "sample"
+    assert body["diagnosis"]["source"] == "llm"
     detected = body["photo_analysis"]["photos"][0]["detections"][0]
+    assert detected["label"] == "crack"
+    assert detected["area_ratio"] == pytest.approx(0.5 * 16 / 200)
     assert detected["segmentation_status"] == "completed"
     assert detected["mask"]["counts"] == "121"
     assert detected["mask"]["svg_path"]
+    assert "_area_ratio" not in detected["mask"]
     detail = client.get(f"/records/{record_id}", headers=headers).json()
     assert detail["photo_observations"] == body["photo_analysis"]
-    def unavailable(*_):
-        raise ApiError(503, "yolo_unavailable", "하자 탐지 모델을 실행할 수 없습니다.")
-    monkeypatch.setattr(vision, "_detect", unavailable)
+
+    def broken(*_):
+        raise llm.LlmError
+
+    monkeypatch.setattr("app.diagnosis.generate_diagnosis", broken)
     failed = client.post(
         f"/records/{record_id}/analyze", headers=headers,
         data={"photo_roles": "overview", "external_analysis_consent": "true",
               "location": "바뀐 위치", "material": "벽지"},
         files=[("photos", ("photo.png", data, "image/png"))],
     )
-    assert failed.status_code == 503
+    assert failed.status_code == 502
     assert client.get(f"/records/{record_id}", headers=headers).json() == detail
+
+
+def observation(**overrides):
+    payload = {
+        "suspected_types": ["mold"],
+        "summary": "창틀 아래 검은 얼룩",
+        "approximate_location": "창틀 아래",
+        "unreadable_reason": None,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_vision_llm_observes_only_photos_without_detections(monkeypatch, settings):
+    calls = []
+
+    def observe(prompt, **kwargs):
+        calls.append(kwargs["model"])
+        return observation()
+
+    monkeypatch.setattr(vision, "_detect", lambda *_: [])
+    monkeypatch.setattr(vision.llm, "generate_json", observe)
+    uploads = [photo(), photo()]
+    result = vision.analyze_photos(uploads, ["overview", "closeup"], True)
+    assert calls == ["vision-model", "vision-model"]
+    assert result["source"] == "vision_llm"
+    assert result["applied"] is True
+    assert [p["status"] for p in result["photos"]] == ["analyzed", "analyzed"]
+    assert result["photos"][0]["vision_observation"] == {
+        "suspected_types": ["곰팡이"],
+        "summary": "창틀 아래 검은 얼룩",
+        "approximate_location": "창틀 아래",
+        "unreadable_reason": None,
+    }
+    for upload in uploads:
+        upload.file.close()
+
+
+def test_vision_llm_falls_back_when_yolo_fails(monkeypatch, settings):
+    def unavailable(*_):
+        raise ApiError(503, "yolo_unavailable", "하자 탐지 모델을 실행할 수 없습니다.")
+
+    monkeypatch.setattr(vision, "_detect", unavailable)
+    monkeypatch.setattr(vision.llm, "generate_json", lambda *a, **k: observation())
+    upload = photo()
+    result = vision.analyze_photos([upload], ["overview"], True)
+    assert result["photos"][0]["source"] == "vision_llm"
+    assert result["photos"][0]["status"] == "analyzed"
+    upload.file.close()
+
+
+def test_vision_llm_failure_marks_photo_failed(monkeypatch, settings):
+    from app import llm
+
+    monkeypatch.setattr(vision, "_detect", lambda *_: [])
+
+    def broken(*_a, **_k):
+        raise llm.LlmError
+
+    monkeypatch.setattr(vision.llm, "generate_json", broken)
+    upload = photo()
+    result = vision.analyze_photos([upload], ["overview"], True)
+    assert result["photos"][0]["status"] == "failed"
+    assert result["photos"][0]["source"] == "vision_llm"
+    assert result["photos"][0]["vision_observation"] is None
+    upload.file.close()
+
+
+def test_unreadable_vision_observation_marks_photo_failed(monkeypatch, settings):
+    monkeypatch.setattr(vision, "_detect", lambda *_: [])
+    monkeypatch.setattr(
+        vision.llm, "generate_json",
+        lambda *a, **k: observation(summary="", unreadable_reason="흐림"),
+    )
+    upload = photo()
+    result = vision.analyze_photos([upload], ["overview"], True)
+    assert result["photos"][0]["status"] == "failed"
+    assert result["photos"][0]["vision_observation"]["unreadable_reason"] == "흐림"
+    upload.file.close()
+
+
+def test_mixed_yolo_and_vision_sources_are_reported(monkeypatch, settings):
+    settings.model_api_key = None
+    results = iter([[detection()], []])
+    monkeypatch.setattr(vision, "_detect", lambda *_: next(results))
+    monkeypatch.setattr(vision.llm, "generate_json", lambda *a, **k: observation())
+    uploads = [photo(), photo()]
+    result = vision.analyze_photos(uploads, ["overview", "closeup"], True)
+    assert [p["source"] for p in result["photos"]] == ["yolo", "vision_llm"]
+    assert result["source"] == "yolo_vision_llm"
+    for upload in uploads:
+        upload.file.close()
+
+
+def test_yolo_path_without_llm_key_is_unavailable(monkeypatch, settings):
+    settings.llm_api_key = None
+    upload = photo()
+    with pytest.raises(ApiError) as error:
+        vision.analyze_photos([upload], ["overview"], True)
+    assert error.value.status_code == 503
+    assert error.value.code == "llm_unavailable"
+    upload.file.close()
 
 
 def test_sam_timeout_keeps_local_detection(monkeypatch, settings):

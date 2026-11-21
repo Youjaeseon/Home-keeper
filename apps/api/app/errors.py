@@ -74,6 +74,30 @@ def llm_timeout() -> ApiError:
     )
 
 
+def diagnosis_llm_unavailable() -> ApiError:
+    return ApiError(
+        503,
+        "llm_unavailable",
+        "진단 모델이 설정되지 않았습니다. 서버에 LLM_API_KEY를 설정해 주세요.",
+    )
+
+
+def diagnosis_llm_failed() -> ApiError:
+    return ApiError(
+        502,
+        "llm_error",
+        "진단 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+    )
+
+
+def diagnosis_llm_timeout() -> ApiError:
+    return ApiError(
+        504,
+        "llm_timeout",
+        "진단 생성 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
+    )
+
+
 def chat_message_conflict() -> ApiError:
     return ApiError(
         409,

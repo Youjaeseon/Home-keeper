@@ -7,7 +7,16 @@ from psycopg.types.json import Jsonb
 from app.auth import get_current_user
 from app.config import get_settings
 from app.db import read_transaction, transaction
-from app.errors import invalid_request, message_conflict, not_found, revision_conflict
+from app import diagnosis, llm
+from app.errors import (
+    diagnosis_llm_failed,
+    diagnosis_llm_timeout,
+    diagnosis_llm_unavailable,
+    invalid_request,
+    message_conflict,
+    not_found,
+    revision_conflict,
+)
 from app.sample_analysis import (
     MAX_PHOTO_BYTES,
     PHOTO_ROLES,
@@ -596,24 +605,45 @@ def update_record(
     response_model=AnalyzeResponse,
     summary="사진·위치·재질 일괄 분석",
     description=(
-        "사진 1~2장과 위치·재질·선택 증상 메모를 multipart로 한 번에 받아 분석 결과를 저장합니다.\n\n"
-        "- `YOLO_MODEL_PATH` 설정 시 YOLO 사진 탐지를 수행합니다. 외부 분석 동의와 `MODEL_API_KEY`가 있으면 Meta SAM 3.1로 탐지 영역을 분할합니다.\n"
-        "- 탐지 결과·박스·신뢰도·마스크는 저장하며 사진 원본은 저장하지 않습니다. SAM 실패 시 탐지 결과와 분할 실패 상태를 저장합니다. 사진당 최대 16개를 탐지합니다.\n"
-        "- 모델 경로 미설정 시 기존 샘플 모드입니다. 심각도·원인·대응 안내는 모든 모드에서 입력값 기반 샘플 진단이며 `diagnosis.source=sample`입니다.\n"
+        "사진 1~2장과 위치·재질·선택 증상 메모를 multipart로 한 번에 받아 사진 관찰과 AI 진단을 저장합니다.\n\n"
+        "- `YOLO_MODEL_PATH` 설정 시 YOLO 사진 탐지를 수행합니다. 외부 분석 동의와 `MODEL_API_KEY`가 있으면 Meta SAM 3.1로 탐지 영역을 분할하고 화면 점유 비율(`area_ratio`)을 계산합니다.\n"
+        "- 사진별로 YOLO 탐지가 없거나 YOLO를 실행할 수 없으면, 동의와 `LLM_API_KEY`가 있을 때 그 사진만 비전 LLM으로 독립 관찰합니다. 두 방법이 모두 실패하거나 판독할 수 없어도 전체 분석을 실패시키지 않고 사진 상태(`failed` 또는 `analyzed`)를 기록합니다.\n"
+        "- `YOLO_MODEL_PATH`와 `LLM_API_KEY`가 모두 미설정이면 기존 샘플 모드(`source=sample`)입니다. `YOLO_MODEL_PATH`만 설정하고 `LLM_API_KEY`가 없으면 `503`(`llm_unavailable`)입니다.\n"
+        "- 진단 모델이 설정된 경우, 사진 관찰 요약과 마스킹한 위치·재질·증상, DB 작업 종류로 구조화 진단을 생성합니다. 모델 호출·형식 오류는 `502`, 제한 시간 초과는 `504`이며 이때 기존 저장 결과를 유지합니다.\n"
+        "- 탐지 결과·박스·신뢰도·마스크·화면 점유 비율은 저장하며 사진 원본은 저장하지 않습니다. 사진당 최대 16개를 탐지합니다.\n"
         "- 사진은 1~2장, JPEG/PNG/HEIC/HEIF, 한 장당 10MB 이하만 허용합니다. `photo_roles`는 사진 수와 같아야 하며 서로 달라야 합니다.\n"
         "- 제출한 위치·재질·증상이 실제로 바뀌면 `input_revision`을 올리고 `diagnosis_generation`을 증가시킵니다. 분석 중 입력이 바뀌면 아무것도 저장하지 않고 `409`를 반환합니다.\n"
         "- 성공·실패 모두 업로드 임시 파일을 닫고, 원본 사진이나 로그는 남기지 않습니다."
     ),
-    response_description="사진 분석 결과와 저장된 입력값 기반 샘플 진단",
+    response_description="사진 분석 결과와 저장된 AI 진단",
     responses={
         404: _RECORD_NOT_FOUND_RESPONSE,
         409: _ANALYZE_CONFLICT_RESPONSE,
         422: _VALIDATION_ERROR_RESPONSE,
+        502: _error_response(
+            ErrorResponse,
+            "진단 모델 호출 또는 응답 형식 오류. 기존 결과는 유지됩니다.",
+            {"llm_error": {"summary": "진단 모델 오류", "value": {
+                "code": "llm_error", "message": "진단 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+            }}},
+        ),
         503: _error_response(
             ErrorResponse,
-            "사진 분석 의존성 또는 YOLO 모델을 실행할 수 없습니다. 기존 결과는 유지됩니다.",
-            {"yolo_unavailable": {"summary": "YOLO 실행 불가", "value": {
-                "code": "yolo_unavailable", "message": "하자 탐지 모델을 실행할 수 없습니다.",
+            "사진 분석 의존성·모델 설정 문제. 기존 결과는 유지됩니다.",
+            {
+                "yolo_unavailable": {"summary": "YOLO 실행 불가", "value": {
+                    "code": "yolo_unavailable", "message": "하자 탐지 모델을 실행할 수 없습니다.",
+                }},
+                "llm_unavailable": {"summary": "진단 모델 키 미설정", "value": {
+                    "code": "llm_unavailable", "message": "진단 모델이 설정되지 않았습니다. 서버에 LLM_API_KEY를 설정해 주세요.",
+                }},
+            },
+        ),
+        504: _error_response(
+            ErrorResponse,
+            "진단 모델 제한 시간 초과. 기존 결과는 유지됩니다.",
+            {"llm_timeout": {"summary": "진단 모델 시간 초과", "value": {
+                "code": "llm_timeout", "message": "진단 생성 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.",
             }}},
         ),
     },
@@ -634,10 +664,6 @@ def analyze_record(
         list[str],
         Form(description="사진별 역할. `overview`(전체) 또는 `closeup`(근접)이며 사진 수와 같아야 합니다."),
     ],
-    external_analysis_consent: Annotated[
-        bool,
-        Form(description="Meta SAM API 사진 전송 동의 여부. false이면 로컬 YOLO 탐지만 수행합니다."),
-    ],
     location: Annotated[
         str,
         Form(description="하자 발견 위치. 공백만 입력할 수 없습니다."),
@@ -650,13 +676,17 @@ def analyze_record(
         str | None,
         Form(description="선택 증상 메모. 없으면 생략하거나 `null`/빈 문자열로 보냅니다."),
     ] = None,
+    external_analysis_consent: Annotated[
+        bool,
+        Form(description="외부 사진 전송(Meta SAM·비전 LLM) 동의 여부. 생략하면 `true`이며, 명시적 `false`일 때만 외부 전송을 건너뜁니다."),
+    ] = True,
     owner_id: UUID = Depends(get_current_user),
 ):
     try:
         with transaction() as conn:
             record = _lock_record(conn, record_id, owner_id)
             snapshot_revision = record["input_revision"]
-        # The row lock ends before file validation and sample generation.
+        # The row lock ends before file validation and external calls.
 
         if not 1 <= len(photos) <= 2:
             raise invalid_request("사진은 1~2장을 업로드해야 합니다.")
@@ -672,26 +702,41 @@ def analyze_record(
         if not material:
             raise invalid_request("재질을 입력해야 합니다.")
 
-        sample = build_sample_analysis(
-            location=location,
-            material=material,
-            symptoms=symptoms,
-            photo_roles=photo_roles,
-            external_analysis_consent=external_analysis_consent,
-        )
-        if get_settings().yolo_model_path:
-            sample.photo_analysis.update(analyze_photos(photos, photo_roles, external_analysis_consent))
-            sample.diagnosis["observations"] = (
-                "사진 탐지 결과는 별도 사진 분석 영역에 저장했습니다. "
-                "이 진단은 위치·재질·증상 입력만으로 만든 샘플이며 사진 탐지를 반영하지 않습니다."
+        settings = get_settings()
+        if settings.yolo_model_path and not settings.llm_api_key:
+            raise diagnosis_llm_unavailable()
+
+        if not settings.yolo_model_path and not settings.llm_api_key:
+            sample = build_sample_analysis(
+                location=location,
+                material=material,
+                symptoms=symptoms,
+                photo_roles=photo_roles,
+                external_analysis_consent=external_analysis_consent,
             )
-            sample.diagnosis["estimation_notice"] = (
-                "사진 탐지와 별개로 심각도·원인·대응 안내는 입력값 기반 샘플입니다. 현장 확인이 필요합니다."
+            photo_analysis = sample.photo_analysis
+            diagnosis_result = sample.diagnosis
+        else:
+            photo_analysis = analyze_photos(
+                photos, photo_roles, external_analysis_consent
             )
-            sample.diagnosis["reason"] = (
-                "입력값으로 산정한 샘플 심각도이며 사진 탐지 결과를 반영하지 않은 참고용 수치입니다."
-            )
-            sample.diagnosis["unknowns"][0] = "탐지 부위의 실제 크기와 손상 깊이"
+            work_types = diagnosis.load_work_types()
+            try:
+                diagnosis_result = diagnosis.generate_diagnosis(
+                    {
+                        "location": location,
+                        "material": material,
+                        "symptoms": symptoms,
+                        "photo_observations": photo_analysis,
+                    },
+                    work_types,
+                )
+            except llm.LlmUnavailable:
+                raise diagnosis_llm_unavailable() from None
+            except llm.LlmTimeout:
+                raise diagnosis_llm_timeout() from None
+            except llm.LlmError:
+                raise diagnosis_llm_failed() from None
 
         with transaction() as conn:
             record = _lock_record(conn, record_id, owner_id)
@@ -723,8 +768,8 @@ def analyze_record(
                     location,
                     material,
                     symptoms,
-                    Jsonb(sample.photo_analysis),
-                    Jsonb(sample.diagnosis),
+                    Jsonb(photo_analysis),
+                    Jsonb(diagnosis_result),
                     new_revision,
                     new_revision,
                     record_id,
@@ -735,9 +780,9 @@ def analyze_record(
             "record_id": record_id,
             "input_revision": updated["input_revision"],
             "diagnosis_generation": updated["diagnosis_generation"],
-            "photo_analysis": sample.photo_analysis,
-            "diagnosis": sample.diagnosis,
-            "source": sample.photo_analysis["source"],
+            "photo_analysis": photo_analysis,
+            "diagnosis": diagnosis_result,
+            "source": photo_analysis["source"],
         }
     finally:
         for photo in photos:

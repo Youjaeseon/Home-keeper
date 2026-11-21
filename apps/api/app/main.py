@@ -8,6 +8,7 @@ from scalar_fastapi import add_scalar_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.chat import router as chat_router
+from app.diagnosis import router as diagnosis_router
 from app.drafts import router as drafts_router
 from app.docs_auth import router as docs_auth_router
 from app.errors import ApiError
@@ -46,9 +47,10 @@ _API_DESCRIPTION = """
 - `POST /records/{record_id}/next-question`은 현재 저장된 입력과 대화로 다음 질문을 결정하며, 같은 `input_revision`의 저장 결과는 재생성하지 않고 반환합니다.
 - 실제 LLM이 아니라 곰팡이 의심 창가 얼룩 사례의 두 질문을 사용하는 샘플 규칙이며, 응답의 `source`는 항상 `sample`입니다.
 
-### 사진·위치·재질 일괄 분석
-- `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·외부 분석 동의를 multipart로 받아 샘플 진단을 저장합니다.
-- `YOLO_MODEL_PATH` 설정 시 실제 사진 탐지를 수행하며 동의·키가 있으면 Meta SAM 3.1로 분할합니다. 경로 미설정 시 샘플 모드입니다. 심각도·원인·대응 안내는 입력값 기반 샘플 진단입니다.
+### 사진 관찰과 AI 진단
+- `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·외부 분석 동의를 multipart로 받아 사진 관찰과 구조화 진단을 저장합니다.
+- `YOLO_MODEL_PATH` 설정 시 실제 사진 탐지를 수행하고, 동의·키가 있으면 Meta SAM 3.1로 분할해 화면 점유 비율을 계산합니다. YOLO가 읽지 못한 사진만 비전 LLM이 독립 관찰합니다. 두 모델 경로가 모두 미설정이면 샘플 모드입니다.
+- `POST /records/{record_id}/diagnosis`는 저장된 사진 관찰과 현재 입력으로 진단을 생성하거나, 입력 버전이 같은 기존 진단을 재사용합니다. `regenerate=true`면 다시 생성합니다.
 
 ### 점검·견적 요청문
 - `POST /records/{record_id}/drafts/{kind}`는 저장된 입력과 진단으로 `landlord`(임대인 점검) 또는 `provider`(업체 견적) 요청문을 생성합니다. 입력 버전과 진단 생성 번호가 모두 같은 기존 요청문은 재사용하며, `regenerate=true`일 때만 모델을 다시 호출합니다.
@@ -69,6 +71,10 @@ _OPENAPI_TAGS = [
     {
         "name": "records",
         "description": "하자 기록 생성·목록·조회·수정, 사진·위치·재질 일괄 분석, 사용자 대화 메시지 저장·편집, 시연용 다음 질문 조회 API. 모든 요청에 Supabase Auth Bearer JWT 인증과 기록 소유권 검증이 필요합니다.",
+    },
+    {
+        "name": "diagnosis",
+        "description": "저장된 사진 관찰과 입력값으로 구조화 진단을 생성·재생성하고, 입력 버전이 같은 기존 진단을 재사용하는 API. 본인 기록만 사용합니다.",
     },
     {
         "name": "profile",
@@ -105,6 +111,7 @@ app = FastAPI(
     redoc_url=None,
 )
 app.include_router(records_router)
+app.include_router(diagnosis_router)
 app.include_router(profile_router)
 app.include_router(support_programs_router)
 app.include_router(drafts_router)

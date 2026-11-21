@@ -5,11 +5,14 @@ https://developers.openai.com/api/reference/resources/chat/subresources/completi
 Prompts, model responses, and request bodies are never logged.
 """
 
+import json
+
 import httpx
 
 from app.config import get_settings
 
 MAX_OUTPUT_CHARS = 4000
+MAX_JSON_CHARS = 8000
 
 SYSTEM_PROMPT = """\
 너는 임차 주택 하자 기록을 바탕으로 점검·견적 요청문 초안을 작성하는 도우미다.
@@ -73,3 +76,66 @@ def generate_text(prompt: str) -> str:
     if len(content) > MAX_OUTPUT_CHARS:
         raise LlmError
     return content
+
+
+def generate_json(
+    prompt: str,
+    *,
+    system_prompt: str,
+    image_data_url: str | None = None,
+    model: str | None = None,
+) -> dict:
+    """One structured JSON completion; photo input is optional.
+
+    The image is passed as a base64 data URL so no upload is stored anywhere.
+    """
+    settings = get_settings()
+    if not settings.llm_api_key:
+        raise LlmUnavailable
+
+    user_content: str | list[dict] = prompt
+    if image_data_url is not None:
+        user_content = [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": image_data_url}},
+        ]
+
+    try:
+        response = httpx.post(
+            f"{settings.llm_base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+            json={
+                "model": model or settings.llm_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_content},
+                ],
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+            },
+            timeout=settings.llm_timeout_seconds,
+        )
+    except httpx.TimeoutException as exc:
+        raise LlmTimeout from exc
+    except httpx.HTTPError as exc:
+        raise LlmError from exc
+
+    if response.status_code >= 400:
+        raise LlmError
+
+    try:
+        content = response.json()["choices"][0]["message"]["content"]
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        raise LlmError from exc
+
+    if not isinstance(content, str) or not content.strip():
+        raise LlmError
+    if len(content) > MAX_JSON_CHARS:
+        raise LlmError
+    try:
+        payload = json.loads(content)
+    except ValueError as exc:
+        raise LlmError from exc
+    if not isinstance(payload, dict):
+        raise LlmError
+    return payload

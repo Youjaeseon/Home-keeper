@@ -137,6 +137,7 @@ def build_sample_analysis(
                 "status": "not_analyzed",
                 "source": SOURCE,
                 "detections": [],
+                "vision_observation": None,
             }
             for role in photo_roles
         ],
