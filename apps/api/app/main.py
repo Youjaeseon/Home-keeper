@@ -23,7 +23,7 @@ _API_DESCRIPTION = """
 
 ### 인증과 소유권
 - Scalar의 Authentication에서 `SupabaseLogin`을 선택하고 Username(이메일)·Password를 입력해 토큰을 발급받으면 요청에 자동 적용됩니다. Client ID·Client Secret은 비워 둡니다. 기존 `HTTPBearer` 토큰 직접 입력도 가능합니다.
-- `GET /health`를 제외한 `/records`, `/me/profile`, `/regions`, `/support-programs` 엔드포인트는 `Authorization: Bearer <access_token>` 헤더(Supabase Auth JWT)가 필요합니다.
+- `GET /health`를 제외한 `/records`, `/me/profile`, `/regions`, `/support-programs`, `/chat` 등 엔드포인트는 `Authorization: Bearer <access_token>` 헤더(Supabase Auth JWT)가 필요합니다. `/chat/ws`는 헤더 또는 `access_token` 쿼리를 받습니다.
 - 토큰의 `sub` 클레임(UUID)이 요청 사용자로 식별되며, 본인이 소유한 하자 기록에만 접근할 수 있습니다. 다른 사용자의 기록이나 존재하지 않는 리소스는 `404`로 응답합니다.
 
 ### 프로필과 내 기록
@@ -57,7 +57,8 @@ _API_DESCRIPTION = """
 ### 업체 검색과 1:1 채팅
 - `GET /work-types`, `GET /providers`는 지역과 작업이 모두 일치하는 실제 업체를 찾고, 실제 후보가 없을 때만 `is_sample=true` 샘플 후보를 반환합니다. `chat_available`은 사전 등록된 업체 계정 연결 여부입니다.
 - `POST /chat/rooms`는 요청인–업체 방을 만들거나 재사용하며, `record_id`를 보내면 서버가 만든 하자 요약을 공유합니다. `GET/POST /chat/rooms/{room_id}/messages`는 참여자만 접근할 수 있고 `client_message_id`로 재전송을 멱등 처리합니다.
-- 실시간 수신 방식은 미확정이며, 목록·이력 REST 조회를 반복하는 폴링 계약만 제공합니다.
+- `GET /chat/rooms`는 방별 `unread_count`를 포함합니다. `POST /chat/rooms/{room_id}/read`가 서버 시각으로 읽음 상태를 저장하며 본인이 보낸 메시지는 미읽음으로 세지 않습니다.
+- 실시간 수신은 `ws://<API>/chat/ws` WebSocket으로 제공합니다. `Authorization: Bearer` 헤더 또는 `access_token` 쿼리로 인증하고, 저장된 메시지는 참여자에게 `{"type":"message","room_id":"...","message":{...}}` 이벤트로 전달됩니다. 재연결 후에는 REST 이력으로 놓친 메시지를 맞춥니다.
 
 ### 공통 오류 형식
 - 모든 오류는 `{ "code": string, "message": string, "input_revision"?: number }` 형식으로 반환됩니다.
@@ -86,7 +87,7 @@ _OPENAPI_TAGS = [
     },
     {
         "name": "chat",
-        "description": "요청인–업체 1:1 채팅방 목록·생성·재사용, 하자 요약 공유, 메시지 이력·전송 API. 참여자만 접근하며 실시간 수신 방식은 미확정입니다.",
+        "description": "요청인–업체 1:1 채팅방 목록·생성·재사용, 하자 요약 공유, 메시지 이력·전송, 방별 미읽음 수·읽음 처리 API. 참여자만 접근하며 실시간 수신은 인증된 WebSocket으로 제공합니다.",
     },
     {
         "name": "health",

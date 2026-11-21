@@ -2,7 +2,10 @@ import asyncio
 from uuid import uuid4
 
 import httpx
+import pytest
+from starlette.websockets import WebSocketDisconnect
 
+from app.chat import ChatConnectionHub
 from app.main import app
 from conftest import auth_headers
 
@@ -383,3 +386,183 @@ def test_room_list_orders_by_latest_message(client, admin, user_factory, token_f
     rooms = client.get("/chat/rooms", headers=auth_headers(requester_token)).json()
     assert [room["room_id"] for room in rooms[:2]] == [second_room, first_room]
     assert rooms[0]["last_message_preview"] == "둘째 방 메시지"
+
+
+def _rooms(client, token):
+    response = client.get("/chat/rooms", headers=auth_headers(token))
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _read(client, token, room_id):
+    return client.post(
+        f"/chat/rooms/{room_id}/read", headers=auth_headers(token)
+    )
+
+
+def test_room_unread_counts_and_read_receipt(
+    client, admin, user_factory, token_for, analyzed_record_factory
+):
+    requester = user_factory()
+    requester_token = token_for(requester)
+    provider_user = user_factory()
+    provider_token = token_for(provider_user)
+    provider_id = _provider(admin, account_user_id=provider_user)
+    outsider_token = token_for(user_factory())
+
+    record_id = analyzed_record_factory(requester)
+    room_id = _room(client, requester_token, provider_id, record_id).json()["room_id"]
+
+    # The record summary is sent by the requester: unread for the provider only.
+    assert _rooms(client, requester_token)[0]["unread_count"] == 0
+    assert _rooms(client, provider_token)[0]["unread_count"] == 1
+
+    receipt = _read(client, provider_token, room_id)
+    assert receipt.status_code == 200, receipt.text
+    assert receipt.json()["room_id"] == room_id
+    assert receipt.json()["unread_count"] == 0
+    assert receipt.json()["last_read_at"]
+    assert _rooms(client, provider_token)[0]["unread_count"] == 0
+
+    for content in ("첫 질문", "둘째 질문"):
+        assert _send(client, requester_token, room_id, content).status_code == 200
+    # Own messages never count; the provider sees both new messages.
+    assert _rooms(client, requester_token)[0]["unread_count"] == 0
+    assert _rooms(client, provider_token)[0]["unread_count"] == 2
+
+    assert _read(client, provider_token, room_id).json()["unread_count"] == 0
+    assert _send(client, provider_token, room_id, "업체 답장").status_code == 200
+    assert _rooms(client, requester_token)[0]["unread_count"] == 1
+    assert _rooms(client, provider_token)[0]["unread_count"] == 0
+    assert _read(client, requester_token, room_id).json()["unread_count"] == 0
+    assert _rooms(client, requester_token)[0]["unread_count"] == 0
+
+    assert _read(client, outsider_token, room_id).status_code == 404
+    assert _read(client, requester_token, uuid4()).status_code == 404
+
+
+def test_chat_websocket_rejects_missing_or_invalid_token(client):
+    for path in ("/chat/ws", "/chat/ws?access_token=not-a-token"):
+        with client.websocket_connect(path) as websocket:
+            with pytest.raises(WebSocketDisconnect) as closed:
+                websocket.receive_json()
+            assert closed.value.code == 4401
+
+
+def test_chat_websocket_pushes_to_both_participants_and_reconnects(
+    client, admin, user_factory, token_for
+):
+    requester = user_factory()
+    requester_token = token_for(requester)
+    provider_user = user_factory()
+    provider_token = token_for(provider_user)
+    provider_id = _provider(admin, account_user_id=provider_user)
+    room_id = _room(client, requester_token, provider_id).json()["room_id"]
+
+    with client.websocket_connect(
+        f"/chat/ws?access_token={requester_token}"
+    ) as requester_ws, client.websocket_connect(
+        f"/chat/ws?access_token={provider_token}"
+    ) as provider_ws:
+        assert requester_ws.receive_json() == {
+            "type": "ready",
+            "user_id": str(requester),
+        }
+        assert provider_ws.receive_json() == {
+            "type": "ready",
+            "user_id": str(provider_user),
+        }
+
+        sent = _send(client, requester_token, room_id, "실시간 확인")
+        assert sent.status_code == 200, sent.text
+        message = sent.json()
+        for websocket in (requester_ws, provider_ws):
+            event = websocket.receive_json()
+            assert event["type"] == "message"
+            assert event["room_id"] == room_id
+            assert event["message"] == message
+
+    # A reconnect gets a fresh ready event and subsequent messages; missed
+    # messages are recovered through the REST history endpoint.
+    with client.websocket_connect(
+        f"/chat/ws?access_token={provider_token}"
+    ) as reconnected:
+        assert reconnected.receive_json()["type"] == "ready"
+        assert _send(client, requester_token, room_id, "재연결 후").status_code == 200
+        event = reconnected.receive_json()
+        assert event["message"]["content"] == "재연결 후"
+
+
+def test_chat_websocket_does_not_duplicate_idempotent_resends(
+    client, admin, user_factory, token_for
+):
+    requester = user_factory()
+    requester_token = token_for(requester)
+    provider_id = _provider(admin, account_user_id=user_factory())
+    room_id = _room(client, requester_token, provider_id).json()["room_id"]
+    client_message_id = uuid4()
+
+    with client.websocket_connect(
+        f"/chat/ws?access_token={requester_token}"
+    ) as websocket:
+        assert websocket.receive_json()["type"] == "ready"
+        assert _send(
+            client, requester_token, room_id, "한 번만", client_message_id
+        ).status_code == 200
+        assert websocket.receive_json()["message"]["content"] == "한 번만"
+
+        assert _send(
+            client, requester_token, room_id, "한 번만", client_message_id
+        ).status_code == 200
+        assert _send(client, requester_token, room_id, "다음 메시지").status_code == 200
+        assert websocket.receive_json()["message"]["content"] == "다음 메시지"
+
+
+def test_chat_websocket_pushes_new_record_summary(client, admin, user_factory, token_for, analyzed_record_factory):
+    requester = user_factory()
+    requester_token = token_for(requester)
+    provider_user = user_factory()
+    provider_token = token_for(provider_user)
+    provider_id = _provider(admin, account_user_id=provider_user)
+    record_id = analyzed_record_factory(requester)
+
+    with client.websocket_connect(
+        f"/chat/ws?access_token={provider_token}"
+    ) as provider_ws:
+        assert provider_ws.receive_json()["type"] == "ready"
+        created = _room(client, requester_token, provider_id, record_id)
+        assert created.status_code == 200, created.text
+        event = provider_ws.receive_json()
+        assert event["type"] == "message"
+        assert event["message"]["message_type"] == "record_summary"
+        assert event["message"]["record_id"] == str(record_id)
+
+
+class _FakeSocket:
+    def __init__(self):
+        self.sent = []
+
+    async def send_json(self, payload):
+        self.sent.append(payload)
+
+
+def test_chat_hub_broadcast_targets_only_requested_users():
+    requester_id, provider_id, outsider_id = uuid4(), uuid4(), uuid4()
+
+    async def scenario():
+        hub = ChatConnectionHub()
+        requester, provider, outsider = _FakeSocket(), _FakeSocket(), _FakeSocket()
+        await hub.connect(requester_id, requester)
+        await hub.connect(provider_id, provider)
+        await hub.connect(outsider_id, outsider)
+        await hub.broadcast(
+            {requester_id, provider_id}, {"type": "message", "room_id": "room"}
+        )
+        await hub.disconnect(requester_id, requester)
+        await hub.broadcast({requester_id, provider_id}, {"type": "message"})
+        return requester.sent, provider.sent, outsider.sent
+
+    requester_sent, provider_sent, outsider_sent = asyncio.run(scenario())
+    assert len(requester_sent) == 1
+    assert len(provider_sent) == 2
+    assert outsider_sent == []

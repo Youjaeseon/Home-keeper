@@ -73,17 +73,23 @@ def _verifier() -> TokenVerifier:
     return TokenVerifier(get_settings())
 
 
+def verify_access_token(token: str) -> UUID | None:
+    """Return the token subject, or None when the token is invalid or expired."""
+    try:
+        return _verifier().verify(token)
+    except _InvalidToken:
+        return None
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
 ) -> UUID:
-    if credentials is None:
+    if credentials is None or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
-    try:
-        if credentials.scheme.lower() != "bearer":
-            raise _InvalidToken
-        return _verifier().verify(credentials.credentials)
-    except _InvalidToken:
-        raise _unauthorized() from None
+    user_id = verify_access_token(credentials.credentials)
+    if user_id is None:
+        raise _unauthorized()
+    return user_id
 
 
 def _unauthorized() -> ApiError:

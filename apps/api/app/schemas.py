@@ -664,6 +664,21 @@ class ChatRoomListItem(ChatRoomOut):
     last_message_preview: str | None = Field(
         description="최근 메시지 본문 앞 80자. 메시지가 없으면 `null`입니다."
     )
+    unread_count: int = Field(
+        description="내가 아직 읽지 않은 상대방 메시지 수. 본인이 보낸 메시지는 세지 않습니다."
+    )
+
+
+class ChatReadReceipt(BaseModel):
+    """채팅방 읽음 처리 결과."""
+
+    room_id: UUID = Field(description="읽음 처리한 채팅방 UUID.")
+    last_read_at: datetime = Field(
+        description="서버가 기록한 읽음 시각(UTC). 이후 도착한 상대방 메시지는 미읽음으로 셉니다."
+    )
+    unread_count: int = Field(
+        description="읽음 처리 직후 남은 상대방 메시지 수. 동시에 도착한 메시지가 있으면 0보다 클 수 있습니다."
+    )
 
 
 class ChatMessageCreateRequest(BaseModel):

@@ -104,6 +104,7 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
         ("/providers", "get"): {"200", "401", "422"},
         ("/chat/rooms", "get"): {"200", "401"},
         ("/chat/rooms", "post"): {"200", "401", "404", "422"},
+        ("/chat/rooms/{room_id}/read", "post"): {"200", "401", "404", "422"},
         ("/chat/rooms/{room_id}/messages", "get"): {"200", "401", "404", "422"},
         ("/chat/rooms/{room_id}/messages", "post"): {
             "200",
