@@ -4,9 +4,9 @@
 
 ## 문서 범위
 
-현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색(`GET /work-types`, `GET /providers`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/read`, WebSocket `/chat/ws`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
+현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 구조화 진단 생성·재생성(`POST /records/{record_id}/diagnosis`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색(`GET /work-types`, `GET /providers`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/read`, WebSocket `/chat/ws`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
 
-실제 모델 기반 진단 워크플로우는 회의 보류다. 실시간 채팅은 WebSocket과 방별 미읽음 수 표시로 백엔드에 구현했다. 진단 신뢰도 필드는 정의가 정해지지 않아 구현하지 않았다. 요청문 생성은 서버에서 단일 LLM 제공사(OpenAI 호환 Chat Completions)를 사용한다. 실행 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 호출 예시와 구현 메모는 [API 사용 가이드](../guides/API_USAGE.md)를 따른다.
+사진 관찰과 텍스트 진단은 2단계로 구현했다. 실시간 채팅은 WebSocket과 방별 미읽음 수 표시로 백엔드에 구현했다. 진단 신뢰도 필드는 정의가 정해지지 않아 구현하지 않았다. 요청문 생성은 서버에서 단일 LLM 제공사(OpenAI 호환 Chat Completions)를 사용한다. 실행 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 호출 예시와 구현 메모는 [API 사용 가이드](../guides/API_USAGE.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -15,7 +15,8 @@
 - `POST /records`는 201과 `record_id`, `input_revision`(최초 0)을 반환한다.
 - `GET /records/{record_id}`는 저장된 입력(`location`, `material`, `symptoms`, `photo_observations`)과 `diagnosis`, `drafts`의 생성 당시 버전 및 `is_current`를 반환한다. *(구현본에는 레거시 `questions`, `messages`, `next_question` 필드도 함께 포함된다.)*
 - `PATCH /records/{record_id}`는 `location`·`material`·`symptoms`를 받고 `input_revision`을 요구하지 않는다. 실제 값이 바뀔 때만 버전을 올리며, 명시한 `null`은 값을 지운다.
-- `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·외부 분석 동의를 multipart로 받아 입력값 기반 샘플 진단을 저장한다. 자세한 계약은 아래 일괄 분석 섹션을 따른다.
+- `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·외부 분석 동의(기본 `true`)를 multipart로 받아 사진 관찰과 구조화 진단을 저장한다. 두 모델 경로가 모두 미설정이면 샘플 모드다. 자세한 계약은 아래 일괄 분석 섹션을 따른다.
+- `POST /records/{record_id}/diagnosis`는 `regenerate=false`이고 진단 입력 버전이 현재 입력과 같으면 모델을 호출하지 않고 기존 진단을 반환한다. 재생성은 `regenerate=true`이며 실패 시 기존 진단을 유지한다.
 - 공통 오류 형식은 `{ "code", "message", "input_revision"? }`이다. 처리하지 못한 서버·DB 오류는 내용을 노출하지 않고 500 `internal_error`로 반환한다.
 - 요청문은 `input_revision`과 `diagnosis_generation`이 모두 같은 저장본만 재사용하고, `regenerate=true`일 때만 모델을 다시 호출한다. 실패 시 기존 저장본과 기본 양식을 유지한다.
 - 채팅방은 `(requester_id, provider_id)` 유일 제약으로 하나만 존재하고, 메시지는 `(room_id, client_message_id)` 유일 제약으로 재전송을 멱등 처리한다. 메시지 목록은 `created_at`, `id` 오름차순이며 `limit`·`offset` 페이지를 사용한다.
@@ -78,18 +79,24 @@
 - 목록에서 항목을 선택하면 기존 `GET /records/{record_id}`로 전체 상세를 불러와 분석 결과 페이지를 다시 표시한다.
 - 다른 사용자의 기록은 목록에 포함하지 않는다.
 
-## 일괄 분석과 진단 (`POST /records/{record_id}/analyze`, 샘플 구현 완료)
+## 일괄 분석과 진단 (`POST /records/{record_id}/analyze`, 구현 완료)
 
-분석 페이지에서 채팅 없이 사진(1~2장)과 위치·재질·선택 증상 메모를 한 번에 제출한다. 2026년 11월 20일 MVP 흐름에 맞춰 현재는 실제 YOLO·비전 LLM·텍스트 LLM을 호출하지 않고, 입력값만 사용한 **결정적 샘플 결과**를 저장·반환한다. 응답의 `source`와 진단의 `source`는 `sample`이다.
+분석 페이지에서 채팅 없이 사진(1~2장)과 위치·재질·선택 증상 메모를 한 번에 제출한다. 서버는 1단계 사진 관찰(YOLO·SAM·비전 LLM 보조)과 2단계 텍스트 진단을 분리한다. `YOLO_MODEL_PATH`와 `LLM_API_KEY`가 모두 미설정이면 입력값 기반 샘플 모드(`source=sample`)로 동작한다.
 
 - **요청 (`multipart/form-data`)**:
   - `photos`: 이미지 파일 1~2장 (첫 번째 필수, 두 번째 선택)
   - `photo_roles`: 각 사진의 역할 (`overview` | `closeup`). 사진 수와 같아야 하며 서로 달라야 한다.
-  - `external_analysis_consent`: 외부 비전 분석 전송 동의 여부 (`boolean`). 샘플 모드에서는 실제 외부 전송을 하지 않는다.
+  - `external_analysis_consent`: 외부 사진 전송(Meta SAM·비전 LLM) 동의 여부 (`boolean`, 생략 시 `true`). 명시적 `false`면 외부 전송을 하지 않는다.
   - `location`: 하자 발견 위치 (필수 문자열, 공백만 불가)
   - `material`: 표면 재질 (필수 문자열, 공백만 불가)
   - `symptoms`: 선택 증상 메모 (`string | null`)
   - 파일은 JPEG·PNG·HEIC·HEIF, 한 장당 10MB 이하만 허용한다. 업로드 파일은 성공·실패 모두 닫고 원본을 저장하지 않는다.
+
+- **사진 관찰 결과**: 사진별 `status`는 `not_analyzed`, `analyzed`, `failed` 중 하나이고 `source`는 `sample`, `yolo`, `yolo_sam`, `vision_llm` 중 하나다. 최상위 `photo_analysis.source`와 응답 `source`는 사진 출처를 합쳐 `yolo`, `yolo_sam`, `vision_llm`, `yolo_vision_llm`, `sample` 중 하나로 반환한다. YOLO와 비전 LLM 결과가 섞이면 `yolo_vision_llm`이다.
+- **탐지 항목**: `object_id`, `class_id`, `label`, `raw_label`, `confidence`, `bbox`(원본 기준 반열린 xyxy), `image_size`([너비, 높이]), `area_ratio`(0~1, 이미지 전체 면적 대비 화면 점유 비율), `source=yolo`, `segmentation_status`, `mask`를 포함한다. SAM 마스크가 있으면 `area_ratio`는 마스크 픽셀 비율(bounds 스케일 반영)이고, 없으면 bbox 면적 비율이다. `mask`는 null 또는 `encoding=coco_rle`, `size`([높이, 너비]), `counts`, 시각화용 `svg_path`, 원본 기준 반열린 `bounds`, `source=sam-3.1`이다. RLE는 bounds 영역에 맞춰 배치한다.
+- **라벨 정규화**: `crack`→`균열`, `paint_peel`/`peeling`→`벗겨짐`, `mold`/`mould`→`곰팡이`로 `label`을 정규화하고 원본 클래스명은 `raw_label`에 보존한다. 미등록 라벨은 원문을 유지한다.
+- **비전 LLM 보조 관찰**: 동의와 `LLM_API_KEY`가 있고 사진별 YOLO 탐지가 0건이거나 YOLO 실행이 불가할 때만 그 사진을 긴 변 1280px JPEG로 전송한다. `vision_observation`은 `suspected_types`(`균열`·`벗겨짐`·`곰팡이`), `summary`, `approximate_location`, `unreadable_reason`을 포함하며 좌표는 만들지 않는다. 사진별 실패·판독 불가는 `status="failed"`로 남기고 전체 분석은 계속한다.
+- **분할 상태**: `completed`, `no_mask`, `failed`, `unavailable`(키 미설정), `skipped_no_consent`다. SAM 실패 시 YOLO 결과는 유지한다. 사진당 최대 16개를 탐지한다. 실제 이미지 디코딩 실패·2,500만 픽셀 초과는 `422`다.
 - **샘플 응답 예시 (`200 OK`)**:
 
 ```json
@@ -105,7 +112,8 @@
         "role": "overview",
         "status": "not_analyzed",
         "source": "sample",
-        "detections": []
+        "detections": [],
+        "vision_observation": null
       }
     ],
     "source": "sample"
@@ -145,10 +153,33 @@
 }
 ```
 
-- **샘플 모드의 의미**: 실제 사진 분석을 하지 않았으므로 `photo_analysis.applied=false`, 사진 상태 `not_analyzed`, `detections=[]`다. 탐지 좌표·신뢰도·bbox는 만들지 않는다. 관찰 요약·심각도·원인은 입력값만 사용한 참고용 샘플이며, 응답의 `source`, 진단의 `source`, 화면 안내로 실제 분석이 아님을 표시한다.
-- **입력과 버전**: 제출한 `location`·`material`·`symptoms`가 실제로 달라지면 `input_revision`을 1 올리고 `diagnosis_generation`을 증가시킨다. 같은 입력이면 버전은 유지하고 생성 번호만 증가한다. 분석 중 다른 입력 변경이 발생하면 아무것도 저장하지 않고 `409`(`revision_conflict`)와 현재 `input_revision`을 반환한다. 사진 원본은 DB·로그에 저장하지 않는다. 샘플 모드에는 탐지 좌표·신뢰도가 없으며, YOLO 모드에서는 탐지 좌표·신뢰도와 SAM 마스크를 관찰 결과로 DB에 저장한다. 과거 기록용 원본 사진의 보관 방식은 미정이다.
-- **정보 부족 시 판단 보류**: 실제 모델 연동 후 사진과 입력만으로 심각도를 가늠하기 어렵다면 `severity_score=null`, `severity_level="undetermined"`를 반환할 수 있다. 현재 샘플은 입력값 기준 참고 수치를 사용한다.
-- **명시적 진단 재생성**: `POST /records/{record_id}/diagnosis?regenerate=true`는 후속 구현이다. 현재 분석 결과는 `GET /records/{record_id}`의 `diagnosis`에서 재조회한다.
+- **샘플 모드의 의미**: 두 모델 경로가 모두 미설정일 때만 `photo_analysis.applied=false`, 사진 상태 `not_analyzed`, `detections=[]`다. 관찰 요약·심각도·원인은 입력값만 사용한 참고용 샘플이며, 응답·진단의 `source`와 화면 안내로 실제 분석이 아님을 표시한다.
+- **입력과 버전**: 제출한 `location`·`material`·`symptoms`가 실제로 달라지면 `input_revision`을 1 올리고 `diagnosis_generation`을 증가시킨다. 같은 입력이면 버전은 유지하고 생성 번호만 증가한다. 분석 중 다른 입력 변경이 발생하면 아무것도 저장하지 않고 `409`(`revision_conflict`)와 현재 `input_revision`을 반환한다. 사진 원본은 DB·로그에 저장하지 않는다. 원본 사진의 비공개 Storage 보관은 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md)에 따라 구현 예정이다.
+- **판단 보류**: 사진 흔적·비전 관찰·증상이 모두 없거나 모델이 근거 부족으로 `severity_score=null`을 반환하면 `severity_score=null`, `severity_level="undetermined"`, `suspected_types=[]`, 권장 대응 `inspection` 또는 `provider_consult`, `원인 점검` 작업으로 저장한다. `self_care`가 오면 `inspection`으로 보정한다.
+- **심각도·용어·작업 검증**: 유효한 심각도는 서버가 `low`(0~39)·`medium`(40~69)·`high`(70~100)로 강제 정규화한다. 의심 유형은 `크랙`→`균열`, `박리`→`벗겨짐`으로 정규화한다. 작업 ID·이름이 DB `work_types`와 일치할 때만 저장하고 미일치·복합 원인은 `원인 점검`으로 폴백한다.
+- **진단 실패**: `LLM_API_KEY`가 있는데 진단 호출·JSON 검증이 실패하면 `502`(`llm_error`), 제한 시간 초과는 `504`(`llm_timeout`)이며 기존 저장 결과를 유지한다. `YOLO_MODEL_PATH`만 있고 `LLM_API_KEY`가 없으면 `503`(`llm_unavailable`)이다.
+
+## 진단 생성·재생성 (`POST /records/{record_id}/diagnosis`, 구현 완료)
+
+- **쿼리**: `regenerate` (`boolean`, 기본 `false`)
+- **동작**:
+  1. 본인 소유 기록만 허용하며 없거나 다른 사용자 기록은 `404`다.
+  2. `regenerate=false`이고 `diagnosis_revision == input_revision`이면 모델을 호출하지 않고 기존 진단을 반환한다.
+  3. 재생성 또는 입력 변경 상태에서는 `location`과 `material`이 모두 있어야 하며 누락 시 `422`(`invalid_request`)다.
+  4. 저장된 `photo_observations`(없으면 사진 미분석), 현재 위치·재질·마스킹한 증상, DB 작업 종류로 텍스트 LLM을 호출한다. 호출 동안 행 잠금을 유지하지 않는다.
+  5. 저장 직전 `FOR UPDATE`로 다시 잠가 `input_revision`이 생성 시작 값과 같은지 확인하고, 다르면 저장 없이 `409`(`revision_conflict`)다.
+  6. 저장 시 `diagnosis`, `diagnosis_revision`, `diagnosis_generation+1`, `updated_at`을 갱신한다.
+- **응답**: `record_id`, `input_revision`, `diagnosis_generation`, `diagnosis`, `source`(`llm` | `sample`).
+- **오류**: 모델 키 미설정은 기존 진단이 있어도 항상 `503`(`llm_unavailable`), 호출·형식 오류 `502`(`llm_error`), 제한 시간 초과 `504`(`llm_timeout`). 실패 시 기존 진단은 유지된다.
+
+## 2~4단계 API 설계 (구현 예정)
+
+이번 세션에는 코드·마이그레이션을 추가하지 않았다.
+
+- **사진 Storage**: 비공개 버킷 업로드와 소유권 확인 후 단기 Signed URL 발급. 사진 경로는 기록 소유자와 연결한다.
+- **소식지 페이지네이션·주기 동기화**: `GET /support-programs`에 안정적인 페이지네이션을 추가하고 보조금24 동기화를 주기 실행으로 확장한다.
+- **업체 평점·상세**: `GET /providers/{provider_id}` 상세와 평점 집계를 추가한다. 평점은 수락·완료된 매칭에서만 만든다.
+- **견적 요청서·제안서·수락**: 요청서 생성·목록·상세, 업체 제안서 제출, 요청인의 1건 수락 API를 추가한다. 지역·작업 종류가 맞는 업체에 공개하며 수락 시 나머지 제안을 종료한다.
 
 ## 요청문 (`landlord`, `provider`, 구현 완료)
 
