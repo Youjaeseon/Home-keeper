@@ -1,12 +1,12 @@
 # MVP DB 설계 초안
 
-합의한 저장 규칙을 기준으로 정리한 테이블 설계다. 아래 테이블 표는 전체 설계 요약이며, 현재 실제 DB에 적용된 컬럼·타입은 마이그레이션(`001`–`010`)과 구현 확정 사항을 함께 확인한다. 접근·생성·실패 처리 규칙은 [백엔드 설계](BACKEND_DESIGN.md)를 따른다.
+합의한 저장 규칙을 기준으로 정리한 테이블 설계다. 아래 테이블 표는 전체 설계 요약이며, 현재 실제 DB에 적용된 컬럼·타입은 마이그레이션(`001`–`011`)과 구현 확정 사항을 함께 확인한다. 접근·생성·실패 처리 규칙은 [백엔드 설계](BACKEND_DESIGN.md)를 따른다.
 
 ## 문서 범위
 
-아래 구현 확정 사항은 현재 마이그레이션(`001`–`010`)에 반영된 내용이다.
+아래 구현 확정 사항은 현재 마이그레이션(`001`–`011`)에 반영된 내용이다.
 
-2026년 11월 20일 팀 회의 변경 사항을 반영해 `records.material`, 샘플 일괄 분석 결과 저장, 회원 프로필(`profiles`), 지역 상하 관계(`regions.parent_id`), 주거 지원 사업 소식지(`support_programs`)와 검증 시드, 업체 계정 연결(`providers.account_user_id`), 요청인–업체 1:1 채팅(`chat_rooms`, `chat_messages`), 작업 종류 시드를 구현했다. 실제 업체 데이터와 보조금24 동기화 운영 데이터는 팀 확인·운영 작업이 남아 있다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행·마이그레이션 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md)를 따른다.
+2026년 11월 20일 팀 회의 변경 사항을 반영해 `records.material`, 샘플 일괄 분석 결과 저장, 회원 프로필(`profiles`), 지역 상하 관계(`regions.parent_id`), 주거 지원 사업 소식지(`support_programs`)와 검증 시드, 업체 계정 연결(`providers.account_user_id`), 요청인–업체 1:1 채팅(`chat_rooms`, `chat_messages`)과 방별 읽음 시각(`011`), 작업 종류 시드를 구현했다. 실제 업체 데이터와 보조금24 동기화 운영 데이터는 팀 확인·운영 작업이 남아 있다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행·마이그레이션 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -32,7 +32,7 @@
 | `work_types` | 구현됨 | `id uuid PK`, `name text NOT NULL UNIQUE` |
 | `provider_regions` | 구현됨 | `provider_id uuid FK`, `region_id uuid FK` |
 | `provider_work_types` | 구현됨 | `provider_id uuid FK`, `work_type_id uuid FK` |
-| `chat_rooms` | 구현됨 (`010`) | `id uuid PK`, `requester_id uuid NOT NULL FK auth.users(id)`, `provider_id uuid NOT NULL FK providers(id)`, `latest_record_id uuid NULL FK records(id)`, `last_message_at timestamptz NULL`, `created_at timestamptz`, `updated_at timestamptz` |
+| `chat_rooms` | 구현됨 (`010`, 읽음 시각 `011`) | `id uuid PK`, `requester_id uuid NOT NULL FK auth.users(id)`, `provider_id uuid NOT NULL FK providers(id)`, `latest_record_id uuid NULL FK records(id)`, `last_message_at timestamptz NULL`, `requester_last_read_at timestamptz NULL`, `provider_last_read_at timestamptz NULL`, `created_at timestamptz`, `updated_at timestamptz` |
 | `chat_messages` | 구현됨 (`010`) | `id uuid PK`, `room_id uuid NOT NULL FK chat_rooms(id)`, `sender_id uuid NOT NULL FK auth.users(id)`, `sender_role text NOT NULL`, `message_type text NOT NULL`, `record_id uuid NULL FK records(id)`, `content text NOT NULL`, `payload jsonb NULL`, `client_message_id uuid NOT NULL`, `created_at timestamptz` |
 | `questions` | 기존 구현 (MVP 미사용/보류) | `id uuid PK`, `record_id uuid FK`, `sequence bigint`, `content text`, `options jsonb`, `answered boolean`, `input_revision bigint`, `created_at timestamptz` |
 | `messages` | 기존 구현 (MVP 미사용/보류) | `id uuid PK`, `record_id uuid FK`, `question_id uuid FK NULL`, `sequence bigint`, `sender text`, `content text`, `client_message_id uuid NULL`, `selected_option_id text NULL`, `submitted_content text NULL`, `input_revision bigint`, `created_at timestamptz` |
@@ -88,10 +88,11 @@
 
 ## 업체–요청인 1:1 채팅 (`chat_rooms`, `chat_messages`, 구현 완료)
 
-기존 AI 추가 질문용 `questions`·`messages` 테이블을 재사용하지 않고, 요청인–업체 상담 전용 테이블을 분리했다. `010_chat_and_provider_accounts.sql`이 만든다.
+기존 AI 추가 질문용 `questions`·`messages` 테이블을 재사용하지 않고, 요청인–업체 상담 전용 테이블을 분리했다. `010_chat_and_provider_accounts.sql`이 방·메시지를, `011_chat_read_state.sql`이 참여자별 읽음 시각 컬럼을 만든다.
 
 - `providers.account_user_id`: 사전 등록된 업체 계정(`auth.users.id`)과 1:1 연결한다. `ON DELETE SET NULL`이며 `WHERE account_user_id IS NOT NULL` 부분 유일 인덱스(`providers_account_user_id_key`)로 같은 계정을 두 업체에 연결할 수 없다. 연결은 관리자 SQL로만 하고 런타임 API에는 공개하지 않는다.
 - `chat_rooms`: `UNIQUE (requester_id, provider_id)`로 동일 요청인·업체 조합당 하나의 채팅방을 유지·재사용한다. 동시 생성은 이 제약에서 하나로 수렴한다. `latest_record_id`는 가장 최근 공유된 하자 기록을 가리킨다(`ON DELETE SET NULL`). `last_message_at`은 마지막 메시지 시각이다.
+- `chat_rooms.requester_last_read_at`, `provider_last_read_at`: 참여자별 마지막 읽음 시각(`011`). `POST /chat/rooms/{room_id}/read`가 서버 `now()`로 갱신한다. 미읽음 수는 이 시각 이후에 생성된 상대방 메시지를 세며, `NULL`이면 상대방 메시지 전체가 미읽음이다. 같은 계정의 기기 간 동기화는 이 서버 값으로 이뤄진다.
 - `chat_messages`:
   - `sender_role`: `CHECK (sender_role IN ('requester', 'provider'))`
   - `message_type`: `CHECK (message_type IN ('text', 'record_summary'))`
@@ -106,9 +107,9 @@
 - `profiles`, `support_programs`, `chat_rooms`, `chat_messages` 모두 기존 앱 테이블과 동일하게 Supabase Data API(`anon`, `authenticated`, `service_role`) 권한을 회수하고, `career_pair_runtime` 역할만 필요한 DML 권한을 부여해 RLS를 통과시키는 구조를 기본으로 둔다.
   - `profiles`(구현 완료): `SELECT, INSERT, UPDATE`
   - `support_programs`(구현 완료): `SELECT, INSERT, UPDATE` (동기화 upsert용, DELETE 없음)
-  - `chat_rooms`, `chat_messages`(구현 완료, `010`): `SELECT, INSERT, UPDATE` (DELETE 없음)
+  - `chat_rooms`, `chat_messages`(구현 완료, `010`; 읽음 컬럼 `011`): `SELECT, INSERT, UPDATE` (DELETE 없음). `011`은 테이블 권한을 바꾸지 않으므로 기존 `UPDATE`로 읽음 시각을 갱신한다.
   - `providers`(구현 완료): `SELECT`만. 계정 연결은 관리자 SQL로 수행한다.
-- *(예외 참고)* 만약 팀원 협의 결과 채팅 실시간 수신 방식으로 `Supabase Realtime`을 채택한다면, `chat_rooms`와 `chat_messages`에 한해 `authenticated` 참여자 본인만 조회할 수 있는 예외 RLS 정책을 별도로 검토해야 한다. `FastAPI REST 폴링` 또는 `FastAPI WebSocket`을 선택하면 기존 Data API 차단 경계를 그대로 유지한다.
+- 실시간 수신은 **FastAPI WebSocket**으로 확정했으므로 Supabase Data API(`authenticated`)에 채팅 테이블을 노출하지 않는다. 참여자 검사는 FastAPI가 REST와 WebSocket 인증 모두에서 수행한다. 푸시 알림은 추가하지 않는다.
 
 ## 제약과 인덱스
 
@@ -136,7 +137,7 @@
 
 - 회원가입 `등록 주소` 유지 여부 vs `거주 지역`만 수집
 - 설문/객관식 추가 질문 추후 도입 여부 (현재 보류)
-- 업체–요청인 채팅 실시간 전송 방식(REST 폴링 / WebSocket / Supabase Realtime) 및 읽음 표시·푸시 알림
+- 업체–요청인 채팅 푸시 알림 도입 여부(WebSocket·읽음 처리는 구현 완료, 읽음 시점은 방 이력 조회 직후로 확정)
 - `크랙·벗겨짐·곰팡이`별 심각도(%) 기준과 YOLO → 비전 LLM 2차 분석 호출 기준
 - 용인시 시연용 실제 업체·계정 데이터 및 검색 지역·작업 목록
 - 개인정보 보관 범위와 보유기간, 외부 DB 서비스에 적용되는 대회 규정의 범위

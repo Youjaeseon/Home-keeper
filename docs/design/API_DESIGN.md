@@ -4,9 +4,9 @@
 
 ## 문서 범위
 
-현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색(`GET /work-types`, `GET /providers`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
+현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색(`GET /work-types`, `GET /providers`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/read`, WebSocket `/chat/ws`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
 
-실제 모델 기반 일괄 분석·진단 재생성과 실시간 채팅 수신 방식은 아직 미확정·미구현이다. 요청문 생성은 서버에서 단일 LLM 제공사(OpenAI 호환 Chat Completions)를 사용한다. 실행 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 호출 예시와 구현 메모는 [API 사용 가이드](../guides/API_USAGE.md)를 따른다.
+실제 모델 기반 진단 워크플로우는 회의 보류다. 실시간 채팅은 WebSocket과 방별 미읽음 수 표시로 백엔드에 구현했다. 진단 신뢰도 필드는 정의가 정해지지 않아 구현하지 않았다. 요청문 생성은 서버에서 단일 LLM 제공사(OpenAI 호환 Chat Completions)를 사용한다. 실행 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 호출 예시와 구현 메모는 [API 사용 가이드](../guides/API_USAGE.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -21,9 +21,19 @@
 - 채팅방은 `(requester_id, provider_id)` 유일 제약으로 하나만 존재하고, 메시지는 `(room_id, client_message_id)` 유일 제약으로 재전송을 멱등 처리한다. 메시지 목록은 `created_at`, `id` 오름차순이며 `limit`·`offset` 페이지를 사용한다.
 - *(MVP 미사용/보류)* `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`의 구현 확정 사항은 문서 하단 레거시 섹션에 유지한다.
 
+## 11월 21일 결정 사항과 현재 API의 구분
+
+- **확정**: 이메일·비밀번호 인증, 프로필 사진 제외. 카카오·Google 로그인은 현재 MVP에서 제외하고 시간 여유 시 재검토한다.
+- **확정·백엔드 구현 완료**: WebSocket 실시간 채팅과 채팅방 목록의 방별 미읽음 수. 경로는 `/chat/ws`, 이벤트는 `ready`·`message`, 읽음은 `POST /chat/rooms/{room_id}/read`다. 읽음 시점은 앱이 방에 들어가 메시지 이력을 받은 직후로 정했다. 서버가 시각을 저장하므로 같은 계정의 다른 기기도 같은 읽음 상태를 쓴다. 상세 계약은 [채팅 섹션](#업체요청인-11-채팅-chat-구현-완료)을 따른다.
+- **확정·미구현(정의 대기)**: 진단 신뢰도 필드. 무엇의 신뢰도인지, 산정 방법·필드명·범위·산정 불가 표현이 정해지지 않아 스키마·산정·UI를 추가하지 않았다. YOLO 개별 탐지 `confidence`를 진단 전체 신뢰도로 사용하지 않는다.
+- **미정**: 비회원 전체 소식·업체 열람안, “분석을 해야 등록되는 흐름”의 대상·시점, 발생/발견일 입력, 사진 보관, 추천 작업 매핑·업체 검색 연결, 가상 업체 문의·자동 응답. 분석·기록·프로필·채팅의 인증은 유지한다. 미정 항목 때문에 현재 인증·입력·샘플 업체 계약을 바꾸지 않는다.
+- 세부 근거·선택지는 [프로젝트 계획의 시안 검토](../plans/PROJECT_PLAN.md#11월-21일-프론트-시안-검토)를 따른다. 이번 변경은 채팅 백엔드에 한정하며 모바일 채팅 화면과 회원가입 화면은 포함하지 않는다.
+
 ## 회원가입과 프로필 (프로필 API 구현 완료)
 
 일반 회원가입은 `요청인` 전용이다. 앱에서 Supabase Auth로 **이메일·비밀번호** 계정을 만들고, 회원가입 과정에서 `닉네임`, `거주 지역`(필수), `등록 주소`(선택), `거주 형태`(`월세`, `전세`, `반전세`, `자가`, `기타`)를 입력받는다. 인증 가능한 세션을 얻은 뒤 FastAPI에 프로필을 저장한다. 이메일 확인이 필요한 환경은 확인 후 동일 계정으로 프로필 등록을 완료한다. 계정 생성 후 프로필 저장에 실패하면 프로필 저장만 재시도한다. 시연용 `업체` 계정은 Supabase Auth와 `profiles`(`role="provider"`)에 사전 등록한다.
+
+백엔드는 별도 회원가입 API를 추가하지 않는다. 계정 생성·이메일 확인은 Supabase Auth가 담당하고, FastAPI는 로그인 후 발급된 JWT와 `PUT /me/profile` upsert를 재사용한다. 앱은 `signUp` 응답에 세션이 없으면(이메일 확인 필요) 확인 안내를 표시하고, 확인 후 로그인해 프로필 저장을 이어간다. 프로필 저장 실패 시 같은 사용자로 `PUT /me/profile`을 다시 호출하면 한 행만 유지된다.
 
 | API | 동작 |
 | --- | --- |
@@ -56,7 +66,7 @@
 4. **분석 결과 페이지**: 심각도(`0~100%` 또는 `판단 보류`), `추정 원인`(AI 추정 안내·미확인 정보 포함), `해결방안`, `재발 방지책`을 확인한다.
    - `자가`가 아닌 거주 형태라면 필요 시 `POST /records/{record_id}/drafts/landlord`로 임대인 점검 요청문을 생성·복사한다.
    - 업체 상담이 필요하면 `GET /providers`로 업체를 조회한 뒤 실제 업체의 `채팅하기`로 `POST /chat/rooms`를 호출해 1:1 채팅방을 열고 하자 분석 요약을 자동 공유한다.
-5. **채팅 탭**: `GET /chat/rooms`로 채팅 목록을 보고 `GET/POST /chat/rooms/{room_id}/messages`로 대화를 이어간다.
+5. **채팅 탭**: `GET /chat/rooms`로 방별 미읽음 수를 포함한 목록을 보고, `/chat/ws`로 새 메시지를 받으며 `GET/POST /chat/rooms/{room_id}/messages`로 대화를 이어간다. 방에 들어가 이력을 받은 직후 `POST /chat/rooms/{room_id}/read`를 호출한다.
 6. **내 정보 탭**: `GET/PUT /me/profile`로 프로필을 조회·수정하고, `GET /records`로 내 하자 분석 기록 목록을 불러와 과거 기록의 결과 페이지를 다시 연다.
 
 ## 내 정보와 하자 분석 기록 목록 (`GET /records`, 구현 완료)
@@ -309,14 +319,16 @@
 
 ## 업체–요청인 1:1 채팅 (`/chat/*`, 구현 완료)
 
-방 생성·목록·이력 조회·메시지 저장은 FastAPI REST API로 구현했다. 실시간 수신 방식(WebSocket·Supabase Realtime)과 읽음 표시·푸시 알림은 팀 합의 전이라 구현하지 않았다.
+방 생성·목록·이력 조회·메시지 저장·읽음 처리는 FastAPI REST API, 실시간 수신은 인증된 FastAPI WebSocket으로 구현했다. 푸시 알림은 추가하지 않는다. 읽음 시점은 **앱이 채팅방에 들어가 메시지 이력을 받은 직후**로 정했다. 앱은 화면에 표시한 마지막 메시지까지 읽음 처리하고, 서버는 그 시각을 저장한다. 같은 계정의 다른 기기도 같은 서버 읽음 상태를 공유한다.
 
 | API | 동작 |
 | --- | --- |
-| `GET /chat/rooms` | 로그인한 요청인 또는 업체 계정이 참여 중인 방을 `last_message_at` 내림차순(없으면 `created_at`)으로 반환한다. 상대방 이름 `counterpart_name`, 최근 메시지 앞 80자 `last_message_preview`, `latest_record_id`를 포함한다. |
-| `POST /chat/rooms` | 요청인이 `{ "provider_id": "<UUID>", "record_id": "<UUID>?" }`를 보내 방을 생성하거나 재사용한다. `record_id`가 있으면 서버가 만든 하자 요약을 `record_summary` 메시지로 공유한다. |
-| `GET /chat/rooms/{room_id}/messages` | 참여자만 조회한다. `created_at`, `id` 오름차순이며 `limit`(기본 50, 최대 100)·`offset`으로 나눈다. |
-| `POST /chat/rooms/{room_id}/messages` | 참여자가 `{ "client_message_id": "<UUID>", "content": "..." }`를 보내 저장한다. 발신자·역할은 토큰과 방 참여 정보로 정한다. |
+| `GET /chat/rooms` | 로그인한 요청인 또는 업체 계정이 참여 중인 방을 `last_message_at` 내림차순(없으면 `created_at`)으로 반환한다. 상대방 이름 `counterpart_name`, 최근 메시지 앞 80자 `last_message_preview`, `latest_record_id`, 방별 `unread_count`를 포함한다. |
+| `POST /chat/rooms` | 요청인이 `{ "provider_id": "<UUID>", "record_id": "<UUID>?" }`를 보내 방을 생성하거나 재사용한다. `record_id`가 있으면 서버가 만든 하자 요약을 `record_summary` 메시지로 공유한다. 새 요약은 WebSocket `message` 이벤트로도 전달한다. |
+| `POST /chat/rooms/{room_id}/read` | 참여자가 방의 상대방 메시지를 읽음으로 표시한다. 서버가 읽음 시각을 기록하고 `{ "room_id", "last_read_at", "unread_count" }`를 반환한다. |
+| `GET /chat/rooms/{room_id}/messages` | 참여자만 조회한다. `created_at`, `id` 오름차순이며 `limit`(기본 50, 최대 100)·`offset`으로 나눈다. 재연결 후 놓친 메시지를 맞출 때도 이 API를 쓴다. |
+| `POST /chat/rooms/{room_id}/messages` | 참여자가 `{ "client_message_id": "<UUID>", "content": "..." }`를 보내 저장한다. 발신자·역할은 토큰과 방 참여 정보로 정한다. 새로 저장된 메시지는 참여자 WebSocket으로 전달한다. |
+| `WS /chat/ws` | 인증된 사용자의 실시간 이벤트 스트림. 참여 중인 모든 방의 새 메시지를 받는다. |
 
 `POST /chat/rooms` 응답 예시 (`200 OK`, 기존 방이면 같은 `room_id`):
 
@@ -331,6 +343,36 @@
   "created_at": "2026-11-20T04:00:00Z",
   "updated_at": "2026-11-20T04:00:00Z"
 }
+```
+
+`GET /chat/rooms` 항목 예시(추가 필드):
+
+```json
+{
+  "room_id": "<room UUID>",
+  "provider_name": "용인 곰팡이 수리",
+  "counterpart_name": "용인 곰팡이 수리",
+  "last_message_preview": "내일 오후에 방문 점검 가능할까요?",
+  "last_message_at": "2026-11-20T04:10:00Z",
+  "unread_count": 2
+}
+```
+
+읽음 처리 응답 예시:
+
+```json
+{
+  "room_id": "<room UUID>",
+  "last_read_at": "2026-11-20T04:11:00Z",
+  "unread_count": 0
+}
+```
+
+WebSocket 이벤트 예시:
+
+```json
+{ "type": "ready", "user_id": "<requester UUID>" }
+{ "type": "message", "room_id": "<room UUID>", "message": { "message_id": "...", "content": "네, 내일 방문 가능합니다", "created_at": "2026-11-20T04:12:00Z" } }
 ```
 
 공유되는 `record_summary` 메시지 예시 (`GET .../messages`의 항목):
@@ -374,7 +416,12 @@
 - **메시지 멱등성**: 같은 `client_message_id`와 같은 내용 재전송은 기존 메시지를 반환하고, 같은 ID에 다른 내용은 `409`(`message_conflict`)다. 메시지 본문은 앞뒤 공백을 제거하며 공백만 불가, 최대 2000자다.
 - **권한**: 요청인 본인 또는 해당 업체 `account_user_id`만 방·메시지에 접근한다. 다른 요청인·다른 업체·비참여자는 `404`다.
 - **정렬·페이지**: 메시지는 `created_at`, `id` 오름차순이다. 메시지는 수정·삭제되지 않으므로 `offset`이 안정적이다.
-- **반복 조회(폴링) 계약**: 앱은 `GET /chat/rooms`로 `last_message_at` 변화를 확인하고, `GET /chat/rooms/{room_id}/messages?limit=50&offset=<받은 개수>`로 새 메시지를 가져온다. `has_more=true`면 `offset + limit`으로 이어서 조회한다. 서버 푸시·WebSocket은 제공하지 않는다.
+- **미읽음 수**: `GET /chat/rooms`의 `unread_count`는 내가 보내지 않은 메시지 중 마지막 읽음 시각 이후에 생성된 수다. 본인이 보낸 메시지는 세지 않는다. 읽음 시각이 없으면 상대방의 모든 메시지를 미읽음으로 센다.
+- **읽음 처리**: 앱은 방에 들어가 `GET .../messages`로 이력을 받은 직후 `POST .../read`를 호출한다. 서버는 `now()`를 저장하므로 클라이언트 시계를 신뢰하지 않는다. 같은 계정의 다른 기기는 다음 목록·읽음 응답에서 같은 값을 본다. 읽음 처리와 동시에 도착한 메시지는 응답의 `unread_count`에 남을 수 있다.
+- **WebSocket 인증**: `ws://<API>/chat/ws`에 연결한다. `Authorization: Bearer <access_token>` 헤더를 우선 사용하고, 헤더를 보낼 수 없는 클라이언트는 `?access_token=<JWT>` 쿼리를 쓴다. 누락·만료·서명 오류면 `4401`로 닫는다. 토큰이 쿼리에 남을 수 있으므로 서버·프록시 접근 로그에서 쿼리를 기록하지 않는다.
+- **WebSocket 이벤트**: 연결 직후 `{"type":"ready","user_id":"<UUID>"}`를 받는다. 새 메시지는 `{"type":"message","room_id":"<UUID>","message":{...ChatMessageOut}}`로 전달된다. REST 전송의 응답과 같은 메시지 객체이며, 재전송 멱등으로 기존 메시지를 반환할 때는 이벤트를 다시 보내지 않는다. 서버는 클라이언트 텍스트 프레임을 무시한다.
+- **재연결·놓친 메시지**: 서버는 이벤트를 재전송하지 않는다. 클라이언트는 연결이 끊기면 백오프 후 다시 연결하고, `GET /chat/rooms`로 미읽음 수·`last_message_at`을, `GET .../messages?limit=50&offset=<받은 개수>`로 누락 메시지를 맞춘다. `has_more=true`면 `offset + limit`으로 이어서 조회한다.
+- **다중 서버 제한**: 현재 WebSocket 연결·브로드캐스트는 API 프로세스 메모리에 있다. 단일 프로세스 시연에는 충분하지만, 여러 워커·인스턴스로 확장하면 공유 브로커가 필요하다.
 - 기존 `records/messages`(AI 추가 질문) 테이블과는 별도이며 서로 재사용하지 않는다.
 
 ## 오류 응답 초안
