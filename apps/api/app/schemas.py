@@ -64,11 +64,15 @@ class RecordPatchRequest(BaseModel):
         default=None,
         description="하자 증상 설명(예: 검은 곰팡이 얼룩). 생략하면 기존 값을 유지하고 `null`을 보내면 값을 지웁니다.",
     )
+    region_id: UUID | None = Field(
+        default=None,
+        description="분석 지역 스냅샷 UUID. 생략하면 기존 값을 유지하고 `null`을 보내면 값을 지웁니다.",
+    )
 
     @model_validator(mode="after")
     def require_a_field(self):
         if not self.model_fields_set:
-            raise ValueError("location, material, symptoms 중 하나가 필요해요.")
+            raise ValueError("location, material, symptoms, region_id 중 하나가 필요해요.")
         return self
 
 
@@ -79,6 +83,9 @@ class RecordPatchResponse(BaseModel):
     location: str | None = Field(description="저장된 하자 발견 위치(값이 없으면 `null`).")
     material: str | None = Field(description="저장된 하자 표면 재질(값이 없으면 `null`).")
     symptoms: str | None = Field(description="저장된 하자 증상 설명(값이 없으면 `null`).")
+    region_id: UUID | None = Field(
+        description="저장된 분석 지역 스냅샷 UUID. 지역이 없으면 `null`입니다."
+    )
     input_revision: int = Field(
         description="요청 처리 후 현재 기록 입력 버전. 실제 값이 변경된 경우에만 `1` 증가합니다."
     )
@@ -402,6 +409,9 @@ class AnalyzeResponse(BaseModel):
     diagnosis_generation: int = Field(
         description="진단 생성 번호. 분석 성공 시 `1` 증가합니다."
     )
+    region_id: UUID | None = Field(
+        description="저장된 분석 지역 스냅샷 UUID. 지역이 없으면 `null`입니다."
+    )
     photo_analysis: AnalyzePhotoAnalysisOut = Field(
         description="사진별 분석 상태. 샘플 모드에서는 실제 사진 분석을 수행하지 않습니다."
     )
@@ -479,6 +489,12 @@ class RecordListItem(BaseModel):
     location: str | None = Field(description="하자 발견 위치(미입력 시 `null`).")
     material: str | None = Field(description="표면 재질(미입력 시 `null`).")
     symptoms: str | None = Field(description="증상 메모(미입력 시 `null`).")
+    region_id: UUID | None = Field(
+        description="분석 당시 저장한 지역 스냅샷 UUID. 없으면 `null`입니다."
+    )
+    region_name: str | None = Field(
+        description="지역 표시명(예: 경기도 용인시). 지역이 없으면 `null`입니다."
+    )
     suspected_types: list[str] = Field(
         description="저장된 진단의 의심 하자 유형 목록. 진단이 없으면 빈 배열입니다."
     )
@@ -553,6 +569,16 @@ class SupportProgramListItem(SupportProgramSummary):
     )
 
 
+class SupportProgramListResponse(BaseModel):
+    """소식지 목록 페이지 응답."""
+
+    items: list[SupportProgramListItem] = Field(description="현재 페이지의 지원 사업 목록.")
+    total: int = Field(description="필터(`status`)를 적용한 전체 지원 사업 수.")
+    limit: int = Field(description="요청한 페이지 크기.")
+    offset: int = Field(description="요청한 페이지 시작 위치.")
+    has_more: bool = Field(description="다음 페이지가 남아 있는지 여부.")
+
+
 class SupportProgramDetail(SupportProgramSummary):
     """주거 지원 사업 상세 조회 응답."""
 
@@ -581,6 +607,12 @@ class RecordOut(BaseModel):
     )
     symptoms: str | None = Field(
         description="사용자가 입력한 하자 증상 설명(미입력 시 `null`)."
+    )
+    region_id: UUID | None = Field(
+        description="분석 당시 저장한 지역 스냅샷 UUID. 없으면 `null`입니다."
+    )
+    region_name: str | None = Field(
+        description="지역 표시명(예: 경기도 용인시). 지역이 없으면 `null`입니다."
     )
     photo_observations: Any = Field(
         default=None,

@@ -52,6 +52,8 @@ def test_record_list_is_own_summaries_in_recent_order(
         "location",
         "material",
         "symptoms",
+        "region_id",
+        "region_name",
         "suspected_types",
         "severity_score",
         "severity_level",

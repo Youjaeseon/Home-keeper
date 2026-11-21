@@ -176,7 +176,7 @@ def test_support_programs_list_local_parent_national_and_excludes_other_regions(
 
     response = client.get("/support-programs", headers=auth_headers(token))
     assert response.status_code == 200, response.text
-    items = response.json()
+    items = response.json()["items"]
     ids = {item["id"] for item in items}
     seed_ids = _seed_ids(admin)
 
@@ -210,7 +210,7 @@ def test_support_programs_list_local_parent_national_and_excludes_other_regions(
             deadline_kind="unknown",
         )
     )
-    deduped = client.get("/support-programs", headers=auth_headers(token)).json()
+    deduped = client.get("/support-programs", headers=auth_headers(token)).json()["items"]
     deduped_ids = {item["id"] for item in deduped}
     assert seed_ids["seed:gov24-youth-monthly-rent-2026"] in deduped_ids
     assert duplicate_api_id not in deduped_ids
@@ -219,7 +219,7 @@ def test_support_programs_list_local_parent_national_and_excludes_other_regions(
     _profile(client, gyeonggi_token, _region_id(admin, "gyeonggi"))
     gyeonggi_items = client.get(
         "/support-programs", headers=auth_headers(gyeonggi_token)
-    ).json()
+    ).json()["items"]
     gyeonggi_ids = {item["id"] for item in gyeonggi_items}
     assert seed_ids["seed:gyeonggi-independent-youth-housing-2026"] in gyeonggi_ids
     assert seed_ids["seed:yongin-youth-brokerage-fee-2026"] not in gyeonggi_ids
@@ -270,7 +270,7 @@ def test_support_programs_ordering_housing_match_and_kst_close_boundary(
         )
     )
 
-    all_items = client.get("/support-programs", headers=auth_headers(token)).json()
+    all_items = client.get("/support-programs", headers=auth_headers(token)).json()["items"]
     by_id = {item["id"]: item for item in all_items}
     assert by_id[active_match]["is_closed"] is False
     assert by_id[active_match]["housing_type_matched"] is True
@@ -287,7 +287,7 @@ def test_support_programs_ordering_housing_match_and_kst_close_boundary(
 
     active = client.get(
         "/support-programs?status=active", headers=auth_headers(token)
-    ).json()
+    ).json()["items"]
     active_ids = {item["id"] for item in active}
     assert active_match in active_ids
     assert active_other in active_ids
@@ -321,7 +321,7 @@ def test_support_programs_distinguish_always_open_and_unknown_deadlines(
         )
     )
 
-    items = client.get("/support-programs", headers=auth_headers(token)).json()
+    items = client.get("/support-programs", headers=auth_headers(token)).json()["items"]
     by_id = {item["id"]: item for item in items}
     assert by_id[always_open]["deadline_kind"] == "always_open"
     assert by_id[always_open]["deadline_date"] is None
@@ -339,7 +339,8 @@ def test_support_programs_empty_list_is_empty_not_fallback(
 
     response = client.get("/support-programs", headers=auth_headers(token))
     assert response.status_code == 200
-    assert response.json() == []
+    body = response.json()
+    assert body == {"items": [], "total": 0, "limit": 5, "offset": 0, "has_more": False}
 
 
 def test_seed_file_is_repeatable(admin):
@@ -352,3 +353,119 @@ def test_seed_file_is_repeatable(admin):
         "SELECT count(*) AS count FROM support_programs WHERE external_id LIKE 'seed:%'"
     ).fetchone()["count"]
     assert first == second
+
+
+def test_support_programs_pagination_keeps_order_total_and_empty_overflow(
+    client, admin, user_factory, token_for, empty_support_programs
+):
+    region_id = _create_region(
+        admin, f"page-{uuid4().hex[:8]}", f"페이지지역-{uuid4().hex[:6]}"
+    )
+    token = token_for(user_factory())
+    _profile(client, token, region_id)
+    for index in range(3):
+        _insert_program(
+            admin,
+            region_id=region_id,
+            title=f"페이지 공고 {index}",
+            deadline_kind="unknown",
+        )
+
+    ordered = [
+        item["id"]
+        for item in client.get(
+            "/support-programs?limit=50", headers=auth_headers(token)
+        ).json()["items"]
+    ]
+    assert len(ordered) == 3
+
+    first = client.get(
+        "/support-programs?limit=2&offset=0", headers=auth_headers(token)
+    ).json()
+    assert first["total"] == 3
+    assert first["limit"] == 2
+    assert first["offset"] == 0
+    assert first["has_more"] is True
+    assert [item["id"] for item in first["items"]] == ordered[:2]
+
+    second = client.get(
+        "/support-programs?limit=2&offset=2", headers=auth_headers(token)
+    ).json()
+    assert second["total"] == 3
+    assert second["has_more"] is False
+    assert [item["id"] for item in second["items"]] == ordered[2:]
+
+    overflow = client.get(
+        "/support-programs?limit=2&offset=10", headers=auth_headers(token)
+    ).json()
+    assert overflow == {
+        "items": [],
+        "total": 3,
+        "limit": 2,
+        "offset": 10,
+        "has_more": False,
+    }
+
+    assert (
+        client.get(
+            "/support-programs?limit=0", headers=auth_headers(token)
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/support-programs?limit=51", headers=auth_headers(token)
+        ).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            "/support-programs?offset=-1", headers=auth_headers(token)
+        ).status_code
+        == 422
+    )
+
+
+def test_support_programs_active_filter_total_counts_only_visible(
+    client, admin, user_factory, token_for, empty_support_programs
+):
+    region_id = _create_region(
+        admin, f"active-{uuid4().hex[:8]}", f"활성지역-{uuid4().hex[:6]}"
+    )
+    token = token_for(user_factory())
+    _profile(client, token, region_id)
+    today = admin.execute(
+        "SELECT (now() AT TIME ZONE 'Asia/Seoul')::date AS value"
+    ).fetchone()["value"]
+    active = str(
+        _insert_program(
+            admin,
+            region_id=region_id,
+            title="활성 공고",
+            deadline_kind="fixed",
+            deadline_date=today,
+        )
+    )
+    closed = str(
+        _insert_program(
+            admin,
+            region_id=region_id,
+            title="마감 공고",
+            deadline_kind="fixed",
+            deadline_date=date.fromordinal(today.toordinal() - 1),
+        )
+    )
+
+    body = client.get(
+        "/support-programs?status=active&limit=1", headers=auth_headers(token)
+    ).json()
+    assert body["total"] == 1
+    assert body["has_more"] is False
+    assert [item["id"] for item in body["items"]] == [active]
+    assert closed not in {item["id"] for item in body["items"]}
+
+    all_items = client.get(
+        "/support-programs?status=all&limit=50", headers=auth_headers(token)
+    ).json()
+    assert all_items["total"] == 2
+    assert [item["id"] for item in all_items["items"]] == [active, closed]

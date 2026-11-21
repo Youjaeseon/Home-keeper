@@ -249,12 +249,24 @@ def _lock_record(conn, record_id: UUID, owner_id: UUID) -> dict:
 
 def _get_record(conn, record_id: UUID, owner_id: UUID) -> dict:
     record = conn.execute(
-        "SELECT * FROM records WHERE id = %s AND owner_id = %s",
+        """
+        SELECT record.*, region.display_name AS region_name
+        FROM records AS record
+        LEFT JOIN regions AS region ON region.id = record.region_id
+        WHERE record.id = %s AND record.owner_id = %s
+        """,
         (record_id, owner_id),
     ).fetchone()
     if record is None:
         raise not_found()
     return record
+
+
+def _validate_region(conn, region_id: UUID | None) -> None:
+    if region_id is None:
+        return
+    if conn.execute("SELECT 1 FROM regions WHERE id = %s", (region_id,)).fetchone() is None:
+        raise invalid_request("선택한 지역을 찾을 수 없습니다.")
 
 
 def _answer_content(conn, record_id: UUID, body: MessageCreateRequest) -> str:
@@ -417,25 +429,28 @@ def list_records(owner_id: UUID = Depends(get_current_user)):
         return conn.execute(
             """
             SELECT
-                id AS record_id,
-                location,
-                material,
-                symptoms,
+                record.id AS record_id,
+                record.location,
+                record.material,
+                record.symptoms,
+                record.region_id,
+                region.display_name AS region_name,
                 CASE
-                    WHEN jsonb_typeof(diagnosis -> 'suspected_types') = 'array'
-                    THEN diagnosis -> 'suspected_types'
+                    WHEN jsonb_typeof(record.diagnosis -> 'suspected_types') = 'array'
+                    THEN record.diagnosis -> 'suspected_types'
                     ELSE '[]'::jsonb
                 END AS suspected_types,
                 CASE
-                    WHEN jsonb_typeof(diagnosis -> 'severity_score') = 'number'
-                    THEN (diagnosis ->> 'severity_score')::int
+                    WHEN jsonb_typeof(record.diagnosis -> 'severity_score') = 'number'
+                    THEN (record.diagnosis ->> 'severity_score')::int
                 END AS severity_score,
-                diagnosis ->> 'severity_level' AS severity_level,
-                created_at,
-                updated_at
-            FROM records
-            WHERE owner_id = %s
-            ORDER BY updated_at DESC, created_at DESC, id DESC
+                record.diagnosis ->> 'severity_level' AS severity_level,
+                record.created_at,
+                record.updated_at
+            FROM records AS record
+            LEFT JOIN regions AS region ON region.id = record.region_id
+            WHERE record.owner_id = %s
+            ORDER BY record.updated_at DESC, record.created_at DESC, record.id DESC
             """,
             (owner_id,),
         ).fetchall()
@@ -502,6 +517,8 @@ def get_record(
             "location": record["location"],
             "material": record["material"],
             "symptoms": record["symptoms"],
+            "region_id": record["region_id"],
+            "region_name": record["region_name"],
             "photo_observations": record["photo_observations"],
             "input_revision": current_revision,
             "questions": questions,
@@ -532,8 +549,9 @@ def get_record(
     response_model=RecordPatchResponse,
     summary="하자 기록 위치·증상 수정",
     description=(
-        "하자 기록의 `location`·`material`·`symptoms`를 부분 수정합니다.\n\n"
-        "- `location`, `material`, `symptoms` 중 최소 하나를 포함해야 하며, 허용되지 않은 추가 필드는 거부됩니다(`422`).\n"
+        "하자 기록의 `location`·`material`·`symptoms`·`region_id`를 부분 수정합니다.\n\n"
+        "- `location`, `material`, `symptoms`, `region_id` 중 최소 하나를 포함해야 하며, 허용되지 않은 추가 필드는 거부됩니다(`422`).\n"
+        "- `region_id`는 `regions`에 존재해야 하며(`422`), `null`이면 지역 스냅샷을 지웁니다.\n"
         '- 생략한 필드는 기존 값을 유지하고, 명시적으로 `null`을 전달한 필드(예: `{"location": null}`)는 값을 지웁니다.\n'
         "- `input_revision`을 요구하지 않으며, 저장된 값과 실제로 달라질 때만 `input_revision`이 `1` 증가합니다(동일 값 재저장 시 유지)."
     ),
@@ -573,29 +591,35 @@ def update_record(
         location = body.location if "location" in body.model_fields_set else record["location"]
         material = body.material if "material" in body.model_fields_set else record["material"]
         symptoms = body.symptoms if "symptoms" in body.model_fields_set else record["symptoms"]
+        region_id = (
+            body.region_id if "region_id" in body.model_fields_set else record["region_id"]
+        )
+        _validate_region(conn, region_id)
 
         if (
             location == record["location"]
             and material == record["material"]
             and symptoms == record["symptoms"]
+            and region_id == record["region_id"]
         ):
             return {
                 "record_id": record["id"],
                 "location": location,
                 "material": material,
                 "symptoms": symptoms,
+                "region_id": region_id,
                 "input_revision": record["input_revision"],
             }
 
         updated = conn.execute(
             """
             UPDATE records
-            SET location = %s, material = %s, symptoms = %s,
+            SET location = %s, material = %s, symptoms = %s, region_id = %s,
                 input_revision = input_revision + 1, updated_at = now()
             WHERE id = %s
-            RETURNING location, material, symptoms, input_revision
+            RETURNING location, material, symptoms, region_id, input_revision
             """,
-            (location, material, symptoms, record_id),
+            (location, material, symptoms, region_id, record_id),
         ).fetchone()
     return {"record_id": record_id, **updated}
 
@@ -611,6 +635,7 @@ def update_record(
         "- `YOLO_MODEL_PATH`와 `LLM_API_KEY`가 모두 미설정이면 기존 샘플 모드(`source=sample`)입니다. `YOLO_MODEL_PATH`만 설정하고 `LLM_API_KEY`가 없으면 `503`(`llm_unavailable`)입니다.\n"
         "- 진단 모델이 설정된 경우, 사진 관찰 요약과 마스킹한 위치·재질·증상, DB 작업 종류로 구조화 진단을 생성합니다. 모델 호출·형식 오류는 `502`, 제한 시간 초과는 `504`이며 이때 기존 저장 결과를 유지합니다.\n"
         "- 탐지 결과·박스·신뢰도·마스크·화면 점유 비율은 저장하며 사진 원본은 저장하지 않습니다. 사진당 최대 16개를 탐지합니다.\n"
+        "- 선택 `region_id`는 분석 전 지역 확인 값입니다. 전달하면 `regions` 존재를 검증하고, 생략하면 기존 기록의 지역 또는 프로필 거주 지역을 스냅샷으로 저장합니다. 지역이 실제로 바뀌면 `input_revision`이 증가합니다.\n"
         "- 사진은 1~2장, JPEG/PNG/HEIC/HEIF, 한 장당 10MB 이하만 허용합니다. `photo_roles`는 사진 수와 같아야 하며 서로 달라야 합니다.\n"
         "- 제출한 위치·재질·증상이 실제로 바뀌면 `input_revision`을 올리고 `diagnosis_generation`을 증가시킵니다. 분석 중 입력이 바뀌면 아무것도 저장하지 않고 `409`를 반환합니다.\n"
         "- 성공·실패 모두 업로드 임시 파일을 닫고, 원본 사진이나 로그는 남기지 않습니다."
@@ -676,6 +701,10 @@ def analyze_record(
         str | None,
         Form(description="선택 증상 메모. 없으면 생략하거나 `null`/빈 문자열로 보냅니다."),
     ] = None,
+    region_id: Annotated[
+        UUID | None,
+        Form(description="분석 지역 UUID. 생략하면 기존 기록의 지역, 그것도 없으면 프로필 거주 지역을 스냅샷으로 저장합니다."),
+    ] = None,
     external_analysis_consent: Annotated[
         bool,
         Form(description="외부 사진 전송(Meta SAM·비전 LLM) 동의 여부. 생략하면 `true`이며, 명시적 `false`일 때만 외부 전송을 건너뜁니다."),
@@ -686,6 +715,17 @@ def analyze_record(
         with transaction() as conn:
             record = _lock_record(conn, record_id, owner_id)
             snapshot_revision = record["input_revision"]
+            if region_id is not None:
+                _validate_region(conn, region_id)
+                selected_region_id = region_id
+            else:
+                selected_region_id = record["region_id"]
+                if selected_region_id is None:
+                    profile = conn.execute(
+                        "SELECT region_id FROM profiles WHERE user_id = %s",
+                        (owner_id,),
+                    ).fetchone()
+                    selected_region_id = profile["region_id"] if profile else None
         # The row lock ends before file validation and external calls.
 
         if not 1 <= len(photos) <= 2:
@@ -747,6 +787,7 @@ def analyze_record(
                 location != record["location"]
                 or material != record["material"]
                 or symptoms != record["symptoms"]
+                or selected_region_id != record["region_id"]
             )
             new_revision = record["input_revision"] + (1 if changed else 0)
             updated = conn.execute(
@@ -755,6 +796,7 @@ def analyze_record(
                 SET location = %s,
                     material = %s,
                     symptoms = %s,
+                    region_id = %s,
                     photo_observations = %s,
                     diagnosis = %s,
                     diagnosis_revision = %s,
@@ -768,6 +810,7 @@ def analyze_record(
                     location,
                     material,
                     symptoms,
+                    selected_region_id,
                     Jsonb(photo_analysis),
                     Jsonb(diagnosis_result),
                     new_revision,
@@ -780,6 +823,7 @@ def analyze_record(
             "record_id": record_id,
             "input_revision": updated["input_revision"],
             "diagnosis_generation": updated["diagnosis_generation"],
+            "region_id": selected_region_id,
             "photo_analysis": photo_analysis,
             "diagnosis": diagnosis_result,
             "source": photo_analysis["source"],

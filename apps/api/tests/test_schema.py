@@ -58,6 +58,8 @@ def test_initial_migration_is_recorded(admin):
     assert "008_support_programs.sql" in versions
     assert "009_support_program_seed.sql" in versions
     assert "010_chat_and_provider_accounts.sql" in versions
+    assert "011_chat_read_state.sql" in versions
+    assert "012_records_region.sql" in versions
 
 
 def test_records_material_column(admin):
@@ -71,6 +73,27 @@ def test_records_material_column(admin):
         """
     ).fetchone()
     assert column == {"data_type": "text", "is_nullable": "YES"}
+
+
+def test_records_region_column_and_index(admin):
+    column = admin.execute(
+        """
+        SELECT data_type, is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'records'
+          AND column_name = 'region_id'
+        """
+    ).fetchone()
+    assert column == {"data_type": "uuid", "is_nullable": "YES"}
+    index = admin.execute(
+        """
+        SELECT indexdef FROM pg_indexes
+        WHERE schemaname = 'public' AND indexname = 'records_region_id_idx'
+        """
+    ).fetchone()
+    assert index is not None
+    assert "WHERE (region_id IS NOT NULL)" in index["indexdef"]
 
 
 def test_public_tables_have_rls_for_backend_only(admin):
@@ -240,6 +263,7 @@ def test_reverse_provider_indexes_exist(admin):
     assert "provider_work_types_work_type_id_idx" in names
     assert "records_owner_id_idx" in names
     assert "records_owner_id_updated_at_idx" in names
+    assert "records_region_id_idx" in names
     assert "profiles_region_id_idx" in names
     assert "regions_parent_id_idx" in names
     assert "support_programs_region_deadline_idx" in names

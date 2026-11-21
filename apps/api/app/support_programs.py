@@ -9,7 +9,7 @@ from app.errors import not_found
 from app.schemas import (
     ErrorResponse,
     SupportProgramDetail,
-    SupportProgramListItem,
+    SupportProgramListResponse,
 )
 
 
@@ -79,13 +79,90 @@ router = APIRouter(
     responses={401: _UNAUTHORIZED_RESPONSE},
 )
 
+# One visible set for the user's profile, reused by the count and the page so
+# both read the same REPEATABLE READ snapshot.
+_VISIBLE_CTE = """
+    WITH RECURSIVE ancestor_regions AS (
+        SELECT id, parent_id
+        FROM regions
+        WHERE id = %s
+        UNION ALL
+        SELECT parent.id, parent.parent_id
+        FROM regions AS parent
+        JOIN ancestor_regions AS child ON parent.id = child.parent_id
+    ),
+    visible AS (
+        SELECT
+            program.id,
+            program.title,
+            program.summary,
+            program.organization_name,
+            program.region_scope,
+            program.target_housing_types,
+            program.deadline_text,
+            program.deadline_date,
+            program.deadline_kind,
+            program.detail_url,
+            program.source,
+            program.source_attribution,
+            program.source_checked_at,
+            program.updated_at,
+            CASE
+                WHEN program.region_scope = 'national' THEN '전국'
+                ELSE region.display_name
+            END AS region_name,
+            (
+                program.deadline_kind = 'fixed'
+                AND program.deadline_date
+                    < ((now() AT TIME ZONE 'Asia/Seoul')::date)
+            ) AS is_closed,
+            (%s::text = ANY (program.target_housing_types)) AS housing_type_matched
+        FROM support_programs AS program
+        LEFT JOIN regions AS region ON region.id = program.region_id
+        WHERE (program.region_scope = 'national'
+           OR program.region_id IN (SELECT id FROM ancestor_regions))
+          AND NOT (
+              program.source = 'gov24_api'
+              AND EXISTS (
+                  SELECT 1
+                  FROM support_programs AS seed_program
+                  WHERE seed_program.source = 'seed'
+                    AND seed_program.organization_name = program.organization_name
+                    AND seed_program.region_scope = program.region_scope
+                    AND seed_program.region_id IS NOT DISTINCT FROM program.region_id
+                    AND lower(
+                        regexp_replace(
+                            regexp_replace(seed_program.title, '사업$', ''),
+                            '\\s+', '', 'g'
+                        )
+                    ) = lower(
+                        regexp_replace(
+                            regexp_replace(program.title, '사업$', ''),
+                            '\\s+', '', 'g'
+                        )
+                    )
+              )
+          )
+    )
+"""
+
+_ORDER_BY = """
+    ORDER BY
+        is_closed ASC,
+        housing_type_matched DESC,
+        CASE WHEN deadline_kind = 'fixed' THEN deadline_date END ASC NULLS LAST,
+        source_checked_at DESC,
+        title ASC,
+        id ASC
+"""
+
 
 @router.get(
     "",
-    response_model=list[SupportProgramListItem],
+    response_model=SupportProgramListResponse,
     summary="내 지역 주거 지원 사업 목록",
     description=(
-        "검증된 액세스 토큰의 사용자 프로필을 기준으로 주거 지원 사업을 조회합니다.\n\n"
+        "검증된 액세스 토큰의 사용자 프로필을 기준으로 주거 지원 사업을 페이지 단위로 조회합니다.\n\n"
         "- 프로필의 거주 지역, 그 상위 지역의 공고, 전국 공고를 함께 반환합니다.\n"
         "- 다른 지역의 공고는 반환하지 않습니다.\n"
         "- 진행 중 공고를 먼저, 그중 거주 형태 태그가 일치하는 공고를 먼저 정렬하고, "
@@ -93,9 +170,11 @@ router = APIRouter(
         "- `deadline_kind`로 확정 날짜(`fixed`), 공식 상시·연중(`always_open`), "
         "기한 미확인·모호함(`unknown`)을 구분합니다. 마감 공고도 상세에서 확인할 수 있습니다.\n"
         "- 거주 형태 태그 일치(`housing_type_matched`)는 참고 표시일 뿐 신청 자격을 확정하지 않습니다.\n"
+        "- `total`은 `status` 필터를 적용한 전체 수이며, `has_more`는 `offset + len(items) < total`입니다. "
+        "`offset`이 `total` 이상이면 빈 `items`와 정확한 `total`을 반환합니다.\n"
         "- 프로필이 없으면 `404`를 반환합니다. DB 오류를 빈 목록으로 숨기지 않습니다."
     ),
-    response_description="내 지역·상위 지역·전국 주거 지원 사업 목록",
+    response_description="현재 페이지의 내 지역·상위 지역·전국 주거 지원 사업 목록과 페이지 정보",
     responses={404: _PROFILE_NOT_FOUND_RESPONSE, 422: _VALIDATION_ERROR_RESPONSE},
 )
 def list_support_programs(
@@ -103,6 +182,8 @@ def list_support_programs(
         Literal["all", "active"],
         Query(description="`all`은 마감 공고 포함, `active`는 마감되지 않은 공고만 조회."),
     ] = "all",
+    limit: Annotated[int, Query(ge=1, le=50, description="페이지 크기(기본 5, 최대 50).")] = 5,
+    offset: Annotated[int, Query(ge=0, description="페이지 시작 위치(0부터).")] = 0,
     owner_id: UUID = Depends(get_current_user),
 ):
     with read_transaction() as conn:
@@ -113,83 +194,26 @@ def list_support_programs(
         if profile is None:
             raise not_found("프로필이 없습니다. 거주 지역을 먼저 등록해 주세요.")
 
-        return conn.execute(
-            """
-            WITH RECURSIVE ancestor_regions AS (
-                SELECT id, parent_id
-                FROM regions
-                WHERE id = %s
-                UNION ALL
-                SELECT parent.id, parent.parent_id
-                FROM regions AS parent
-                JOIN ancestor_regions AS child ON parent.id = child.parent_id
-            ),
-            visible AS (
-                SELECT
-                    program.id,
-                    program.title,
-                    program.summary,
-                    program.organization_name,
-                    program.region_scope,
-                    program.target_housing_types,
-                    program.deadline_text,
-                    program.deadline_date,
-                    program.deadline_kind,
-                    program.detail_url,
-                    program.source,
-                    program.source_attribution,
-                    program.source_checked_at,
-                    program.updated_at,
-                    CASE
-                        WHEN program.region_scope = 'national' THEN '전국'
-                        ELSE region.display_name
-                    END AS region_name,
-                    (
-                        program.deadline_kind = 'fixed'
-                        AND program.deadline_date
-                            < ((now() AT TIME ZONE 'Asia/Seoul')::date)
-                    ) AS is_closed,
-                    (%s::text = ANY (program.target_housing_types)) AS housing_type_matched
-                FROM support_programs AS program
-                LEFT JOIN regions AS region ON region.id = program.region_id
-                WHERE (program.region_scope = 'national'
-                   OR program.region_id IN (SELECT id FROM ancestor_regions))
-                  AND NOT (
-                      program.source = 'gov24_api'
-                      AND EXISTS (
-                          SELECT 1
-                          FROM support_programs AS seed_program
-                          WHERE seed_program.source = 'seed'
-                            AND seed_program.organization_name = program.organization_name
-                            AND seed_program.region_scope = program.region_scope
-                            AND seed_program.region_id IS NOT DISTINCT FROM program.region_id
-                            AND lower(
-                                regexp_replace(
-                                    regexp_replace(seed_program.title, '사업$', ''),
-                                    '\s+', '', 'g'
-                                )
-                            ) = lower(
-                                regexp_replace(
-                                    regexp_replace(program.title, '사업$', ''),
-                                    '\s+', '', 'g'
-                                )
-                            )
-                      )
-                  )
-            )
-            SELECT *
-            FROM visible
-            WHERE (%s = 'all' OR is_closed = false)
-            ORDER BY
-                is_closed ASC,
-                housing_type_matched DESC,
-                CASE WHEN deadline_kind = 'fixed' THEN deadline_date END ASC NULLS LAST,
-                source_checked_at DESC,
-                title ASC,
-                id ASC
-            """,
+        total = conn.execute(
+            _VISIBLE_CTE
+            + " SELECT count(*) AS total FROM visible WHERE (%s = 'all' OR is_closed = false)",
             (profile["region_id"], profile["housing_type"], status),
+        ).fetchone()["total"]
+        items = conn.execute(
+            _VISIBLE_CTE
+            + " SELECT * FROM visible WHERE (%s = 'all' OR is_closed = false)"
+            + _ORDER_BY
+            + " LIMIT %s OFFSET %s",
+            (profile["region_id"], profile["housing_type"], status, limit, offset),
         ).fetchall()
+
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(items) < total,
+    }
 
 
 @router.get(
