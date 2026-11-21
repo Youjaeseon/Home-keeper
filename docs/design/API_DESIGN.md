@@ -4,7 +4,7 @@
 
 ## 문서 범위
 
-현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 구조화 진단 생성·재생성(`POST /records/{record_id}/diagnosis`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색(`GET /work-types`, `GET /providers`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/read`, WebSocket `/chat/ws`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
+현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 구조화 진단 생성·재생성(`POST /records/{record_id}/diagnosis`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색·상세(`GET /work-types`, `GET /providers`, `GET /providers/{provider_id}`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/read`, WebSocket `/chat/ws`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
 
 사진 관찰과 텍스트 진단은 2단계로 구현했다. 실시간 채팅은 WebSocket과 방별 미읽음 수 표시로 백엔드에 구현했다. 진단 신뢰도 필드는 정의가 정해지지 않아 구현하지 않았다. 요청문 생성은 서버에서 단일 LLM 제공사(OpenAI 호환 Chat Completions)를 사용한다. 실행 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 호출 예시와 구현 메모는 [API 사용 가이드](../guides/API_USAGE.md)를 따른다.
 
@@ -27,7 +27,7 @@
 - **확정**: 이메일·비밀번호 인증, 프로필 사진 제외. 카카오·Google 로그인은 현재 MVP에서 제외하고 시간 여유 시 재검토한다.
 - **확정·백엔드 구현 완료**: WebSocket 실시간 채팅과 채팅방 목록의 방별 미읽음 수. 경로는 `/chat/ws`, 이벤트는 `ready`·`message`, 읽음은 `POST /chat/rooms/{room_id}/read`다. 읽음 시점은 앱이 방에 들어가 메시지 이력을 받은 직후로 정했다. 서버가 시각을 저장하므로 같은 계정의 다른 기기도 같은 읽음 상태를 쓴다. 상세 계약은 [채팅 섹션](#업체요청인-11-채팅-chat-구현-완료)을 따른다.
 - **확정·미구현(정의 대기)**: 진단 신뢰도 필드. 무엇의 신뢰도인지, 산정 방법·필드명·범위·산정 불가 표현이 정해지지 않아 스키마·산정·UI를 추가하지 않았다. YOLO 개별 탐지 `confidence`를 진단 전체 신뢰도로 사용하지 않는다.
-- **미정**: 비회원 전체 소식·업체 열람안, “분석을 해야 등록되는 흐름”의 대상·시점, 발생/발견일 입력, 사진 보관, 추천 작업 매핑·업체 검색 연결, 가상 업체 문의·자동 응답. 분석·기록·프로필·채팅의 인증은 유지한다. 미정 항목 때문에 현재 인증·입력·샘플 업체 계약을 바꾸지 않는다.
+- **미정**: 비회원 전체 소식·업체 열람안, “분석을 해야 등록되는 흐름”의 대상·시점, 발생/발견일 입력, 사진 보관, 가상 업체 문의·자동 응답. 분석·기록·프로필·채팅의 인증은 유지한다. 미정 항목 때문에 현재 인증·입력·샘플 업체 계약을 바꾸지 않는다.
 - 세부 근거·선택지는 [프로젝트 계획의 시안 검토](../plans/PROJECT_PLAN.md#11월-21일-프론트-시안-검토)를 따른다. 이번 변경은 채팅 백엔드에 한정하며 모바일 채팅 화면과 회원가입 화면은 포함하지 않는다.
 
 ## 회원가입과 프로필 (프로필 API 구현 완료)
@@ -186,7 +186,7 @@
 
 - **사진 Storage**: 비공개 버킷 업로드와 소유권 확인 후 단기 Signed URL 발급. 사진 경로는 기록 소유자와 연결한다.
 - **소식지 주기 동기화**: 보조금24 동기화를 수동 명령에서 주기 실행으로 확장한다. 페이지네이션은 구현 완료다.
-- **업체 평점·상세**: `GET /providers/{provider_id}` 상세와 평점 집계를 추가한다. 평점은 수락·완료된 매칭에서만 만든다.
+- **업체 평점·상세**: 3단계에서 `GET /providers/{provider_id}`와 평점·리뷰 수 컬럼을 구현했다. 향후 평점은 수락·완료된 매칭 리뷰에서만 갱신한다.
 - **견적 요청서·제안서·수락**: 요청서 생성·목록·상세, 업체 제안서 제출, 요청인의 1건 수락 API를 추가한다. 지역·작업 종류가 맞는 업체에 공개하며 수락 시 나머지 제안을 종료한다.
 
 ## 요청문 (`landlord`, `provider`, 구현 완료)
@@ -309,13 +309,13 @@
 - 출처 표시: 시드·동기화 데이터 모두 `source_attribution`을 포함한다. 보조금24 동기화 행의 출처는 `행정안전부 대한민국 공공서비스(혜택) 정보 · 공공데이터포털`이다.
 - `source_checked_at`은 해당 행의 출처를 마지막으로 확인한 시각이고, `synced_at`은 외부 API에서 마지막으로 갱신한 시각이다. 모바일은 두 값을 구분해 표시할 수 있다.
 
-## 업체 조회 (`GET /regions`, `GET /work-types`, `GET /providers` 구현 완료)
+## 업체 조회 (`GET /regions`, `GET /work-types`, `GET /providers`, `GET /providers/{provider_id}` 구현 완료)
 
 `GET /regions`는 회원 프로필의 거주 지역 선택과 소식지·업체 검색에 사용할 지역 ID와 시·군·구가 포함된 표시 이름을 반환한다. 응답은 `{ "region_id", "name", "display_name" }` 배열이며 `display_name` 순으로 정렬한다. 마이그레이션 `007_profiles_and_regions.sql`은 시연 지역 `용인`(`name="yongin"`, `display_name="경기도 용인시"`)을 시드하고, `008_support_programs.sql`은 상위 지역 `경기도`(`name="gyeonggi"`)를 추가해 용인시의 상위 지역으로 연결한다.
 
 `GET /work-types`는 작업 ID와 이름을 `{ "work_type_id", "name" }` 배열로 반환한다. `010_chat_and_provider_accounts.sql`이 `곰팡이 제거`, `균열 보수`, `벽지·도장 보수`, `원인 점검`을 시드한다. 앱은 진단의 추천 작업을 미리 선택할 수 있다.
 
-업체 검색 전 앱은 등록 주소·거주 지역이 맞는지 확인하고 확인한 거주 지역 ID를 사용한다. `GET /providers?region_id=<UUID>&work_type_id=<UUID>`는 출장 가능 지역과 작업이 **모두** 맞는 업체를 반환한다.
+업체 검색 전 앱은 등록 주소·거주 지역이 맞는지 확인하고 확인한 거주 지역 ID를 사용한다. `GET /providers?region_id=<UUID>&work_type_id=<UUID>`에서 `region_id`는 필수, `work_type_id`는 선택이다. 작업 종류를 생략하면 해당 지역 전체 업체를, 전달하면 지역과 특화 분야가 모두 맞는 업체를 별점 내림차순(`rating DESC`, `review_count DESC`, `name ASC`, `id ASC`)으로 반환한다.
 
 응답 예시 (`200 OK`, 실제 후보):
 
@@ -326,6 +326,13 @@
       "provider_id": "<provider UUID>",
       "name": "용인 곰팡이 수리",
       "phone": "031-000-0000",
+      "rating": 4.8,
+      "review_count": 24,
+      "description": "결로·곰팡이 원인 점검과 도배 보수를 함께 진행합니다.",
+      "specialty_work_types": [
+        {"work_type_id": "<work type UUID>", "name": "곰팡이 제거"},
+        {"work_type_id": "<work type UUID>", "name": "원인 점검"}
+      ],
       "chat_available": true,
       "is_sample": false
     }
@@ -334,29 +341,16 @@
 }
 ```
 
-실제 후보가 없을 때의 응답 예시 (`200 OK`):
+실제 후보가 없을 때의 응답은 `is_sample=true`이고 항목은 `phone=null`, `rating=0.0`, `review_count=0`, `specialty_work_types=[]`, `chat_available=false`다. 샘플은 `providers` 테이블에 없는 고정 UUID다.
 
-```json
-{
-  "providers": [
-    {
-      "provider_id": "00000000-0000-4000-8000-000000000001",
-      "name": "시연용 샘플 업체 (곰팡이·결로)",
-      "phone": null,
-      "chat_available": false,
-      "is_sample": true
-    }
-  ],
-  "is_sample": true
-}
-```
-
-- `chat_available`은 사전 등록된 업체 계정(`providers.account_user_id`)이 연결되어 앱 내 채팅이 가능한지 여부다. 공개 전화번호만 있고 계정이 없는 업체는 `false`다.
-- 실제 후보가 하나라도 있으면 `is_sample=false`이고 샘플을 섞지 않는다. 샘플은 전화번호를 만들지 않으며 `chat_available`은 항상 `false`다.
+- `chat_available`은 사전 등록된 업체 계정(`providers.account_user_id`)이 연결되어 앱 내 채팅이 가능한지 여부다.
+- 실제 후보가 하나라도 있으면 `is_sample=false`이고 샘플을 섞지 않는다.
 - 등록되지 않은 지역·작업 ID는 `422`, DB 오류는 `500`이다. DB 오류를 빈 목록이나 샘플로 대체하지 않는다.
-- 실제 업체·연락처·출장 지역·작업 데이터는 팀이 확인한 자료가 없어 시드하지 않았다. 앱은 `is_sample=true`일 때 시연 안내를 표시한다.
+- `GET /providers/{provider_id}`는 인증된 사용자에게 평점, 리뷰 수, 소개, 주소, 영업시간, 경력 연수, 출장 가능 지역(`regions`), 특화 분야(`work_types`)를 반환한다. 없는 업체·샘플 UUID는 `404`, 잘못된 UUID는 `422`다. 상세 API의 `is_sample`은 항상 `false`다.
+- `GET`·`PUT /me/profile`의 `provider_id`는 `providers.account_user_id`가 현재 사용자와 연결된 경우 업체 UUID, 요청인이면 `null`이다. `PUT` 요청 본문에서 `role`/`provider_id`를 지정할 수 없다(`422`).
+- `013_provider_details.sql`이 평점·리뷰·소개·주소·영업시간·경력을 추가한다. `014_yongin_provider_seed.sql`은 팀 확인 자료가 없어 실제 업체 행을 넣지 않고, 공식 출처 확인 후 채울 idempotent 템플릿만 둔다. 앱은 `is_sample=true`일 때 시연 안내를 표시한다.
 
-## 업체–요청인 1:1 채팅 (`/chat/*`, 구현 완료)
+## 업체–요청인 1:1 채팅## 업체–요청인 1:1 채팅 (`/chat/*`, 구현 완료)
 
 방 생성·목록·이력 조회·메시지 저장·읽음 처리는 FastAPI REST API, 실시간 수신은 인증된 FastAPI WebSocket으로 구현했다. 푸시 알림은 추가하지 않는다. 읽음 시점은 **앱이 채팅방에 들어가 메시지 이력을 받은 직후**로 정했다. 앱은 화면에 표시한 마지막 메시지까지 읽음 처리하고, 서버는 그 시각을 저장한다. 같은 계정의 다른 기기도 같은 서버 읽음 상태를 공유한다.
 

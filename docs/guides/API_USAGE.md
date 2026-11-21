@@ -74,7 +74,7 @@ curl -s http://127.0.0.1:8000/me/profile \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-프로필이 없을 때 `GET /me/profile`은 404를 반환합니다. 새 프로필의 역할은 서버가 `requester`로 정하며, 기존 업체 계정의 `provider` 역할은 이 API로 바뀌지 않습니다.
+프로필이 없을 때 `GET /me/profile`은 404를 반환합니다. 새 프로필의 역할은 서버가 `requester`로 정하며, 기존 업체 계정의 `provider` 역할은 이 API로 바뀌지 않습니다. 응답의 `provider_id`는 업체 계정이면 본인 업체 UUID, 요청인이면 `null`이며 요청 본문에서 지정할 수 없습니다.
 
 소식지는 프로필의 거주 지역·상위 지역·전국 공고를 페이지 단위로 반환합니다. `status=active`는 마감된 공고를 제외하고, `limit`은 기본 5·최대 50, `offset`은 0부터입니다.
 
@@ -188,17 +188,28 @@ curl -s "http://127.0.0.1:8000/records/$RECORD_ID/drafts/landlord/template" \
 
 생성 응답은 `{ "kind", "text", "input_revision", "diagnosis_generation" }`입니다. `GET /records/{record_id}`의 `drafts`에는 저장본과 `is_current`가 함께 옵니다. 진단이 없으면 생성은 `409 diagnosis_required`이고 기본 양식은 `200`입니다. 생성 중 입력이 바뀌면 `409 revision_conflict`(현재 `input_revision` 포함), 진단이 바뀌면 `409 diagnosis_conflict`입니다. 모델 실패는 `502`/`503`/`504`이며 이때 기존 저장본이 유지되므로 앱은 `다시 생성`과 `기본 양식 보기`를 함께 제공합니다. 요청문 편집본을 저장하는 API는 없습니다.
 
-### 업체 검색
+### 업체 검색·상세
 
 ```bash
 WORK_TYPE_ID=$(curl -s http://127.0.0.1:8000/work-types \
   -H "Authorization: Bearer $ACCESS_TOKEN" | jq -r '.[0].work_type_id')
 
+# 지역 전체 업체(별점 내림차순)
+curl -s "http://127.0.0.1:8000/providers?region_id=$REGION_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# 지역 + 특화 분야
 curl -s "http://127.0.0.1:8000/providers?region_id=$REGION_ID&work_type_id=$WORK_TYPE_ID" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+# 업체 상세
+curl -s "http://127.0.0.1:8000/providers/$PROVIDER_ID" \
   -H "Authorization: Bearer $ACCESS_TOKEN"
 ```
 
-응답은 `{ "providers": [...], "is_sample": bool }`이고 각 항목은 `provider_id`, `name`, `phone`(없으면 `null`), `chat_available`, `is_sample`입니다. `chat_available=false`인 업체는 전화 문의만 가능하고 채팅방을 만들 수 없습니다. DB 오류는 빈 결과·샘플이 아니라 `500`입니다. 실제 업체 데이터는 아직 등록되지 않아 현재는 샘플 후보가 반환됩니다.
+목록 응답은 `{ "providers": [...], "is_sample": bool }`이고 각 항목은 `provider_id`, `name`, `phone`, `rating`, `review_count`, `description`, `specialty_work_types`, `chat_available`, `is_sample`입니다. `region_id`는 필수, `work_type_id`는 선택이며 둘 다 등록된 UUID여야 합니다(`422`). 정렬은 평점 내림차순, 리뷰 수 내림차순, 이름 오름차순입니다. 실제 후보가 없을 때만 `is_sample=true` 샘플이 오며 평점 `0.0`, 리뷰 `0`, 특화 분야 `[]`, 전화번호 `null`입니다. DB 오류는 빈 결과·샘플이 아니라 `500`입니다.
+
+상세 응답은 `provider_id`, `name`, `phone`, `rating`, `review_count`, `description`, `address`, `business_hours`, `career_years`, `chat_available`, `regions`, `work_types`, `is_sample=false`입니다. 없는 업체·샘플 UUID는 `404`, 잘못된 UUID는 `422`입니다. `chat_available=false`인 업체는 전화 문의만 가능하고 채팅방을 만들 수 없습니다. 용인 실제 업체 데이터는 팀 확인 자료가 없어 시드하지 않았으며, `014_yongin_provider_seed.sql` 템플릿에 공식 출처 확인 후 입력합니다.
 
 ### 1:1 채팅
 
@@ -317,8 +328,8 @@ curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/next-question" \
 - 마이그레이션은 로컬 개발을 위해 `auth.users(id)` 스텁을 만들 수 있게 했습니다. Supabase에서는 기존 테이블이 그대로 쓰입니다.
 - Supabase의 런타임 DB 연결·RLS·Data API 권한 회수와 ES256 JWKS 조회를 확인했습니다. 실제 사용자 로그인 토큰을 이용한 전체 인증 흐름은 아직 검증하지 않았습니다. 통합 테스트는 로컬 PostgreSQL과 HS256 토큰으로 실행합니다. `005_next_question_grants.sql`은 Home Keeper에 적용했고 적용 이력과 질문 INSERT/UPDATE 권한을 확인했습니다.
 - `POST /records/{record_id}/analyze`는 사진과 입력을 multipart로 받아 사진 관찰과 구조화 진단을 저장합니다. YOLO·SAM·비전 LLM 보조 관찰과 텍스트 진단을 분리하고, 원본 사진은 저장하지 않습니다. 입력 스냅샷으로 결과를 만든 뒤 저장 직전에 `input_revision`을 재확인하고, 사진 관찰 상태·진단 결과와 `diagnosis_generation`을 같은 트랜잭션에 저장합니다. `POST /records/{record_id}/diagnosis`는 입력 버전이 같은 진단을 재사용하거나 재생성하며, 실패 시 기존 진단을 보존합니다.
-- 회원 프로필 API·화면, 거주 형태, 내 기록 목록과 과거 결과 재열람, 주거 지원 사업 소식지 백엔드(목록·상세·검증 시드·보조금24 수동 동기화), 요청문 생성·기본 양식, 업체 검색, 1:1 채팅 REST·WebSocket·방별 미읽음 수 백엔드는 구현했습니다. 소식지·요청문·업체 검색·채팅 모바일 화면, 사진 원본 비공개 스토리지, 실제 업체·계정 데이터, 회원가입 화면과 4개 탭은 아직 구현하지 않았습니다. 사진 원본 Storage, 소식지 주기 동기화, 업체 평점·상세, 견적 요청서·제안서·수락은 확정 설계만 있고 코드는 없습니다. 현재 `next-question` 코드의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 처리하는 레거시/보류 구현이며, 변경된 MVP의 지원 하자 유형은 `균열·벗겨짐·곰팡이`, 시연 지역은 `용인`입니다.
-- `records.material`(`006`), `profiles`·용인 지역 시드(`007`), 지역 상하 관계·지원 사업(`008`), 검증 시드(`009`), 업체 계정·채팅·작업 종류 시드(`010`), 채팅 읽음 시각(`011`), 기록 지역 스냅샷(`012`)은 로컬 테스트 DB에 적용해 검증했습니다(006–009는 로컬 개발 DB에도 적용). Home Keeper의 006–012 적용 여부는 관리자 접근으로 별도 확인해야 합니다.
+- 회원 프로필 API·화면, 거주 형태, 내 기록 목록과 과거 결과 재열람, 주거 지원 사업 소식지 백엔드(목록·상세·검증 시드·보조금24 수동 동기화), 요청문 생성·기본 양식, 업체 검색, 1:1 채팅 REST·WebSocket·방별 미읽음 수 백엔드는 구현했습니다. 소식지·요청문·채팅 모바일 화면, 사진 원본 비공개 스토리지, 실제 업체·계정 데이터, 회원가입 화면과 4개 탭은 아직 구현하지 않았습니다. 업체 목록·상세·평점과 업체 계정 홈 분기는 구현했고, 용인 실제 업체 시드는 팀 확인 자료 대기 상태입니다. 사진 원본 Storage, 소식지 주기 동기화, 견적 요청서·제안서·수락은 확정 설계만 있고 코드는 없습니다. 현재 `next-question` 코드의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 처리하는 레거시/보류 구현이며, 변경된 MVP의 지원 하자 유형은 `균열·벗겨짐·곰팡이`, 시연 지역은 `용인`입니다.
+- `records.material`(`006`), `profiles`·용인 지역 시드(`007`), 지역 상하 관계·지원 사업(`008`), 검증 시드(`009`), 업체 계정·채팅·작업 종류 시드(`010`), 채팅 읽음 시각(`011`), 기록 지역 스냅샷(`012`), 업체 상세·평점(`013`), 용인 시드 템플릿(`014`)은 로컬 테스트 DB에 적용해 검증했습니다(006–009는 로컬 개발 DB에도 적용). Home Keeper의 006–014 적용 여부는 관리자 접근으로 별도 확인해야 합니다.
 - 요청문 생성은 `app/llm.py`의 OpenAI 호환 Chat Completions 호출만 사용하고, 외부 모델에는 기록의 하자 입력·진단 결과만 보냅니다. 프로필 개인정보는 보내지 않고 증상 메모의 이메일·휴대전화 번호는 제거합니다. 프롬프트·응답·요청 본문은 로그에 남기지 않습니다. 실제 키 호출은 검증하지 않았고 테스트는 고정 응답을 사용합니다. 증상 메모 원문을 외부 모델 입력으로 계속 사용할지와 동의·고지 방식은 팀 회의 전 미확정이며, 현재 동작은 유지합니다.
 - 채팅은 FastAPI REST와 인증된 WebSocket(`/chat/ws`)을 제공합니다. 방별 미읽음 수와 읽음 처리를 구현했고, 읽음 시점은 방 이력 조회 직후입니다. 푸시 알림은 추가하지 않았습니다. `records/messages`(AI 추가 질문)와 `chat_messages`(업체 채팅)는 별도 테이블입니다.
 - 보조금24 동기화는 실제 `GOV24_API_KEY`로 `serviceList` 10,891건을 조회하고 주거 제목 필터·지역 확정 후 41건을 로컬 개발 DB에 upsert하는 것까지 확인했습니다. Home Keeper에는 008·009 마이그레이션이 없어 실제 Supabase 동기화는 아직 실행하지 못했습니다. 운영 응답의 주거 키워드·지역명·기한 문구는 첫 적용 후 계속 점검해야 합니다.
