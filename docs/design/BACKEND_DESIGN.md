@@ -2,7 +2,7 @@
 
 ## 문서 범위
 
-이 문서는 2026년 11월 20일 팀 회의 변경 사항을 반영한 MVP 전체의 백엔드 처리 규칙을 설명한다. 현재 저장소에 구현된 기능은 인증, 하자 기록 CRUD(`material` 포함), 내 기록 목록(`GET /records`), 회원 프로필(`GET/PUT /me/profile`)·지역 목록(`GET /regions`), **주거 지원 사업 소식지**(목록·상세·보조금24 수동 동기화), 사진·위치·재질 기반 **샘플 일괄 분석**, **요청문 생성·기본 양식**, **업체 검색**, **요청인–업체 1:1 채팅 REST API·WebSocket·방별 미읽음 수**, 그리고 **현재 MVP 흐름에서는 사용하지 않는 레거시/보류 상태의 대화·시연용 다음 질문 API**(`messages`, `next-question`)다. 실제 모델 기반 사진 분석·진단 재생성과 진단 신뢰도 필드는 후속 또는 정의 대기다.
+이 문서는 2026년 11월 20일 팀 회의 변경 사항을 반영한 MVP 전체의 백엔드 처리 규칙을 설명한다. 현재 저장소에 구현된 기능은 인증, 하자 기록 CRUD(`material` 포함), 내 기록 목록(`GET /records`), 회원 프로필(`GET/PUT /me/profile`)·지역 목록(`GET /regions`), **주거 지원 사업 소식지**(목록·상세·보조금24 수동 동기화), 사진 관찰·AI 진단과 **비공개 Storage 사진**, **요청문 생성·기본 양식**, **업체 검색·상세·평점**, **공개 견적 요청서·업체 제안서·1건 수락**, **요청인–업체 1:1 채팅 REST API·WebSocket·방별 미읽음 수**, 그리고 **현재 MVP 흐름에서는 사용하지 않는 레거시/보류 상태의 대화·시연용 다음 질문 API**(`messages`, `next-question`)다. 실제 모델 기반 사진 분석·진단 재생성과 진단 신뢰도 필드는 후속 또는 정의 대기다.
 
 실행과 검증 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 테이블과 제약은 [DB 설계](DB_DESIGN.md), 앱 연동 계약은 [API 설계](API_DESIGN.md)를 따른다.
 
@@ -32,7 +32,7 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 
 사용자가 새 하자 기록을 시작하면 FastAPI가 기록 ID를 발급한다. 분석 페이지에서는 AI 채팅창을 없애고 한 화면에서 같은 하자의 **사진 1~2장**(전체·근접, 1장 필수·2장째 선택), **분석 지역 확인**, **위치**, **재질**, **선택 증상 메모**를 함께 입력받아 처리한다. `내 정보` 페이지의 **내 하자 분석 기록 목록**을 위해 `GET /records`로 본인 기록 목록(최신 수정순)을 조회해 과거 분석 결과 페이지를 다시 열 수 있게 한다. `records.region_id`(`012`)에는 분석 전 확인한 지역을 스냅샷으로 저장하며, 이후 프로필 지역이 바뀌어도 기존 기록의 지역은 유지한다.
 
-사진 분석에서는 사진별 관찰 상태, 탐지 라벨(`raw_label` 포함), 신뢰도, 화면 점유 비율, bbox·마스크, 비전 LLM 관찰 요약을 DB에 저장한다. 현재는 원본 사진을 저장하지 않으며, 견적 요청서 공유·결과 재열람을 위한 비공개 Storage 저장은 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md)에 따라 구현 예정이다. 원본 사진과 프롬프트·모델 응답은 로그에 남기지 않는다.
+사진 분석에서는 사진별 관찰 상태, 탐지 라벨(`raw_label` 포함), 신뢰도, 화면 점유 비율, bbox·마스크, 비전 LLM 관찰 요약을 DB에 저장한다. Storage 설정 시 원본을 비공개 버킷에 리사이즈 JPEG로 저장하고 `records.photo_files`에 경로·크기를 남긴다. 조회 시 소유자·참여자 권한을 확인한 뒤 단기 Signed URL만 발급한다([ADR 0002](../adr/0002-private-storage-for-defect-photos.md)). 원본 사진과 프롬프트·모델 응답은 로그에 남기지 않는다.
 
 ## DB 접근과 저장 단위
 
@@ -41,9 +41,10 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 | 저장 단위 | 상태 | 저장할 값 |
 | --- | --- | --- |
 | 회원 프로필 (`profiles`) | 구현됨 (`007`) | 사용자 ID, 닉네임, 역할(`requester`/`provider`), 거주 지역 ID, 선택 등록 주소, 거주 형태(`monthly_rent`/`jeonse`/`semi_jeonse`/`owned`/`other`), 수정 시각. 로그인한 사용자 본인만 조회·수정한다. |
-| 하자 기록 (`records`) | 구현됨 (`material`, 지역 스냅샷 `012`) | 기록 ID, 소유자 ID, 분석 지역 스냅샷, 위치·재질·선택 증상 메모, 사진별 관찰 상태·탐지·`area_ratio`·마스크·비전 관찰, 최신 진단(JSONB), 최신 점검 요청문, 최신 견적 요청문 |
+| 하자 기록 (`records`) | 구현됨 (`material`, 지역 스냅샷 `012`, 사진 `015`) | 기록 ID, 소유자 ID, 분석 지역 스냅샷, 위치·재질·선택 증상 메모, 사진별 관찰 상태·탐지·`area_ratio`·마스크·비전 관찰, 비공개 Storage 사진 경로(`photo_files`), 최신 진단(JSONB), 최신 점검 요청문, 최신 견적 요청문 |
 | 소식지 지원 사업 (`support_programs`) | 구현됨 (`008`·`009`) | 지원 사업 ID, 외부 ID, 출처(`gov24_api`/`seed`), 제목, 요약, 소관기관, 지역 구분(`national`/`local`), 지역 ID, 대상 거주 형태 태그, 지원 대상·내용, 선정 기준, 신청 방법, 신청기한 원문·마감일·종류, 원문 URL, 출처 표기, 출처 확인 시각, 동기화 시각 |
 | 업체 (`providers` 등) | 구현됨 (`account_user_id` `010`, 상세·평점 `013`) | 업체 ID, 업체명, 연락처, 평점·리뷰 수, 소개·주소·영업시간·경력, 사전 등록 업체 계정 사용자 ID, 출장 지역 연결, 작업 종류 연결 |
+| 견적 요청서·제안서 (`quote_requests`, `quote_proposals`) | 구현됨 (`015`) | 요청서: 기록·요청인·지역·작업 종류·주소·위치·재질·메모·사진 스냅샷·심각도·의심 유형·상태·수락 제안서. 제안서: 요청서·업체·가격 범위·메모·상태 |
 | 채팅방·메시지 (`chat_rooms`, `chat_messages`) | 구현됨 (`010`, 읽음 시각 `011`) | 채팅방 ID, 요청인 ID, 업체 ID, 최근 연결 기록 ID, 참여자별 마지막 읽음 시각, 발신자 ID·역할, 메시지 유형(`text`/`record_summary`), 연결 기록 ID, 본문·요약 페이로드, `client_message_id` |
 | 질문·대화 메시지 (`questions`, `messages`) | 기존 구현 (MVP 미사용/보류) | 분석 채팅창 제거에 따라 현재 MVP에서는 호출하지 않는 레거시 테이블. 추후 설문/객관식 추가 질문 도입 시 재검토한다. |
 
@@ -115,14 +116,13 @@ FastAPI는 자신의 프로필만 조회·저장하도록 토큰의 사용자 ID
 - **재연결·확장 제한**: 서버는 이벤트를 재전송하지 않는다. 앱은 백오프로 재연결한 뒤 방 목록과 메시지 이력으로 상태를 맞춘다. 현재 연결 레지스트리는 API 프로세스 메모리에 있으므로 다중 워커·다중 인스턴스로 확장하려면 공유 브로커가 필요하다.
 - **기존 레거시와 분리**: `records/messages`(AI 추가 질문)와 `chat_messages`(업체 채팅)는 별도 테이블·API이며 서로 재사용하지 않는다.
 
-## 2~4단계 확정 설계 (구현 예정)
+## 사진 Storage·견적 요청서·제안서 (4단계 구현 완료)
 
-이번 세션 코드는 1단계(사진 관찰·텍스트 진단)만 구현했다. 아래는 회의에서 확정한 2~4단계 설계이며 아직 마이그레이션·API·화면 코드가 없다.
-
-- **사진 Storage**: 하자 사진을 Supabase Storage 비공개 버킷에 저장하고 소유권 확인 후 단기 Signed URL만 발급한다. 견적 요청서 공유·결과 재열람에 사용하며, 보유기간·삭제 정책은 개인정보 검토와 함께 확정한다([ADR 0002](../adr/0002-private-storage-for-defect-photos.md)).
-- **소식지 주기 동기화**: 보조금24 동기화를 수동 명령에서 주기 실행으로 확장한다. 동기화 실패 시 기존 행을 유지하는 규칙은 그대로 둔다. 목록 페이지네이션은 구현 완료다.
-- **업체 평점·상세**: 3단계에서 `providers.rating`·`review_count`와 상세 API를 구현했다. 평점은 향후 수락·완료된 매칭 리뷰에서만 갱신하고 임의 후기를 허용하지 않는다.
-- **견적 요청서·제안서·수락**: 하자 기록을 지역·특화 분야 기반 1:N 공개 요청서로 등록하고, 업체가 제안서(작업 범위·일정·금액)를 제출하며, 요청인이 1건을 수락해 매칭을 확정한다. 수락 시 나머지 제안은 종료한다([ADR 0003](../adr/0003-open-quote-request-and-proposal-matching.md)).
+- **사진 Storage**: `POST /records/{record_id}/analyze`는 Storage 키가 있으면 긴 변 1600px·EXIF 제거 JPEG를 `{owner}/{record}/{role}_{uuid}.jpg`로 업로드하고 `photo_files`에 `role`·`storage_path`·`width`·`height`를 저장한다. DB 충돌·실패 시 방금 업로드한 객체를 best-effort 삭제한다. 기록 상세와 요청서 상세·목록은 권한 확인 후 단기 Signed URL만 반환한다. 키가 없으면 업로드와 서명을 생략해 기존 로컬·테스트 흐름을 유지한다.
+- **요청서 공개**: 요청인은 진단이 끝난 본인 기록을 `POST /quote-requests`로 공개한다. 지역·작업 종류는 요청값 → 기록/진단 → 프로필/`원인 점검` 순으로 보완하고, 사진 경로·심각도·의심 유형을 발행 시점 스냅샷으로 저장한다. 같은 기록의 `open` 요청서는 DB 부분 유일 인덱스로 1건만 허용한다.
+- **노출 격리**: 요청인은 모든 제안서를 비교하고, 업체는 `provider_regions`·`provider_work_types`가 요청서와 모두 맞는 `open` 요청서와 본인이 제안서를 보낸 요청서만 본다. 업체 상세에서는 본인 제안서만 노출해 경쟁 견적을 숨긴다. 업체는 원본 기록·프로필 API에 접근할 수 없다.
+- **제안·수락**: 업체는 요청서당 1건, 진행 중 상태에서만 제안서를 보낸다(가격 범위·메모 검증). 요청인은 1건을 수락하며 한 트랜잭션에서 대상 `accepted`, 나머지 `rejected`, 요청서 `accepted`·`accepted_at`을 갱신한다. 동시 수락은 요청서 행 잠금과 상태 검사로 한 건만 성공한다. 취소 시 대기 제안서를 모두 `rejected`로 마감한다. 수락 전에도 기존 1:1 채팅방을 열 수 있다.
+- **남은 운영 항목**: Supabase Storage 비공개 버킷 생성·키 설정과 소식지 보조금24 주기 동기화 확장.
 
 ## 개인정보 저장 검토
 
@@ -183,7 +183,7 @@ DB 저장을 직접 허용한다는 별도 문구는 확인되지 않았으나, 
 | `GET /support-programs/{program_id}` | 구현됨 | 없음 | 상세 요약, 지원 대상·내용·신청 방법, 신청기한·원문 URL·출처·확인 시점 |
 | `GET /records` | 구현됨 | 없음 | 내 하자 분석 기록 목록 (최근 수정순, 지역 스냅샷·위치·재질·증상·의심 유형·심각도% 요약) |
 | `POST /records` | 구현됨 | 없음 | `record_id`, `input_revision` |
-| `GET /records/{record_id}` | 구현됨 | 없음 | 저장된 입력(지역·위치·재질·증상), 진단·요청문 및 각 결과의 입력 버전 |
+| `GET /records/{record_id}` | 구현됨 | 없음 | 저장된 입력(지역·위치·재질·증상), 진단·요청문·단기 Signed 사진 URL 및 각 결과의 입력 버전 |
 | `PATCH /records/{record_id}` | 구현됨 | 변경할 위치·재질·증상·지역 | 저장된 값, `input_revision` |
 | `POST /records/{record_id}/analyze` | 구현됨 | 사진 1~2장(전체·근접), `location`, `material`, `symptoms?`, `region_id?`, `external_analysis_consent?`(기본 `true`) | 사진별 관찰 상태·`source`·`detections`(`label`, `raw_label`, `confidence`, `area_ratio`, `bbox`, `mask`, `vision_observation`), 구조화 진단(`source="llm"` 또는 `"sample"`), `input_revision`, `diagnosis_generation`, 사진 분석 출처(`yolo`, `yolo_sam`, `vision_llm`, `yolo_vision_llm`, `sample`) |
 | `POST /records/{record_id}/diagnosis` | 구현됨 | `regenerate?` | 최신 진단 재사용 또는 재생성 결과(`record_id`, `input_revision`, `diagnosis_generation`, `diagnosis`, `source`) |
@@ -191,6 +191,8 @@ DB 저장을 직접 허용한다는 별도 문구는 확인되지 않았으나, 
 | `GET /records/{record_id}/drafts/{kind}/template` | 구현됨 | 요청문 종류(`landlord` \| `provider`) | 현재 기록의 확인된 사실을 채운 기본 양식 |
 | `GET /regions` | 구현됨 | 없음 | 지역 ID·이름·시·군·구 표시 이름 |
 | `GET /work-types`, `GET /providers`, `GET /providers/{provider_id}` | 구현됨 | 없음 / `region_id`, `work_type_id?` / 없음 | 작업 목록 / 별점순 업체 후보 / 업체 상세(평점·소개·지역·특화 분야) |
+| `POST/GET /quote-requests`, `GET /quote-requests/{request_id}` | 구현됨 | 요청서 생성 본문 / 없음 | 역할별 요청서 목록·상세, 요청서 사진 Signed URL, 제안서(요청인 전체·업체 본인 것만) |
+| `POST /quote-requests/{request_id}/proposals`, `.../accept`, `.../cancel` | 구현됨 | 제안 가격 범위·메모 / 없음 | 제안서 제출, 1건 수락과 나머지 마감, 요청서 취소 |
 | `GET /chat/rooms`, `POST /chat/rooms` | 구현됨 | 생성 시 `provider_id`, `record_id?` | 채팅방 목록(방별 `unread_count` 포함) 또는 생성·재사용된 방(하자 요약 자동 공유) |
 | `POST /chat/rooms/{room_id}/read` | 구현됨 | 없음 | 읽음 시각과 남은 미읽음 수 |
 | `GET /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/messages` | 구현됨 | 조회 `limit`·`offset` / 전송 `client_message_id`, `content` | 채팅 메시지 페이지 또는 저장된 메시지 |

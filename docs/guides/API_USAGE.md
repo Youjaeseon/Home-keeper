@@ -138,13 +138,13 @@ curl -s "http://127.0.0.1:8000/records/$RECORD_ID"   -H "Authorization: Bearer $
 
 두 장을 보낼 때는 `photos`와 `photo_roles`를 각각 두 번 보내고 역할을 `overview`, `closeup`으로 구분합니다. 사진 수와 역할 수가 같아야 하며 역할은 중복될 수 없습니다. JPEG·PNG·HEIC·HEIF, 한 장당 10MB 이하만 허용합니다.
 
-샘플 모드의 응답과 `GET /records/{record_id}`의 `photo_observations`에는 `source="sample"`, `applied=false`, 사진 상태 `not_analyzed`, `detections=[]`, `vision_observation=null`이 들어갑니다. 탐지 좌표·신뢰도는 만들지 않으며 원본 사진은 DB·로그에 저장하지 않습니다. 진단의 `source`도 `sample`이고, 심각도·추정 원인·해결방안·재발 방지책은 입력값만 사용한 참고용 결과입니다. 입력이 실제로 바뀌면 `input_revision`이 오르고 `diagnosis_generation`이 증가하며, 분석 중 입력이 바뀌면 409를 반환합니다.
+샘플 모드의 응답과 `GET /records/{record_id}`의 `photo_observations`에는 `source="sample"`, `applied=false`, 사진 상태 `not_analyzed`, `detections=[]`, `vision_observation=null`이 들어갑니다. 탐지 좌표·신뢰도는 만들지 않으며 원본 사진은 DB·로그에 저장하지 않습니다. Storage가 설정되면 비공개 버킷에 리사이즈 JPEG로 저장하고 상세의 `photos`로 단기 URL을 제공합니다. 진단의 `source`도 `sample`이고, 심각도·추정 원인·해결방안·재발 방지책은 입력값만 사용한 참고용 결과입니다. 입력이 실제로 바뀌면 `input_revision`이 오르고 `diagnosis_generation`이 증가하며, 분석 중 입력이 바뀌면 409를 반환합니다.
 
 실제 사진 분석 시 `photo_analysis.applied=true`이고 사진별 상태는 `analyzed` 또는 `failed`, 출처는 `yolo`, `yolo_sam`, `vision_llm` 중 하나입니다. 사진마다 출처가 섞이면 최상위 `photo_analysis.source`와 응답 `source`가 `yolo_vision_llm`입니다. `detections` 항목은 `object_id`, `class_id`, `label`, `raw_label`, `confidence`, `bbox`(원본 기준 반열린 xyxy), `image_size`([너비, 높이]), `area_ratio`(0~1, 이미지 전체 면적 대비 화면 점유 비율), `source=yolo`, `segmentation_status`, `mask`를 포함합니다. `mask`는 null 또는 `encoding=coco_rle`, `size`([높이, 너비]), `counts`, 시각화용 `svg_path`, 원본 기준 반열린 `bounds`(left/top/right/bottom), `source=sam-3.1`입니다. RLE는 bounds 영역에 맞춰 배치합니다.
 
 라벨은 `crack`→`균열`, `paint_peel`/`peeling`→`벗겨짐`, `mold`/`mould`→`곰팡이`로 정규화하고 원본 클래스명은 `raw_label`에 남깁니다. 미등록 라벨은 원문을 유지합니다. `area_ratio`는 SAM 마스크가 있으면 마스크 픽셀 비율(bounds 스케일 반영), 없으면 bbox 면적 비율입니다.
 
-분할 상태는 `completed`, `no_mask`, `failed`, `unavailable`(키 미설정), `skipped_no_consent`입니다. SAM 실패 시 YOLO 결과는 보존합니다. 사진당 최대 16개를 탐지합니다. 실제 이미지 디코딩 실패 또는 2,500만 픽셀 초과는 `422`입니다. 사진별 비전 LLM 호출 실패·판독 불가는 `status="failed"`로 남기고 전체 분석과 텍스트 진단은 계속합니다. 원본은 저장하지 않으며 외부 전송에는 동의가 필요합니다.
+분할 상태는 `completed`, `no_mask`, `failed`, `unavailable`(키 미설정), `skipped_no_consent`입니다. SAM 실패 시 YOLO 결과는 보존합니다. 사진당 최대 16개를 탐지합니다. 실제 이미지 디코딩 실패 또는 2,500만 픽셀 초과는 `422`입니다. 사진별 비전 LLM 호출 실패·판독 불가는 `status="failed"`로 남기고 전체 분석과 텍스트 진단은 계속합니다. 원본은 DB·로그에 저장하지 않으며, Storage가 설정되면 비공개 버킷에 저장합니다. 외부 전송에는 동의가 필요합니다.
 
 진단 모델이 설정된 경우 저장된 사진 관찰 요약(라벨·신뢰도 %·개수·화면 점유 비율)과 마스킹한 위치·재질·증상, DB 작업 종류로 구조화 진단을 생성합니다. 원시 bbox·COCO RLE·`svg_path`는 전송하지 않습니다. 진단 호출·형식 오류는 `502`, 제한 시간 초과는 `504`이며 기존 결과를 유지합니다.
 
@@ -167,6 +167,51 @@ curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/diagnosis?regenerate=t
 모바일은 `apps/mobile/src/app/analyze.tsx`에서 프로필 지역을 기본 선택한 `분석 지역 확인` 카드로 지역을 확인·선택하고(변경 시 프로필 지역도 함께 저장 가능), 사진 선택·입력·동의를 받아 기록 생성 후 분석을 호출합니다. `apps/mobile/src/app/result/[recordId].tsx`에서 저장된 결과를 다시 조회해 표시합니다. `regenerateDiagnosis` 함수가 진단 재생성 API를 호출합니다. FormData 전송 시 `Content-Type`을 직접 지정하지 않아 fetch가 boundary를 설정합니다.
 
 `POST /records/{record_id}/next-question`는 현재 서버의 입력과 대화만 사용하며, 클라이언트가 사용자 ID나 대화 전체를 다시 보내지 않습니다. 질문·선택지는 서버가 `source="sample"`로 표시해 반환합니다. 실제 LLM이 아니라 아래 두 질문을 사용하는 시연 규칙입니다.
+
+## 하자 사진 Storage
+
+Storage 서버 키가 설정되면 `POST /records/{record_id}/analyze`가 사진을 긴 변 1600px·EXIF 제거 JPEG로 비공개 버킷에 저장하고 `records.photo_files`에 경로·크기를 남깁니다. `GET /records/{record_id}`의 `photos`는 소유자에게만 발급한 단기 Signed URL(`expires_at`, `role`, `width`, `height`)입니다. `GET /quote-requests`·상세도 요청인·참여 업체 권한을 확인한 뒤 요청서 사진 스냅샷의 Signed URL을 반환합니다.
+
+```bash
+# 비공개 버킷은 Supabase 대시보드 Storage에서 만들거나 SQL로 생성합니다.
+# insert into storage.buckets (id, name, public)
+# values ('defect-photos', 'defect-photos', false)
+# on conflict (id) do nothing;
+```
+
+서버 환경변수는 `SUPABASE_STORAGE_BUCKET`(기본 `defect-photos`), `SUPABASE_STORAGE_KEY`(없으면 `SUPABASE_SERVICE_ROLE_KEY` 폴백), `STORAGE_SIGNED_URL_TTL_SECONDS`(기본 300초)입니다. 키가 없으면 업로드·서명을 생략하고 `photo_files=[]`, `photos=[]`로 동작합니다. 서버 키는 앱 번들·로그·응답에 넣지 않습니다. 업로드 후 DB 충돌이 나면 방금 올린 객체를 best-effort 삭제합니다.
+
+## 견적 요청서·제안서·수락
+
+```bash
+# 요청서 공개 (요청인 토큰)
+REQUEST_ID=$(curl -s -X POST http://127.0.0.1:8000/quote-requests \
+  -H "Authorization: Bearer $REQUESTER_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"record_id\":\"$RECORD_ID\",\"region_id\":\"$REGION_ID\",\"work_type_id\":\"$WORK_TYPE_ID\",\"memo\":\"방문 견적 부탁드려요\"}" \
+  | jq -r '.request_id')
+
+# 역할별 목록/상세
+curl -s http://127.0.0.1:8000/quote-requests -H "Authorization: Bearer $TOKEN"
+curl -s "http://127.0.0.1:8000/quote-requests/$REQUEST_ID" -H "Authorization: Bearer $TOKEN"
+
+# 업체 제안서 (업체 토큰)
+curl -s -X POST "http://127.0.0.1:8000/quote-requests/$REQUEST_ID/proposals" \
+  -H "Authorization: Bearer $PROVIDER_TOKEN" -H "Content-Type: application/json" \
+  -d '{"min_price":150000,"max_price":300000,"memo":"현장 확인 후 진행합니다."}'
+
+# 요청인 수락/취소
+curl -s -X POST "http://127.0.0.1:8000/quote-requests/$REQUEST_ID/proposals/$PROPOSAL_ID/accept" \
+  -H "Authorization: Bearer $REQUESTER_TOKEN"
+curl -s -X POST "http://127.0.0.1:8000/quote-requests/$REQUEST_ID/cancel" \
+  -H "Authorization: Bearer $REQUESTER_TOKEN"
+```
+
+- 요청서 생성은 요청인 전용(업체 `422`)이며 진단이 필요합니다(`409 diagnosis_required`). 같은 기록의 `open` 요청서는 1건만 허용합니다(`409 request_already_open`).
+- 지역은 요청값 → 기록 지역 → 프로필 지역, 작업 종류는 요청값 → 진단 추천 → `원인 점검` 순으로 보완합니다. 발행 시점 `photo_files`·`severity_score`·`severity_level`·`suspected_types`를 스냅샷 저장합니다.
+- 요청인은 모든 제안서를 보고, 업체는 지역·특화 분야가 모두 맞는 `open` 요청서와 본인이 제안서를 보낸 요청서만 조회합니다. 상세에서도 업체는 본인 제안서만 보며 경쟁 견적 수는 노출되지 않습니다. 비권한·타 지역·타 분야는 `404`입니다.
+- 제안서는 업체당 1건, 가격 `min_price ≤ max_price`, 메모 1~2000자입니다. 마감·취소 요청서 제출은 `409`, 중복 제안은 `409 proposal_already_exists`입니다.
+- 수락은 요청인 본인만 가능하며 대상 제안서 `accepted`, 나머지 대기 제안서 `rejected`, 요청서 `accepted`로 원자 처리합니다. 동시 수락 중 한 건만 성공합니다. 취소는 요청서를 `cancelled`로 바꾸고 대기 제안서를 `rejected`로 마감합니다.
+- `POST /chat/rooms`는 수락 전에도 그대로 사용할 수 있습니다. `POST /records/{record_id}/drafts/provider`는 요청서 메모·첫 문의 보조용으로 유지합니다.
 
 ## 요청문·업체 검색·1:1 채팅
 
@@ -328,8 +373,8 @@ curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/next-question" \
 - 마이그레이션은 로컬 개발을 위해 `auth.users(id)` 스텁을 만들 수 있게 했습니다. Supabase에서는 기존 테이블이 그대로 쓰입니다.
 - Supabase의 런타임 DB 연결·RLS·Data API 권한 회수와 ES256 JWKS 조회를 확인했습니다. 실제 사용자 로그인 토큰을 이용한 전체 인증 흐름은 아직 검증하지 않았습니다. 통합 테스트는 로컬 PostgreSQL과 HS256 토큰으로 실행합니다. `005_next_question_grants.sql`은 Home Keeper에 적용했고 적용 이력과 질문 INSERT/UPDATE 권한을 확인했습니다.
 - `POST /records/{record_id}/analyze`는 사진과 입력을 multipart로 받아 사진 관찰과 구조화 진단을 저장합니다. YOLO·SAM·비전 LLM 보조 관찰과 텍스트 진단을 분리하고, 원본 사진은 저장하지 않습니다. 입력 스냅샷으로 결과를 만든 뒤 저장 직전에 `input_revision`을 재확인하고, 사진 관찰 상태·진단 결과와 `diagnosis_generation`을 같은 트랜잭션에 저장합니다. `POST /records/{record_id}/diagnosis`는 입력 버전이 같은 진단을 재사용하거나 재생성하며, 실패 시 기존 진단을 보존합니다.
-- 회원 프로필 API·화면, 거주 형태, 내 기록 목록과 과거 결과 재열람, 주거 지원 사업 소식지 백엔드(목록·상세·검증 시드·보조금24 수동 동기화), 요청문 생성·기본 양식, 업체 검색, 1:1 채팅 REST·WebSocket·방별 미읽음 수 백엔드는 구현했습니다. 소식지·요청문·채팅 모바일 화면, 사진 원본 비공개 스토리지, 실제 업체·계정 데이터, 회원가입 화면과 4개 탭은 아직 구현하지 않았습니다. 업체 목록·상세·평점과 업체 계정 홈 분기는 구현했고, 용인 실제 업체 시드는 팀 확인 자료 대기 상태입니다. 사진 원본 Storage, 소식지 주기 동기화, 견적 요청서·제안서·수락은 확정 설계만 있고 코드는 없습니다. 현재 `next-question` 코드의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 처리하는 레거시/보류 구현이며, 변경된 MVP의 지원 하자 유형은 `균열·벗겨짐·곰팡이`, 시연 지역은 `용인`입니다.
-- `records.material`(`006`), `profiles`·용인 지역 시드(`007`), 지역 상하 관계·지원 사업(`008`), 검증 시드(`009`), 업체 계정·채팅·작업 종류 시드(`010`), 채팅 읽음 시각(`011`), 기록 지역 스냅샷(`012`), 업체 상세·평점(`013`), 용인 시드 템플릿(`014`)은 로컬 테스트 DB에 적용해 검증했습니다(006–009는 로컬 개발 DB에도 적용). Home Keeper의 006–014 적용 여부는 관리자 접근으로 별도 확인해야 합니다.
+- 회원 프로필 API·화면, 거주 형태, 내 기록 목록과 과거 결과 재열람, 주거 지원 사업 소식지 백엔드(목록·상세·검증 시드·보조금24 수동 동기화), 요청문 생성·기본 양식, 업체 검색·상세·평점, 1:1 채팅 REST·WebSocket·방별 미읽음 수, 비공개 Storage 사진과 견적 요청서·제안서·수락 백엔드·모바일 흐름은 구현했습니다. 소식지·요청문·채팅 모바일 화면, 실제 업체·계정 데이터, 회원가입 화면과 4개 탭은 아직 구현하지 않았습니다. 용인 실제 업체 시드는 팀 확인 자료 대기 상태이며, 소식지 주기 동기화는 확정 설계만 있습니다. 현재 `next-question` 코드의 시연 규칙은 곰팡이 의심 창가 얼룩의 두 질문만 처리하는 레거시/보류 구현이며, 변경된 MVP의 지원 하자 유형은 `균열·벗겨짐·곰팡이`, 시연 지역은 `용인`입니다.
+- `records.material`(`006`), `profiles`·용인 지역 시드(`007`), 지역 상하 관계·지원 사업(`008`), 검증 시드(`009`), 업체 계정·채팅·작업 종류 시드(`010`), 채팅 읽음 시각(`011`), 기록 지역 스냅샷(`012`), 업체 상세·평점(`013`), 용인 시드 템플릿(`014`), 사진 경로·견적 요청서·제안서(`015`)는 로컬 테스트 DB에 적용해 검증했습니다(006–009는 로컬 개발 DB에도 적용). Home Keeper의 006–015 적용 여부는 관리자 접근으로 별도 확인해야 합니다.
 - 요청문 생성은 `app/llm.py`의 OpenAI 호환 Chat Completions 호출만 사용하고, 외부 모델에는 기록의 하자 입력·진단 결과만 보냅니다. 프로필 개인정보는 보내지 않고 증상 메모의 이메일·휴대전화 번호는 제거합니다. 프롬프트·응답·요청 본문은 로그에 남기지 않습니다. 실제 키 호출은 검증하지 않았고 테스트는 고정 응답을 사용합니다. 증상 메모 원문을 외부 모델 입력으로 계속 사용할지와 동의·고지 방식은 팀 회의 전 미확정이며, 현재 동작은 유지합니다.
 - 채팅은 FastAPI REST와 인증된 WebSocket(`/chat/ws`)을 제공합니다. 방별 미읽음 수와 읽음 처리를 구현했고, 읽음 시점은 방 이력 조회 직후입니다. 푸시 알림은 추가하지 않았습니다. `records/messages`(AI 추가 질문)와 `chat_messages`(업체 채팅)는 별도 테이블입니다.
 - 보조금24 동기화는 실제 `GOV24_API_KEY`로 `serviceList` 10,891건을 조회하고 주거 제목 필터·지역 확정 후 41건을 로컬 개발 DB에 upsert하는 것까지 확인했습니다. Home Keeper에는 008·009 마이그레이션이 없어 실제 Supabase 동기화는 아직 실행하지 못했습니다. 운영 응답의 주거 키워드·지역명·기한 문구는 첫 적용 후 계속 점검해야 합니다.

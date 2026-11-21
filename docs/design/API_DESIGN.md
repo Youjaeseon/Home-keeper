@@ -4,7 +4,7 @@
 
 ## 문서 범위
 
-현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 구조화 진단 생성·재생성(`POST /records/{record_id}/diagnosis`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색·상세(`GET /work-types`, `GET /providers`, `GET /providers/{provider_id}`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/read`, WebSocket `/chat/ws`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
+현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 구조화 진단 생성·재생성(`POST /records/{record_id}/diagnosis`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색·상세(`GET /work-types`, `GET /providers`, `GET /providers/{provider_id}`), 견적 요청서·제안서(`POST/GET /quote-requests`, `GET /quote-requests/{request_id}`, `POST .../proposals`, `.../accept`, `.../cancel`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/read`, WebSocket `/chat/ws`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
 
 사진 관찰과 텍스트 진단은 2단계로 구현했다. 실시간 채팅은 WebSocket과 방별 미읽음 수 표시로 백엔드에 구현했다. 진단 신뢰도 필드는 정의가 정해지지 않아 구현하지 않았다. 요청문 생성은 서버에서 단일 LLM 제공사(OpenAI 호환 Chat Completions)를 사용한다. 실행 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 호출 예시와 구현 메모는 [API 사용 가이드](../guides/API_USAGE.md)를 따른다.
 
@@ -13,7 +13,7 @@
 2026년 11월 19일 MVP 구현에서 아래를 확정했다.
 
 - `POST /records`는 201과 `record_id`, `input_revision`(최초 0)을 반환한다.
-- `GET /records/{record_id}`는 저장된 입력(`location`, `material`, `symptoms`, `region_id`, `region_name`, `photo_observations`)과 `diagnosis`, `drafts`의 생성 당시 버전 및 `is_current`를 반환한다. *(구현본에는 레거시 `questions`, `messages`, `next_question` 필드도 함께 포함된다.)*
+- `GET /records/{record_id}`는 저장된 입력(`location`, `material`, `symptoms`, `region_id`, `region_name`, `photo_observations`, `photos`)과 `diagnosis`, `drafts`의 생성 당시 버전 및 `is_current`를 반환한다. *(구현본에는 레거시 `questions`, `messages`, `next_question` 필드도 함께 포함된다.)*
 - `PATCH /records/{record_id}`는 `location`·`material`·`symptoms`·`region_id`를 받고 `input_revision`을 요구하지 않는다. 실제 값이 바뀔 때만 버전을 올리며, 명시한 `null`은 값을 지운다. `region_id`는 `regions`에 존재해야 한다.
 - `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·분석 지역·외부 분석 동의(기본 `true`)를 multipart로 받아 사진 관찰과 구조화 진단을 저장한다. `region_id`를 생략하면 기존 기록 또는 프로필 거주 지역을 스냅샷으로 저장한다. 두 모델 경로가 모두 미설정이면 샘플 모드다. 자세한 계약은 아래 일괄 분석 섹션을 따른다.
 - `POST /records/{record_id}/diagnosis`는 `regenerate=false`이고 진단 입력 버전이 현재 입력과 같으면 모델을 호출하지 않고 기존 진단을 반환한다. 재생성은 `regenerate=true`이며 실패 시 기존 진단을 유지한다.
@@ -162,7 +162,7 @@
 ```
 
 - **샘플 모드의 의미**: 두 모델 경로가 모두 미설정일 때만 `photo_analysis.applied=false`, 사진 상태 `not_analyzed`, `detections=[]`다. 관찰 요약·심각도·원인은 입력값만 사용한 참고용 샘플이며, 응답·진단의 `source`와 화면 안내로 실제 분석이 아님을 표시한다.
-- **입력과 버전**: 제출한 `location`·`material`·`symptoms`·`region_id`가 실제로 달라지면 `input_revision`을 1 올리고 `diagnosis_generation`을 증가시킨다. 같은 입력이면 버전은 유지하고 생성 번호만 증가한다. 분석 중 다른 입력 변경이 발생하면 아무것도 저장하지 않고 `409`(`revision_conflict`)와 현재 `input_revision`을 반환한다. 사진 원본은 DB·로그에 저장하지 않는다. 원본 사진의 비공개 Storage 보관은 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md)에 따라 구현 예정이다.
+- **입력과 버전**: 제출한 `location`·`material`·`symptoms`·`region_id`가 실제로 달라지면 `input_revision`을 1 올리고 `diagnosis_generation`을 증가시킨다. 같은 입력이면 버전은 유지하고 생성 번호만 증가한다. 분석 중 다른 입력 변경이 발생하면 아무것도 저장하지 않고 `409`(`revision_conflict`)와 현재 `input_revision`을 반환한다. 원본 사진은 DB·로그에 저장하지 않고, Storage가 설정되면 비공개 버킷에 리사이즈 JPEG로 저장한다([ADR 0002](../adr/0002-private-storage-for-defect-photos.md)). 기록 상세의 `photos`는 단기 Signed URL 목록이다.
 - **판단 보류**: 사진 흔적·비전 관찰·증상이 모두 없거나 모델이 근거 부족으로 `severity_score=null`을 반환하면 `severity_score=null`, `severity_level="undetermined"`, `suspected_types=[]`, 권장 대응 `inspection` 또는 `provider_consult`, `원인 점검` 작업으로 저장한다. `self_care`가 오면 `inspection`으로 보정한다.
 - **심각도·용어·작업 검증**: 유효한 심각도는 서버가 `low`(0~39)·`medium`(40~69)·`high`(70~100)로 강제 정규화한다. 의심 유형은 `크랙`→`균열`, `박리`→`벗겨짐`으로 정규화한다. 작업 ID·이름이 DB `work_types`와 일치할 때만 저장하고 미일치·복합 원인은 `원인 점검`으로 폴백한다.
 - **진단 실패**: `LLM_API_KEY`가 있는데 진단 호출·JSON 검증이 실패하면 `502`(`llm_error`), 제한 시간 초과는 `504`(`llm_timeout`)이며 기존 저장 결과를 유지한다. `YOLO_MODEL_PATH`만 있고 `LLM_API_KEY`가 없으면 `503`(`llm_unavailable`)이다.
@@ -180,14 +180,35 @@
 - **응답**: `record_id`, `input_revision`, `diagnosis_generation`, `diagnosis`, `source`(`llm` | `sample`).
 - **오류**: 모델 키 미설정은 기존 진단이 있어도 항상 `503`(`llm_unavailable`), 호출·형식 오류 `502`(`llm_error`), 제한 시간 초과 `504`(`llm_timeout`). 실패 시 기존 진단은 유지된다.
 
-## 2~4단계 API 설계 (구현 예정)
+## 하자 사진 Storage (구현 완료)
 
-이번 세션에는 코드·마이그레이션을 추가하지 않았다.
+- 하자 사진은 `SUPABASE_STORAGE_BUCKET`(기본 `defect-photos`) **비공개** 버킷에 `{owner_id}/{record_id}/{role}_{uuid}.jpg` 경로로 저장한다.
+- 서버는 리사이즈(긴 변 1600px)·EXIF 제거 JPEG를 업로드하고 `records.photo_files`에 `role`, `storage_path`, `width`, `height`를 남긴다.
+- `GET /records/{record_id}`는 기록 소유자에게만 `photos: [{role, url, expires_at, width, height}]`를 반환한다. URL은 `STORAGE_SIGNED_URL_TTL_SECONDS`(기본 300초) 단기 Signed URL이다.
+- `GET /quote-requests`, `GET /quote-requests/{request_id}`도 요청서 `photo_files` 스냅샷의 Signed URL을 **권한 확인 후** 반환한다.
+- `SUPABASE_STORAGE_KEY`(또는 `SUPABASE_SERVICE_ROLE_KEY`)가 없으면 업로드·서명을 생략하고 `photo_files=[]`, `photos=[]`로 동작한다. 서버 키는 모바일·로그·응답에 노출하지 않는다.
+- 업로드 후 DB 저장이 실패·충돌하면 방금 업로드한 객체를 best-effort 삭제한다. 재분석 시 이전 `photo_files` 객체는 기존 요청서가 참조할 수 있어 삭제하지 않는다.
 
-- **사진 Storage**: 비공개 버킷 업로드와 소유권 확인 후 단기 Signed URL 발급. 사진 경로는 기록 소유자와 연결한다.
-- **소식지 주기 동기화**: 보조금24 동기화를 수동 명령에서 주기 실행으로 확장한다. 페이지네이션은 구현 완료다.
-- **업체 평점·상세**: 3단계에서 `GET /providers/{provider_id}`와 평점·리뷰 수 컬럼을 구현했다. 향후 평점은 수락·완료된 매칭 리뷰에서만 갱신한다.
-- **견적 요청서·제안서·수락**: 요청서 생성·목록·상세, 업체 제안서 제출, 요청인의 1건 수락 API를 추가한다. 지역·작업 종류가 맞는 업체에 공개하며 수락 시 나머지 제안을 종료한다.
+## 견적 요청서·제안서·수락 (구현 완료)
+
+| API | 역할 | 동작 |
+| --- | --- | --- |
+| `POST /quote-requests` | 요청인 | 본인 기록을 1:N 공개 요청서로 등록한다. 진단 없으면 `409 diagnosis_required`, 같은 기록의 진행 중 요청서가 있으면 `409 request_already_open` |
+| `GET /quote-requests` | 공통 | 요청인은 본인 요청서 최신순, 업체는 지역·특화 분야가 모두 맞는 진행 중 요청서 + 본인이 제안서를 보낸 요청서만 조회 |
+| `GET /quote-requests/{request_id}` | 공통 | 요청인 본인·매칭 업체·제안 참여 업체만 조회. 요청인은 모든 제안서, 업체는 본인 제안서만 노출 |
+| `POST /quote-requests/{request_id}/proposals` | 업체 | 지역·특화 분야 매칭과 `open` 상태를 잠금 하에 확인하고 업체당 1건 제안 |
+| `POST /quote-requests/{request_id}/proposals/{proposal_id}/accept` | 요청인 | 수락 1건 + 나머지 `rejected` + 요청서 `accepted`를 원자 처리 |
+| `POST /quote-requests/{request_id}/cancel` | 요청인 | 요청서 `cancelled` + 대기 제안서 `rejected` |
+
+- 요청서 생성 시 지역은 요청값 → 기록 지역 → 프로필 지역, 작업 종류는 요청값 → 진단 추천 → `원인 점검` 순으로 결정한다. 위치는 기록에서 필수, 메모는 요청값 또는 증상 메모를 쓴다.
+- 사진 경로와 `severity_score`·`severity_level`·`suspected_types`는 발행 시점 스냅샷으로 저장한다.
+- 상태는 요청서 `open`/`accepted`/`cancelled`, 제안서 `pending`/`accepted`/`rejected`다. DB 부분 유일 인덱스로 요청서당 공개 1건·수락 1건, 복합 유일 제약으로 업체당 제안 1건을 강제한다.
+- 매칭 업체·제안 업체가 아니거나 다른 요청인은 `404`다. 업체는 여전히 원본 기록·프로필 API에 접근할 수 없다. 수락 전에도 `POST /chat/rooms`로 1:1 채팅을 열 수 있다.
+- `POST /records/{record_id}/drafts/provider`는 삭제하지 않고 요청서 메모·채팅 첫 문의 보조용으로 유지한다.
+
+## 이후 남은 설계
+
+- 소식지 보조금24 동기화를 수동 명령에서 주기 실행으로 확장한다. 나머지 4단계 항목은 구현 완료다.
 
 ## 요청문 (`landlord`, `provider`, 구현 완료)
 
@@ -350,7 +371,7 @@
 - `GET`·`PUT /me/profile`의 `provider_id`는 `providers.account_user_id`가 현재 사용자와 연결된 경우 업체 UUID, 요청인이면 `null`이다. `PUT` 요청 본문에서 `role`/`provider_id`를 지정할 수 없다(`422`).
 - `013_provider_details.sql`이 평점·리뷰·소개·주소·영업시간·경력을 추가한다. `014_yongin_provider_seed.sql`은 팀 확인 자료가 없어 실제 업체 행을 넣지 않고, 공식 출처 확인 후 채울 idempotent 템플릿만 둔다. 앱은 `is_sample=true`일 때 시연 안내를 표시한다.
 
-## 업체–요청인 1:1 채팅## 업체–요청인 1:1 채팅 (`/chat/*`, 구현 완료)
+## 업체–요청인 1:1 채팅 (`/chat/*`, 구현 완료)
 
 방 생성·목록·이력 조회·메시지 저장·읽음 처리는 FastAPI REST API, 실시간 수신은 인증된 FastAPI WebSocket으로 구현했다. 푸시 알림은 추가하지 않는다. 읽음 시점은 **앱이 채팅방에 들어가 메시지 이력을 받은 직후**로 정했다. 앱은 화면에 표시한 마지막 메시지까지 읽음 처리하고, 서버는 그 시각을 저장한다. 같은 계정의 다른 기기도 같은 서버 읽음 상태를 공유한다.
 

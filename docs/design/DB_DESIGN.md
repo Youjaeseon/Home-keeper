@@ -6,7 +6,7 @@
 
 아래 구현 확정 사항은 현재 마이그레이션(`001`–`011`)에 반영된 내용이다.
 
-2026년 11월 20일 팀 회의 변경 사항을 반영해 `records.material`, 샘플 일괄 분석 결과 저장, 회원 프로필(`profiles`), 지역 상하 관계(`regions.parent_id`), 주거 지원 사업 소식지(`support_programs`)와 검증 시드, 업체 계정 연결(`providers.account_user_id`), 요청인–업체 1:1 채팅(`chat_rooms`, `chat_messages`)과 방별 읽음 시각(`011`), 기록 지역 스냅샷(`012`), 업체 상세·평점(`013`), 작업 종류 시드를 구현했다. 용인 실제 업체는 팀 확인 자료가 없어 `014` 템플릿만 두었다. 실제 업체 데이터와 보조금24 동기화 운영 데이터는 팀 확인·운영 작업이 남아 있다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행·마이그레이션 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md)를 따른다.
+2026년 11월 20일 팀 회의 변경 사항을 반영해 `records.material`, 샘플 일괄 분석 결과 저장, 회원 프로필(`profiles`), 지역 상하 관계(`regions.parent_id`), 주거 지원 사업 소식지(`support_programs`)와 검증 시드, 업체 계정 연결(`providers.account_user_id`), 요청인–업체 1:1 채팅(`chat_rooms`, `chat_messages`)과 방별 읽음 시각(`011`), 기록 지역 스냅샷(`012`), 업체 상세·평점(`013`), 견적 요청서·제안서와 사진 Storage 경로(`015`), 작업 종류 시드를 구현했다. 용인 실제 업체는 팀 확인 자료가 없어 `014` 템플릿만 두었다. 실제 업체 데이터와 보조금24 동기화 운영 데이터는 팀 확인·운영 작업이 남아 있다. 기존 마이그레이션으로 구현된 `questions`·`messages` 테이블과 `records.next_question_*` 컬럼은 분석 채팅창 제거 결정에 따라 **현재 MVP 미사용(보류/레거시)**으로 유지한다. 적용 SQL은 [마이그레이션](../../apps/api/migrations/), 실행·마이그레이션 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -25,13 +25,15 @@
 | 테이블 | 상태 | 주요 컬럼 |
 | --- | --- | --- |
 | `profiles` | 구현됨 (`007`) | `user_id uuid PK/FK auth.users(id)`, `nickname text NOT NULL`, `role text NOT NULL`, `region_id uuid NOT NULL FK regions(id)`, `address text NULL`, `housing_type text NOT NULL`, `created_at timestamptz`, `updated_at timestamptz` |
-| `records` | 구현됨 (`material`, 지역 스냅샷 `012`) | `id uuid PK`, `owner_id uuid`, `region_id uuid NULL FK regions(id)`, `location text`, `material text NULL`, `symptoms text`, `photo_observations jsonb`, `input_revision bigint`, `next_question_result jsonb` *(레거시)*, `next_question_revision bigint` *(레거시)*, `diagnosis jsonb`, `diagnosis_revision bigint`, `diagnosis_generation bigint`, `landlord_draft text`, `landlord_draft_revision bigint`, `landlord_draft_diagnosis_generation bigint`, `provider_draft text`, `provider_draft_revision bigint`, `provider_draft_diagnosis_generation bigint`, `conversation_sequence bigint` *(레거시)*, `created_at timestamptz`, `updated_at timestamptz` |
+| `records` | 구현됨 (`material`, 지역 스냅샷 `012`, 사진 `015`) | `id uuid PK`, `owner_id uuid`, `region_id uuid NULL FK regions(id)`, `photo_files jsonb NOT NULL DEFAULT '[]'`, `location text`, `material text NULL`, `symptoms text`, `photo_observations jsonb`, `input_revision bigint`, `next_question_result jsonb` *(레거시)*, `next_question_revision bigint` *(레거시)*, `diagnosis jsonb`, `diagnosis_revision bigint`, `diagnosis_generation bigint`, `landlord_draft text`, `landlord_draft_revision bigint`, `landlord_draft_diagnosis_generation bigint`, `provider_draft text`, `provider_draft_revision bigint`, `provider_draft_diagnosis_generation bigint`, `conversation_sequence bigint` *(레거시)*, `created_at timestamptz`, `updated_at timestamptz` |
 | `support_programs` | 구현됨 (`008`·`009`) | `id uuid PK`, `external_id text UNIQUE NOT NULL`, `source text`(`seed`/`gov24_api`), `title`, `summary`, `organization_name`, `region_scope`(`national`/`local`), `region_id uuid NULL FK regions(id)`, `target_housing_types text[]`, `support_target`, `support_content`, `selection_criteria`, `apply_method`, `deadline_text`, `deadline_date date NULL`, `deadline_kind`(`fixed`/`always_open`/`unknown`), `detail_url`, `source_attribution`, `source_checked_at`, `synced_at`, `created_at`, `updated_at` |
 | `providers` | 구현됨 (`010` 계정 연결, `013` 상세·평점) | `id uuid PK`, `name text NOT NULL`, `phone text NOT NULL`, `rating numeric(2,1) NOT NULL DEFAULT 0.0`, `review_count integer NOT NULL DEFAULT 0`, `description text NULL`, `address text NULL`, `business_hours text NULL`, `career_years integer NULL`, `account_user_id uuid NULL FK auth.users(id)` (`010`, NULL 제외 유일 인덱스) |
 | `regions` | 구현됨 (`008`에서 상하 관계 추가) | `id uuid PK`, `name text NOT NULL UNIQUE`, `display_name text NOT NULL`, `parent_id uuid NULL FK regions(id)` |
 | `work_types` | 구현됨 | `id uuid PK`, `name text NOT NULL UNIQUE` |
 | `provider_regions` | 구현됨 | `provider_id uuid FK`, `region_id uuid FK` |
 | `provider_work_types` | 구현됨 | `provider_id uuid FK`, `work_type_id uuid FK` |
+| `quote_requests` | 구현됨 (`015`) | `id uuid PK`, `record_id uuid FK records(id)`, `requester_id uuid FK auth.users(id)`, `region_id uuid FK regions(id)`, `work_type_id uuid FK work_types(id)`, `address text NULL`, `location text NOT NULL`, `material text NULL`, `memo text NULL`, `photo_files jsonb`, `severity_score integer NULL`, `severity_level text NULL`, `suspected_types text[]`, `status text`(`open`/`accepted`/`cancelled`), `accepted_proposal_id uuid NULL FK quote_proposals(id)`, `accepted_at timestamptz NULL`, `created_at`, `updated_at` |
+| `quote_proposals` | 구현됨 (`015`) | `id uuid PK`, `request_id uuid FK quote_requests(id)`, `provider_id uuid FK providers(id)`, `min_price integer`, `max_price integer`, `memo text`, `status text`(`pending`/`accepted`/`rejected`), `created_at`, `updated_at` |
 | `chat_rooms` | 구현됨 (`010`, 읽음 시각 `011`) | `id uuid PK`, `requester_id uuid NOT NULL FK auth.users(id)`, `provider_id uuid NOT NULL FK providers(id)`, `latest_record_id uuid NULL FK records(id)`, `last_message_at timestamptz NULL`, `requester_last_read_at timestamptz NULL`, `provider_last_read_at timestamptz NULL`, `created_at timestamptz`, `updated_at timestamptz` |
 | `chat_messages` | 구현됨 (`010`) | `id uuid PK`, `room_id uuid NOT NULL FK chat_rooms(id)`, `sender_id uuid NOT NULL FK auth.users(id)`, `sender_role text NOT NULL`, `message_type text NOT NULL`, `record_id uuid NULL FK records(id)`, `content text NOT NULL`, `payload jsonb NULL`, `client_message_id uuid NOT NULL`, `created_at timestamptz` |
 | `questions` | 기존 구현 (MVP 미사용/보류) | `id uuid PK`, `record_id uuid FK`, `sequence bigint`, `content text`, `options jsonb`, `answered boolean`, `input_revision bigint`, `created_at timestamptz` |
@@ -41,7 +43,7 @@
 
 `owner_id`는 Supabase Auth의 사용자 ID를 참조한다. 새 기록에는 위치·재질·증상·분석·생성 결과가 아직 없을 수 있다. 생성 결과가 없으면 해당 값과 생성에 사용한 버전은 NULL이다. 사진 관찰 결과(`photo_observations`)에는 사진별 역할, 분석 적용 여부, 관찰한 흔적·의심 유형(`크랙`, `벗겨짐`, `곰팡이`)·대략적인 위치를 저장한다. 원본 이미지 파일과 화면 표시 좌표는 영구 저장하지 않는다.
 
-샘플 일괄 분석은 `photo_observations`에 `source="sample"`, `applied=false`, 안내 문구, 사진별 역할과 `status="not_analyzed"`만 저장한다. 탐지 후보·신뢰도·bbox/좌표는 저장하지 않는다. `diagnosis`에는 구조화 진단과 `source="sample"`을 저장하고, `diagnosis_revision`은 입력 반영 후 버전, `diagnosis_generation`은 성공할 때마다 증가한 값을 기록한다. 원본 사진은 DB에 저장하지 않으며 FastAPI의 업로드 임시 파일은 성공·실패 모두 닫는다.
+샘플 일괄 분석은 `photo_observations`에 `source="sample"`, `applied=false`, 안내 문구, 사진별 역할과 `status="not_analyzed"`만 저장한다. 탐지 후보·신뢰도·bbox/좌표는 저장하지 않는다. `diagnosis`에는 구조화 진단과 `source="sample"`을 저장하고, `diagnosis_revision`은 입력 반영 후 버전, `diagnosis_generation`은 성공할 때마다 증가한 값을 기록한다. 원본 사진은 DB에 저장하지 않고, Storage 설정 시 비공개 버킷에 리사이즈 JPEG로 저장한다. FastAPI의 업로드 임시 파일은 성공·실패 모두 닫는다.
 
 `diagnosis` JSONB는 `observations`, `suspected_types`(의심 하자 유형 목록), `severity_score`(`0`~`100` 또는 `null`), `severity_level`(`low`, `medium`, `high`, `undetermined`), `reason`, `causes`, `estimation_notice`, `recommended_action`(`self_care`, `inspection`, `provider_consult`), `care_steps`, `supplies`, `prevention_tips`, `unknowns`, `work_type_id`(샘플에서 `null` 가능), `work_type_reason`, `source`를 포함한다.
 
@@ -108,11 +110,13 @@
   - `profiles`(구현 완료): `SELECT, INSERT, UPDATE`
   - `support_programs`(구현 완료): `SELECT, INSERT, UPDATE` (동기화 upsert용, DELETE 없음)
   - `chat_rooms`, `chat_messages`(구현 완료, `010`; 읽음 컬럼 `011`): `SELECT, INSERT, UPDATE` (DELETE 없음). `011`은 테이블 권한을 바꾸지 않으므로 기존 `UPDATE`로 읽음 시각을 갱신한다.
+  - `quote_requests`, `quote_proposals`(구현 완료, `015`): `SELECT, INSERT, UPDATE` (DELETE 없음). 요청서당 공개 1건·수락 1건, 업체당 제안 1건은 유일 인덱스·제약으로 강제한다.
   - `providers`(구현 완료): `SELECT`만. 상세·평점 컬럼(`013`)도 읽기만 가능하며, 계정 연결·평점 갱신은 관리자 SQL/향후 서버 절차로 수행한다.
 - 실시간 수신은 **FastAPI WebSocket**으로 확정했으므로 Supabase Data API(`authenticated`)에 채팅 테이블을 노출하지 않는다. 참여자 검사는 FastAPI가 REST와 WebSocket 인증 모두에서 수행한다. 푸시 알림은 추가하지 않는다.
 
 ## 제약과 인덱스
 
+- `quote_requests(record_id) WHERE status='open'` 부분 유일 인덱스, `(region_id, work_type_id, status, created_at DESC)`, `(requester_id, created_at DESC)` 인덱스를 둔다. `quote_proposals(request_id, provider_id)` 유일 제약과 `(request_id) WHERE status='accepted'` 부분 유일 인덱스로 수락 1건을 DB에서 강제한다.
 - `providers(rating DESC, review_count DESC, name, id)` 인덱스로 별점순 추천 정렬을 지원한다. `013_provider_details.sql`에서 추가했다.
 - `records(region_id)` 부분 인덱스(`WHERE region_id IS NOT NULL`)를 두어 향후 지역 기반 요청서 매칭을 지원한다. `012_records_region.sql`에서 추가했다.
 - `records(owner_id)` 및 `(owner_id, updated_at DESC)`에 인덱스를 두어 `내 정보`의 내 하자 분석 기록 목록 조회를 지원한다. `(owner_id, updated_at DESC)` 인덱스는 `007_profiles_and_regions.sql`에서 추가했다.
@@ -121,6 +125,7 @@
 - `regions(parent_id)` 인덱스로 상위 지역 조회를 지원한다. `008_support_programs.sql`에서 추가했다.
 - `chat_rooms(requester_id, provider_id)` 유일 제약과 `chat_rooms(requester_id, last_message_at DESC)`, `chat_rooms(provider_id, last_message_at DESC)` 인덱스를 둔다.
 - `chat_messages(room_id, client_message_id)` 유일 제약과 `chat_messages(room_id, created_at, id)` 인덱스를 둔다.
+- 사진 객체는 DB가 아니라 Supabase Storage 비공개 버킷(`defect-photos`)에 두고, `records.photo_files`에는 `role`·`storage_path`·`width`·`height`만 저장한다.
 - `work_types`는 `010`이 `곰팡이 제거`, `균열 보수`, `벽지·도장 보수`, `원인 점검`을 `ON CONFLICT (name) DO NOTHING`으로 시드한다. `014_yongin_provider_seed.sql`은 공식 출처로 확인한 용인 업체를 고정 UUID와 `ON CONFLICT (id) DO NOTHING`으로 입력하는 템플릿이며, 팀 확인 자료가 없어 실제 행은 넣지 않았다.
 - 업체와 지역, 업체와 작업 연결은 각각 두 ID를 복합 기본키로 사용하고, 지역 ID·작업 ID 역방향 인덱스를 유지한다.
 - *(레거시/보류)* `messages(record_id, client_message_id)`, `questions(record_id, sequence)`, `messages(record_id, sequence)` 및 `(record_id, question_id)` 복합 외래키는 기존 마이그레이션에 유지한다.
