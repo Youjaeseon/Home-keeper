@@ -14,7 +14,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { analyzeRecord, createRecord, messageOf } from '@/lib/api';
+import {
+  ApiError,
+  type Profile,
+  type Region,
+  analyzeRecord,
+  createRecord,
+  getMyProfile,
+  getRegions,
+  messageOf,
+  saveMyProfile,
+} from '@/lib/api';
 
 export default function AnalyzeScreen() {
   const router = useRouter();
@@ -27,6 +37,11 @@ export default function AnalyzeScreen() {
   const [recordId, setRecordId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [regionId, setRegionId] = useState<string | null>(null);
+  const [updateProfileRegion, setUpdateProfileRegion] = useState(false);
+  const [regionLoading, setRegionLoading] = useState(true);
 
   useEffect(() => {
     setPhotos([]);
@@ -37,7 +52,42 @@ export default function AnalyzeScreen() {
     setRecordId(null);
     setSubmitting(false);
     setError(null);
+    setUpdateProfileRegion(false);
   }, [session]);
+
+  useEffect(() => {
+    let active = true;
+    setRegionLoading(true);
+    setError(null);
+    Promise.all([
+      getRegions(),
+      getMyProfile().catch((loadError) => {
+        if (loadError instanceof ApiError && loadError.status === 404) {
+          return null;
+        }
+        throw loadError;
+      }),
+    ])
+      .then(([nextRegions, nextProfile]) => {
+        if (!active) return;
+        setRegions(nextRegions);
+        setProfile(nextProfile);
+        setRegionId(nextProfile?.region_id ?? null);
+      })
+      .catch((loadError) => {
+        if (active) setError(messageOf(loadError));
+      })
+      .finally(() => {
+        if (active) setRegionLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session]);
+
+  const regionChanged = Boolean(
+    profile && regionId && regionId !== profile.region_id,
+  );
 
   async function pickPhotos() {
     if (submitting) return;
@@ -78,10 +128,24 @@ export default function AnalyzeScreen() {
       setError('표면 재질을 입력해 주세요.');
       return;
     }
+    if (!regionId) {
+      setError('분석할 지역을 확인해 주세요.');
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
     try {
+      if (updateProfileRegion && regionChanged && profile) {
+        const saved = await saveMyProfile({
+          nickname: profile.nickname,
+          region_id: regionId,
+          address: profile.address,
+          housing_type: profile.housing_type,
+        });
+        setProfile(saved);
+      }
+
       let targetRecordId = recordId;
       if (!targetRecordId) {
         const created = await createRecord();
@@ -99,6 +163,7 @@ export default function AnalyzeScreen() {
         location,
         material,
         symptoms,
+        region_id: regionId,
         externalAnalysisConsent: consent,
       });
 
@@ -128,6 +193,73 @@ export default function AnalyzeScreen() {
           >
             <Text style={styles.textButtonLabel}>홈</Text>
           </Pressable>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>분석 지역 확인</Text>
+          <Text style={styles.help}>
+            분석 결과와 향후 요청서에 사용할 지역이에요. 현재 거주 지역을
+            확인하고, 이번 분석에 다른 지역을 쓸 수 있어요.
+          </Text>
+          {regionLoading ? (
+            <View style={styles.regionLoadingRow}>
+              <ActivityIndicator />
+              <Text style={styles.help}>지역을 불러오는 중…</Text>
+            </View>
+          ) : regions.length === 0 ? (
+            <Text style={styles.error}>선택할 수 있는 지역이 없어요.</Text>
+          ) : (
+            <>
+              <View style={styles.regionChips}>
+                {regions.map((region) => {
+                  const selected = region.region_id === regionId;
+                  return (
+                    <Pressable
+                      key={region.region_id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      disabled={submitting}
+                      onPress={() => setRegionId(region.region_id)}
+                      style={({ pressed }) => [
+                        styles.chip,
+                        selected && styles.chipSelected,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.chipText,
+                          selected && styles.chipTextSelected,
+                        ]}
+                      >
+                        {region.display_name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {!profile ? (
+                <Text style={styles.help}>
+                  등록된 프로필이 없어 이번 분석에만 적용돼요.
+                </Text>
+              ) : null}
+              {regionChanged ? (
+                <View style={styles.regionToggleRow}>
+                  <View style={styles.regionToggleText}>
+                    <Text style={styles.label}>내 기본 거주 지역도 함께 변경</Text>
+                    <Text style={styles.help}>
+                      끄면 이번 분석에만 적용돼요.
+                    </Text>
+                  </View>
+                  <Switch
+                    value={updateProfileRegion}
+                    onValueChange={setUpdateProfileRegion}
+                    disabled={submitting}
+                  />
+                </View>
+              ) : null}
+            </>
+          )}
         </View>
 
         <View style={styles.notice}>
@@ -225,11 +357,12 @@ export default function AnalyzeScreen() {
 
         <Pressable
           accessibilityRole="button"
-          disabled={submitting || photos.length === 0}
+          disabled={submitting || photos.length === 0 || !regionId || regionLoading}
           onPress={submit}
           style={({ pressed }) => [
             styles.primaryButton,
-            (submitting || photos.length === 0) && styles.disabled,
+            (submitting || photos.length === 0 || !regionId || regionLoading) &&
+              styles.disabled,
             pressed && styles.pressed,
           ]}
         >
@@ -292,6 +425,58 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#208AEF',
+  },
+  card: {
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E4E8',
+    padding: 14,
+    gap: 8,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#15171A',
+  },
+  regionLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  regionChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  chip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D7D9DE',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  chipSelected: {
+    borderColor: '#208AEF',
+    backgroundColor: '#EAF4FE',
+  },
+  chipText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4E535C',
+  },
+  chipTextSelected: {
+    color: '#1668B3',
+  },
+  regionToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  regionToggleText: {
+    flex: 1,
+    gap: 2,
   },
   notice: {
     borderRadius: 12,

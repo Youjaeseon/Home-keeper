@@ -173,6 +173,7 @@ export default function ResultScreen() {
               <Text style={styles.reason}>{diagnosis.reason}</Text>
               <Text style={styles.meta}>
                 위치 {detail?.location ?? '미입력'} · 재질 {detail?.material ?? '미입력'}
+                {detail?.region_name ? ` · 지역 ${detail.region_name}` : ''}
               </Text>
               {detail?.symptoms ? (
                 <Text style={styles.meta}>증상 메모 {detail.symptoms}</Text>

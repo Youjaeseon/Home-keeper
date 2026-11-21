@@ -70,6 +70,8 @@ export type RecordListItem = {
   location: string | null;
   material: string | null;
   symptoms: string | null;
+  region_id: string | null;
+  region_name: string | null;
   suspected_types: string[];
   severity_score: number | null;
   severity_level: SeverityLevel | null;
@@ -121,6 +123,7 @@ export type AnalyzeResponse = {
   record_id: string;
   input_revision: number;
   diagnosis_generation: number;
+  region_id: string | null;
   photo_analysis: PhotoAnalysis;
   diagnosis: DiagnosisResult;
   source: 'sample' | 'yolo' | 'yolo_sam' | 'vision_llm' | 'yolo_vision_llm';
@@ -139,6 +142,8 @@ export type RecordDetail = {
   location: string | null;
   material: string | null;
   symptoms: string | null;
+  region_id: string | null;
+  region_name: string | null;
   photo_observations: PhotoAnalysis | null;
   input_revision: number;
   questions: unknown[];
@@ -163,7 +168,53 @@ export type AnalyzeInput = {
   location: string;
   material: string;
   symptoms: string;
+  region_id: string | null;
   externalAnalysisConsent: boolean;
+};
+
+export type DeadlineKind = 'fixed' | 'always_open' | 'unknown';
+export type SupportProgramSource = 'seed' | 'gov24_api';
+
+export type SupportProgramListItem = {
+  id: string;
+  title: string;
+  summary: string;
+  organization_name: string;
+  region_scope: 'national' | 'local';
+  region_name: string;
+  target_housing_types: HousingType[];
+  deadline_text: string | null;
+  deadline_date: string | null;
+  deadline_kind: DeadlineKind;
+  is_closed: boolean;
+  detail_url: string;
+  source: SupportProgramSource;
+  source_attribution: string;
+  source_checked_at: string;
+  updated_at: string;
+  housing_type_matched: boolean;
+};
+
+export type SupportProgramDetail = Omit<SupportProgramListItem, 'housing_type_matched'> & {
+  support_target: string;
+  support_content: string;
+  selection_criteria: string | null;
+  apply_method: string | null;
+  synced_at: string | null;
+};
+
+export type SupportProgramListResponse = {
+  items: SupportProgramListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+};
+
+export type SupportProgramQuery = {
+  status?: 'all' | 'active';
+  limit?: number;
+  offset?: number;
 };
 
 async function parseError(response: Response): Promise<never> {
@@ -266,6 +317,9 @@ export function analyzeRecord(
   if (input.symptoms.trim()) {
     form.append('symptoms', input.symptoms.trim());
   }
+  if (input.region_id) {
+    form.append('region_id', input.region_id);
+  }
 
   return apiRequest<AnalyzeResponse>(`/records/${recordId}/analyze`, {
     method: 'POST',
@@ -281,4 +335,21 @@ export function regenerateDiagnosis(
   return apiRequest<DiagnosisResponse>(`/records/${recordId}/diagnosis${query}`, {
     method: 'POST',
   });
+}
+
+export function getSupportPrograms({
+  status = 'all',
+  limit = 5,
+  offset = 0,
+}: SupportProgramQuery = {}): Promise<SupportProgramListResponse> {
+  const params = new URLSearchParams({
+    status,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return apiRequest<SupportProgramListResponse>(`/support-programs?${params}`);
+}
+
+export function getSupportProgram(programId: string): Promise<SupportProgramDetail> {
+  return apiRequest<SupportProgramDetail>(`/support-programs/${programId}`);
 }
