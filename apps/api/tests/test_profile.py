@@ -44,6 +44,7 @@ def test_profile_requires_auth_and_is_scoped_to_the_token_user(client, admin, us
         "region_id": str(region_id),
         "address": "용인시 수지구",
         "housing_type": "monthly_rent",
+        "provider_id": None,
     }
 
     fetched = client.get("/me/profile", headers=auth_headers(token_a))
@@ -83,6 +84,11 @@ def test_profile_validation_and_save_retry(client, admin, user_factory, token_fo
         "/me/profile",
         headers=headers,
         json=_profile_body(region_id, user_id=str(user_id)),
+    ).status_code == 422
+    assert client.put(
+        "/me/profile",
+        headers=headers,
+        json=_profile_body(region_id, provider_id=str(uuid4())),
     ).status_code == 422
     assert client.put(
         "/me/profile",
@@ -153,7 +159,20 @@ def test_provider_role_is_not_changed_by_requester_profile_upsert(
         """,
         (user_id, region_id),
     )
+    provider_id = admin.execute(
+        """
+        INSERT INTO providers (name, phone, account_user_id)
+        VALUES ('연결 업체', '031-000-0000', %s)
+        RETURNING id
+        """,
+        (user_id,),
+    ).fetchone()["id"]
     token = token_for(user_id)
+
+    fetched = client.get("/me/profile", headers=auth_headers(token))
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json()["role"] == "provider"
+    assert fetched.json()["provider_id"] == str(provider_id)
 
     response = client.put(
         "/me/profile",
@@ -163,6 +182,7 @@ def test_provider_role_is_not_changed_by_requester_profile_upsert(
     assert response.status_code == 200, response.text
     assert response.json()["role"] == "provider"
     assert response.json()["nickname"] == "업체 수정"
+    assert response.json()["provider_id"] == str(provider_id)
     assert admin.execute(
         "SELECT role FROM profiles WHERE user_id = %s", (user_id,)
     ).fetchone()["role"] == "provider"

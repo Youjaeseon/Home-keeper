@@ -29,7 +29,7 @@ _API_DESCRIPTION = """
 - 토큰의 `sub` 클레임(UUID)이 요청 사용자로 식별되며, 본인이 소유한 하자 기록에만 접근할 수 있습니다. 다른 사용자의 기록이나 존재하지 않는 리소스는 `404`로 응답합니다.
 
 ### 프로필과 내 기록
-- `GET`·`PUT /me/profile`은 검증된 사용자 ID로 본인 프로필만 조회·저장합니다. 새 프로필의 역할은 서버가 `requester`로 정하며 요청에서 역할을 바꿀 수 없습니다.
+- `GET`·`PUT /me/profile`은 검증된 사용자 ID로 본인 프로필만 조회·저장합니다. 새 프로필의 역할은 서버가 `requester`로 정하며 요청에서 역할·업체 ID를 바꿀 수 없습니다. 업체 계정은 `provider_id`가 함께 반환됩니다.
 - `GET /regions`는 프로필의 거주 지역 선택에 사용할 지역 목록을 반환합니다.
 - `GET /records`는 본인 소유 기록을 최근 수정 순으로 요약해 반환합니다. 분석 당시 지역 스냅샷(`region_id`, `region_name`)을 함께 표시하며 다른 사용자의 기록은 포함하지 않습니다.
 
@@ -58,7 +58,7 @@ _API_DESCRIPTION = """
 - `GET /records/{record_id}/drafts/{kind}/template`은 모델 호출 없이 확인된 사실을 채운 기본 양식을 반환합니다. 진단이 없어도 사용할 수 있습니다.
 
 ### 업체 검색과 1:1 채팅
-- `GET /work-types`, `GET /providers`는 지역과 작업이 모두 일치하는 실제 업체를 찾고, 실제 후보가 없을 때만 `is_sample=true` 샘플 후보를 반환합니다. `chat_available`은 사전 등록된 업체 계정 연결 여부입니다.
+- `GET /work-types`, `GET /providers`는 지역(필수)과 특화 분야(선택)에 맞는 실제 업체를 별점 내림차순으로 찾고, 실제 후보가 없을 때만 `is_sample=true` 샘플 후보를 반환합니다. `GET /providers/{provider_id}`는 평점·소개·주소·영업시간·경력·출장 지역·특화 분야를 반환합니다. `chat_available`은 사전 등록된 업체 계정 연결 여부입니다.
 - `POST /chat/rooms`는 요청인–업체 방을 만들거나 재사용하며, `record_id`를 보내면 서버가 만든 하자 요약을 공유합니다. `GET/POST /chat/rooms/{room_id}/messages`는 참여자만 접근할 수 있고 `client_message_id`로 재전송을 멱등 처리합니다.
 - `GET /chat/rooms`는 방별 `unread_count`를 포함합니다. `POST /chat/rooms/{room_id}/read`가 서버 시각으로 읽음 상태를 저장하며 본인이 보낸 메시지는 미읽음으로 세지 않습니다.
 - 실시간 수신은 `ws://<API>/chat/ws` WebSocket으로 제공합니다. `Authorization: Bearer` 헤더 또는 `access_token` 쿼리로 인증하고, 저장된 메시지는 참여자에게 `{"type":"message","room_id":"...","message":{...}}` 이벤트로 전달됩니다. 재연결 후에는 REST 이력으로 놓친 메시지를 맞춥니다.
@@ -90,7 +90,7 @@ _OPENAPI_TAGS = [
     },
     {
         "name": "providers",
-        "description": "업체 검색용 작업 종류·지역 필터와 채팅 가능 여부를 포함한 업체 후보 조회 API.",
+        "description": "작업 종류·지역 필터와 별점순 업체 후보 조회, 업체 상세 API. 인증된 사용자만 조회하며 샘플 후보와 실제 업체를 구분합니다.",
     },
     {
         "name": "chat",

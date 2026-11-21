@@ -1,0 +1,34 @@
+-- Yongin real-provider seed template.
+--
+-- No team-confirmed Yongin provider list was supplied for this session, so this
+-- migration intentionally inserts no unverified business names, phone numbers,
+-- or addresses. Fill the placeholders below only with data checked against a
+-- public official source, then remove the comment markers and record the source
+-- URL in this header. Re-running the file must stay idempotent.
+--
+-- Pattern (fixed UUID + ON CONFLICT DO NOTHING):
+--
+--   INSERT INTO providers (
+--       id, name, phone, rating, review_count, description, address,
+--       business_hours, career_years
+--   )
+--   VALUES (
+--       'a1000000-0000-4000-8000-000000000001', '<확인된 업체명>',
+--       '<확인된 전화번호>', 0.0, 0, '<확인된 소개>', '<확인된 주소>',
+--       '<확인된 영업시간>', NULL
+--   )
+--   ON CONFLICT (id) DO NOTHING;
+--
+--   INSERT INTO provider_regions (provider_id, region_id)
+--   SELECT 'a1000000-0000-4000-8000-000000000001', id
+--   FROM regions WHERE name = 'yongin'
+--   ON CONFLICT DO NOTHING;
+--
+--   INSERT INTO provider_work_types (provider_id, work_type_id)
+--   SELECT 'a1000000-0000-4000-8000-000000000001', id
+--   FROM work_types WHERE name IN ('곰팡이 제거', '원인 점검')
+--   ON CONFLICT DO NOTHING;
+--
+-- To connect a demo provider account, link the Supabase Auth user UUID through
+-- providers.account_user_id with admin SQL as described in
+-- docs/guides/DEVELOPMENT.md. Never store passwords or tokens here.

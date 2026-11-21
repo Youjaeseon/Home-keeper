@@ -60,6 +60,8 @@ def test_initial_migration_is_recorded(admin):
     assert "010_chat_and_provider_accounts.sql" in versions
     assert "011_chat_read_state.sql" in versions
     assert "012_records_region.sql" in versions
+    assert "013_provider_details.sql" in versions
+    assert "014_yongin_provider_seed.sql" in versions
 
 
 def test_records_material_column(admin):
@@ -94,6 +96,33 @@ def test_records_region_column_and_index(admin):
     ).fetchone()
     assert index is not None
     assert "WHERE (region_id IS NOT NULL)" in index["indexdef"]
+
+
+def test_provider_detail_columns_and_rating_index(admin):
+    columns = {
+        row["column_name"]: (row["data_type"], row["is_nullable"])
+        for row in admin.execute(
+            """
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'providers'
+            """
+        ).fetchall()
+    }
+    assert columns["rating"] == ("numeric", "NO")
+    assert columns["review_count"] == ("integer", "NO")
+    assert columns["description"] == ("text", "YES")
+    assert columns["address"] == ("text", "YES")
+    assert columns["business_hours"] == ("text", "YES")
+    assert columns["career_years"] == ("integer", "YES")
+    index = admin.execute(
+        """
+        SELECT indexdef FROM pg_indexes
+        WHERE schemaname = 'public' AND indexname = 'providers_rating_idx'
+        """
+    ).fetchone()
+    assert index is not None
+    assert "rating DESC" in index["indexdef"]
 
 
 def test_public_tables_have_rls_for_backend_only(admin):
@@ -264,6 +293,7 @@ def test_reverse_provider_indexes_exist(admin):
     assert "records_owner_id_idx" in names
     assert "records_owner_id_updated_at_idx" in names
     assert "records_region_id_idx" in names
+    assert "providers_rating_idx" in names
     assert "profiles_region_id_idx" in names
     assert "regions_parent_id_idx" in names
     assert "support_programs_region_deadline_idx" in names

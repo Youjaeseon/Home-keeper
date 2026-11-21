@@ -445,6 +445,9 @@ class ProfileOut(BaseModel):
     region_id: UUID = Field(description="거주 지역의 UUID.")
     address: str | None = Field(description="선택 등록 주소. 없으면 `null`입니다.")
     housing_type: HousingType = Field(description="거주 형태 코드.")
+    provider_id: UUID | None = Field(
+        description="연결된 업체 UUID. 업체 계정이면 본인 업체 ID, 요청인이면 `null`입니다."
+    )
 
 
 class ProfileUpsertRequest(BaseModel):
@@ -676,6 +679,14 @@ class ProviderOut(BaseModel):
     phone: str | None = Field(
         description="공개 전화번호. 샘플 후보처럼 확인된 연락처가 없으면 `null`입니다."
     )
+    rating: float = Field(description="평균 평점(0.0~5.0). 리뷰가 없으면 `0.0`입니다.")
+    review_count: int = Field(description="등록된 리뷰 수.")
+    description: str | None = Field(
+        description="업체 소개·시공 강점. 확인된 소개가 없으면 `null`입니다."
+    )
+    specialty_work_types: list[WorkTypeOut] = Field(
+        description="업체의 전체 특화 분야 목록. 없으면 빈 배열입니다."
+    )
     chat_available: bool = Field(
         description="사전 등록된 업체 계정이 연결되어 앱 내 채팅이 가능한지 여부. 샘플은 항상 `false`입니다."
     )
@@ -687,9 +698,33 @@ class ProviderOut(BaseModel):
 class ProviderSearchResponse(BaseModel):
     """업체 검색 응답."""
 
-    providers: list[ProviderOut] = Field(description="지역·작업이 모두 일치하는 업체 후보 목록.")
+    providers: list[ProviderOut] = Field(
+        description="지역과 선택한 특화 분야에 맞는 업체 후보 목록. 별점 내림차순입니다."
+    )
     is_sample: bool = Field(
         description="후보 전체가 시연용 샘플인지 여부. 실제 후보가 하나라도 있으면 `false`입니다."
+    )
+
+
+class ProviderDetailOut(BaseModel):
+    """업체 상세 정보."""
+
+    provider_id: UUID = Field(description="업체 UUID.")
+    name: str = Field(description="업체명.")
+    phone: str | None = Field(description="공개 전화번호. 없으면 `null`입니다.")
+    rating: float = Field(description="평균 평점(0.0~5.0). 리뷰가 없으면 `0.0`입니다.")
+    review_count: int = Field(description="등록된 리뷰 수.")
+    description: str | None = Field(description="업체 소개·시공 강점. 없으면 `null`입니다.")
+    address: str | None = Field(description="사업장 주소 또는 활동 거점. 없으면 `null`입니다.")
+    business_hours: str | None = Field(description="영업시간 안내. 없으면 `null`입니다.")
+    career_years: int | None = Field(description="경력 연수. 확인되지 않았으면 `null`입니다.")
+    chat_available: bool = Field(
+        description="사전 등록된 업체 계정이 연결되어 앱 내 채팅이 가능한지 여부."
+    )
+    regions: list[RegionOut] = Field(description="출장 가능 지역 목록.")
+    work_types: list[WorkTypeOut] = Field(description="특화 분야 목록.")
+    is_sample: Literal[False] = Field(
+        default=False, description="상세 API는 실제 업체만 반환하므로 항상 `false`입니다."
     )
 
 

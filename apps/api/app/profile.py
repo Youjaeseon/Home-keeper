@@ -71,15 +71,24 @@ router = APIRouter(tags=["profile"], responses={401: _UNAUTHORIZED_RESPONSE})
         "- 프로필이 아직 없으면 `404`를 반환하며, 앱은 프로필 등록 화면으로 이어갑니다.\n"
         "- 이메일·비밀번호는 프로필에 저장하지 않습니다."
     ),
-    response_description="본인 닉네임, 역할, 거주 지역, 선택 주소, 거주 형태",
+    response_description="본인 닉네임, 역할, 거주 지역, 선택 주소, 거주 형태, 연결된 업체 ID",
     responses={404: _PROFILE_NOT_FOUND_RESPONSE},
 )
 def get_my_profile(owner_id: UUID = Depends(get_current_user)):
     with read_transaction() as conn:
         profile = conn.execute(
             """
-            SELECT nickname, role, region_id, address, housing_type
-            FROM profiles WHERE user_id = %s
+            SELECT
+                profile.nickname,
+                profile.role,
+                profile.region_id,
+                profile.address,
+                profile.housing_type,
+                provider.id AS provider_id
+            FROM profiles AS profile
+            LEFT JOIN providers AS provider
+              ON provider.account_user_id = profile.user_id
+            WHERE profile.user_id = %s
             """,
             (owner_id,),
         ).fetchone()
@@ -95,7 +104,7 @@ def get_my_profile(owner_id: UUID = Depends(get_current_user)):
     description=(
         "검증된 액세스 토큰의 사용자 ID로 본인 프로필을 최초 등록하거나 수정합니다.\n\n"
         "- `nickname`, `region_id`, `housing_type`은 필수이며 `address`는 선택입니다.\n"
-        "- 새 프로필의 역할은 서버가 `requester`로 정합니다. 요청의 `role`/`user_id` 필드는 허용하지 않습니다.\n"
+        "- 새 프로필의 역할은 서버가 `requester`로 정합니다. 요청의 `role`/`user_id`/`provider_id` 필드는 허용하지 않습니다. 기존 업체 계정의 `role`은 덮어쓰지 않습니다.\n"
         "- 같은 사용자로 다시 호출하면 기존 프로필을 수정하며, 저장 실패 후 같은 계정으로 재시도할 수 있습니다.\n"
         "- 존재하지 않는 지역과 허용되지 않은 거주 형태는 `422`로 거부합니다."
     ),
@@ -153,7 +162,14 @@ def upsert_my_profile(
                 body.housing_type,
             ),
         ).fetchone()
-    return profile
+        provider = conn.execute(
+            "SELECT id AS provider_id FROM providers WHERE account_user_id = %s",
+            (owner_id,),
+        ).fetchone()
+    return {
+        **profile,
+        "provider_id": provider["provider_id"] if provider is not None else None,
+    }
 
 
 @router.get(
