@@ -146,7 +146,7 @@
 ```
 
 - **샘플 모드의 의미**: 실제 사진 분석을 하지 않았으므로 `photo_analysis.applied=false`, 사진 상태 `not_analyzed`, `detections=[]`다. 탐지 좌표·신뢰도·bbox는 만들지 않는다. 관찰 요약·심각도·원인은 입력값만 사용한 참고용 샘플이며, 응답의 `source`, 진단의 `source`, 화면 안내로 실제 분석이 아님을 표시한다.
-- **입력과 버전**: 제출한 `location`·`material`·`symptoms`가 실제로 달라지면 `input_revision`을 1 올리고 `diagnosis_generation`을 증가시킨다. 같은 입력이면 버전은 유지하고 생성 번호만 증가한다. 분석 중 다른 입력 변경이 발생하면 아무것도 저장하지 않고 `409`(`revision_conflict`)와 현재 `input_revision`을 반환한다. 사진 원본·좌표·신뢰도는 DB·로그에 저장하지 않는다.
+- **입력과 버전**: 제출한 `location`·`material`·`symptoms`가 실제로 달라지면 `input_revision`을 1 올리고 `diagnosis_generation`을 증가시킨다. 같은 입력이면 버전은 유지하고 생성 번호만 증가한다. 분석 중 다른 입력 변경이 발생하면 아무것도 저장하지 않고 `409`(`revision_conflict`)와 현재 `input_revision`을 반환한다. 사진 원본은 DB·로그에 저장하지 않는다. 샘플 모드에는 탐지 좌표·신뢰도가 없으며, YOLO 모드에서는 탐지 좌표·신뢰도와 SAM 마스크를 관찰 결과로 DB에 저장한다. 과거 기록용 원본 사진의 보관 방식은 미정이다.
 - **정보 부족 시 판단 보류**: 실제 모델 연동 후 사진과 입력만으로 심각도를 가늠하기 어렵다면 `severity_score=null`, `severity_level="undetermined"`를 반환할 수 있다. 현재 샘플은 입력값 기준 참고 수치를 사용한다.
 - **명시적 진단 재생성**: `POST /records/{record_id}/diagnosis?regenerate=true`는 후속 구현이다. 현재 분석 결과는 `GET /records/{record_id}`의 `diagnosis`에서 재조회한다.
 
@@ -453,5 +453,6 @@ WebSocket 이벤트 예시:
 - 실제 모델 연동 시 `POST /records/{record_id}/analyze`의 YOLO·비전 LLM·텍스트 LLM 인증·요청·응답·좌표 형식과 배포 환경 제한 시간
 - 실제 `LLM_API_KEY`·모델로 요청문 생성 품질·비용·제한 시간 확인(현재 테스트는 고정 응답 대체)
 - 용인시 실제 업체·연락처·출장 지역·작업 데이터와 사전 등록 업체 계정
-- 채팅 실시간 수신 방식(`REST 폴링` / `WebSocket` / `Supabase Realtime`)과 읽음 표시·푸시 알림
+- 확정된 WebSocket·방별 미읽음 수의 구현, 읽음 처리·인증·재연결·이벤트 계약 설계(푸시 알림 도입 여부는 미정)
+- 진단 신뢰도 필드의 정의·산정 근거·검증·필드 계약 확정 및 구현
 - 보조금24 API(`gov24/v3/serviceList`) 동기화의 실제 운영 키·응답 최신성 검증과 주거 필터 키워드 보정

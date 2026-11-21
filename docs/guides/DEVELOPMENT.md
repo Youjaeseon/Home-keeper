@@ -28,6 +28,7 @@ apps/
       schemas.py   요청·응답 모델
       db.py        요청별 DB 트랜잭션
       migrate.py   SQL 마이그레이션 실행기
+      vision.py    YOLO 탐지·동의 기반 Meta SAM 3.1 분할
       config.py    환경변수
     migrations/    순서대로 적용하는 SQL 마이그레이션
     tests/         실제 PostgreSQL 통합 테스트
@@ -49,7 +50,7 @@ docs/
 
 Python 의존성은 `apps/api/pyproject.toml`과 `uv.lock`이, JavaScript 의존성은 루트 `package.json`과 `package-lock.json`이 관리합니다. 명령은 저장소 루트에서 실행합니다. npm workspace에는 `apps/mobile`만 등록되어 있고, `apps/api`는 uv 프로젝트로 따로 동작합니다.
 
-`uv`가 `apps/api/.python-version`(3.13)의 Python과 `apps/api/.venv`를 관리합니다. 잠금 파일 기준으로 정확히 설치하려면 `uv sync --locked --directory apps/api`를 사용합니다.
+`uv`가 `apps/api/.python-version`(3.13)의 Python과 `apps/api/.venv`를 관리합니다. 잠금 파일 기준으로 정확히 설치하려면 `uv sync --locked --directory apps/api --extra vision`를 사용합니다.
 
 - Python 의존성 추가: `uv add --directory apps/api <package>`
 - Python 개발 의존성 추가: `uv add --dev --directory apps/api <package>`
