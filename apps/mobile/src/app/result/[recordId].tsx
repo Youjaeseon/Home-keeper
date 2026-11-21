@@ -95,7 +95,7 @@ export default function ResultScreen() {
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
             <Text style={styles.title}>분석 결과</Text>
-            <Text style={styles.subtitle}>사진·입력 기반 샘플 결과</Text>
+            <Text style={styles.subtitle}>사진 분석·입력 기반 진단</Text>
           </View>
           <Pressable
             accessibilityRole="button"
@@ -141,7 +141,11 @@ export default function ResultScreen() {
           <>
             {isSample ? (
               <View style={styles.sampleBanner}>
-                <Text style={styles.sampleTitle}>샘플 결과 · 실제 사진 분석 아님</Text>
+                <Text style={styles.sampleTitle}>
+                  {detail?.photo_observations?.applied
+                    ? '사진 탐지 결과 · 진단 안내는 샘플'
+                    : '샘플 결과 · 실제 사진 분석 아님'}
+                </Text>
                 <Text style={styles.sampleText}>
                   {detail?.photo_observations?.notice ??
                     '현재는 실제 사진 분석 모델을 호출하지 않습니다.'}

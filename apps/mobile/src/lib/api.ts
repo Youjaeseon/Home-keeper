@@ -97,8 +97,8 @@ export type DiagnosisResult = {
 
 export type AnalyzePhoto = {
   role: 'overview' | 'closeup';
-  status: 'not_analyzed';
-  source: 'sample';
+  status: 'not_analyzed' | 'analyzed';
+  source: 'sample' | 'yolo' | 'yolo_sam';
   detections: unknown[];
 };
 
@@ -106,7 +106,7 @@ export type PhotoAnalysis = {
   applied: boolean;
   notice: string | null;
   photos: AnalyzePhoto[];
-  source: 'sample';
+  source: 'sample' | 'yolo' | 'yolo_sam';
 };
 
 export type AnalyzeResponse = {
@@ -115,7 +115,7 @@ export type AnalyzeResponse = {
   diagnosis_generation: number;
   photo_analysis: PhotoAnalysis;
   diagnosis: DiagnosisResult;
-  source: 'sample';
+  source: 'sample' | 'yolo' | 'yolo_sam';
 };
 
 export type RecordDetail = {
