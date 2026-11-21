@@ -299,25 +299,25 @@ class DraftsOut(BaseModel):
 
 
 class AnalyzePhotoOut(BaseModel):
-    """샘플 일괄 분석의 사진별 처리 상태."""
+    """사진 일괄 분석의 사진별 처리 상태."""
 
     role: Literal["overview", "closeup"] = Field(
         description="사진 역할. `overview`는 전체, `closeup`은 근접 사진입니다."
     )
-    status: Literal["not_analyzed"] = Field(
+    status: Literal["not_analyzed", "analyzed"] = Field(
         description="사진 분석 상태. 샘플 모드에서는 실제 분석을 하지 않으므로 항상 `not_analyzed`입니다."
     )
-    source: Literal["sample"] = Field(
-        description="샘플 모드 표시. 값은 항상 `sample`입니다."
+    source: Literal["sample", "yolo", "yolo_sam"] = Field(
+        description="사진 분석 출처: sample, yolo, yolo_sam."
     )
     detections: list[dict[str, Any]] = Field(
         default_factory=list,
-        description="탐지 결과 목록. 샘플 모드에서는 좌표·신뢰도를 만들지 않으므로 항상 빈 배열입니다.",
+        description="탐지 목록. object_id, class_id, label, confidence, bbox(반열린 xyxy), image_size, source, segmentation_status, mask를 포함합니다. mask는 null 또는 COCO RLE(size=[높이,너비], counts)와 시각화용 svg_path, 원본 기준 반열린 bounds, source입니다. segmentation_status는 completed, no_mask, failed, unavailable, skipped_no_consent입니다. 샘플에서는 빈 배열입니다.",
     )
 
 
 class AnalyzePhotoAnalysisOut(BaseModel):
-    """샘플 일괄 분석의 사진 분석 영역."""
+    """사진 일괄 분석의 사진 분석 영역."""
 
     applied: bool = Field(
         description="실제 사진 분석이 적용됐는지 여부. 샘플 모드에서는 항상 `false`입니다."
@@ -328,8 +328,8 @@ class AnalyzePhotoAnalysisOut(BaseModel):
     photos: list[AnalyzePhotoOut] = Field(
         description="업로드한 사진별 역할과 처리 상태 목록."
     )
-    source: Literal["sample"] = Field(
-        description="샘플 결과 표시. 값은 항상 `sample`입니다."
+    source: Literal["sample", "yolo", "yolo_sam"] = Field(
+        description="사진 분석 출처: sample, yolo, yolo_sam."
     )
 
 
@@ -385,8 +385,8 @@ class AnalyzeResponse(BaseModel):
         description="사진별 분석 상태. 샘플 모드에서는 실제 사진 분석을 수행하지 않습니다."
     )
     diagnosis: AnalyzeDiagnosisOut = Field(description="저장된 구조화 진단 결과.")
-    source: Literal["sample"] = Field(
-        description="샘플 결과 표시. 실제 YOLO·비전 LLM·텍스트 LLM 호출 없이 만든 결과임을 나타냅니다."
+    source: Literal["sample", "yolo", "yolo_sam"] = Field(
+        description="사진 분석 출처. 진단 출처는 diagnosis.source로 별도 표시합니다."
     )
 
 

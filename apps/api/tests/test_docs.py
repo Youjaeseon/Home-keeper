@@ -24,6 +24,11 @@ def test_scalar_docs_and_health_endpoints():
         assert docs.status_code == 200
         assert "/openapi.json" in docs.text
 
+        preview = client.get("/vision-test")
+        assert preview.status_code == 200
+        assert preview.headers["cache-control"] == "no-store"
+        assert 'id="overlay"' in preview.text
+
         health = client.get("/health")
         assert health.status_code == 200
         assert health.json() == {"status": "ok"}
@@ -31,6 +36,12 @@ def test_scalar_docs_and_health_endpoints():
 
 def test_openapi_metadata_tags_and_security():
     spec = _openapi()
+
+    multipart = spec["paths"]["/records/{record_id}/analyze"]["post"]["requestBody"]["content"]["multipart/form-data"]
+    body_name = multipart["schema"]["$ref"].split("/")[-1]
+    photos = spec["components"]["schemas"][body_name]["properties"]["photos"]
+    assert photos["type"] == "array"
+    assert photos["items"] == {"type": "string", "format": "binary"}
 
     assert spec["info"]["title"] == "Career Pair API"
     assert spec["info"]["version"] == "0.1.0"
@@ -83,6 +94,7 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
             "404",
             "409",
             "422",
+            "503",
         },
         ("/records/{record_id}/drafts/{kind}", "post"): {
             "200",

@@ -14,6 +14,9 @@ class Settings:
     llm_base_url: str
     llm_model: str
     llm_timeout_seconds: float
+    yolo_model_path: str | None = None
+    model_api_key: str | None = None
+    sam_timeout_seconds: float = 30
 
 
 def _required(name: str) -> str:
@@ -36,4 +39,7 @@ def get_settings() -> Settings:
         llm_base_url=os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
         llm_model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
         llm_timeout_seconds=float(os.environ.get("LLM_TIMEOUT_SECONDS", "20")),
+        yolo_model_path=os.environ.get("YOLO_MODEL_PATH") or None,
+        model_api_key=os.environ.get("MODEL_API_KEY") or None,
+        sam_timeout_seconds=float(os.environ.get("SAM_TIMEOUT_SECONDS", "30")),
     )

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Keeper 사진 분석 확인</title>
+<style>
+  * { box-sizing: border-box; }
+  body { max-width: 1200px; margin: auto; padding: 24px; font: 16px/1.6 system-ui, sans-serif; color: #17252a; background: #f7faf9; }
+  h1 { font-size: 24px; margin-bottom: 4px; }
+  fieldset { border: 1px solid #b9c9c4; border-radius: 8px; padding: 16px; }
+  label { display: block; margin: 10px 0; }
+  input:not([type=checkbox]) { display: block; width: 100%; padding: 9px; font: inherit; }
+  input[type=checkbox] { width: 18px; height: 18px; vertical-align: middle; }
+  button { padding: 10px 18px; font: inherit; cursor: pointer; }
+  button:disabled { cursor: wait; }
+  :focus-visible { outline: 3px solid #006e60; outline-offset: 3px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  figure { margin: 0; min-width: 0; }
+  figcaption { font-weight: 600; margin: 8px 0; }
+  .image { position: relative; line-height: 0; background: #e4ece9; }
+  img { width: 100%; height: auto; display: block; }
+  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .controls { display: flex; gap: 24px; flex-wrap: wrap; }
+  #message { white-space: pre-wrap; }
+  #message[data-error=true] { color: #a21d27; }
+  pre { overflow: auto; max-height: 350px; background: white; padding: 12px; }
+  @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } body { padding: 16px; } }
+</style>
+<h1>사진 분석 확인</h1>
+<p>주황색 박스는 YOLO 탐지, 초록색 영역은 SAM 분할 결과입니다. 원본과 비교해 하자 경계를 확인하세요.</p>
+<form id="form">
+  <fieldset id="fields">
+    <legend>분석할 사진</legend>
+    <details>
+      <summary>Supabase 로그인 — API 문서와 같은 계정</summary>
+      <div class="grid">
+        <label>이메일 <input id="email" type="email" autocomplete="username"></label>
+        <label>비밀번호 <input id="password" type="password" autocomplete="current-password"></label>
+      </div>
+      <p>로그인 정보와 토큰은 이 페이지의 메모리에서만 사용합니다.</p>
+    </details>
+    <label>기록 ID (처음에는 비워 두세요. 분석 시 본인 기록을 생성합니다.)
+      <input id="record" placeholder="UUID" autocomplete="off">
+    </label>
+    <label>사진 (JPEG·PNG, 10MB 이하)
+      <input id="photo" type="file" accept="image/jpeg,image/png" required>
+    </label>
+    <div class="grid">
+      <label>위치 <input id="location" value="테스트 벽면" required></label>
+      <label>재질 <input id="material" value="페인트" required></label>
+    </div>
+    <label><input id="consent" type="checkbox"> SAM 분할을 위해 사진을 Meta에 전송하는 데 동의합니다.</label>
+    <button id="run" type="submit">분석하고 비교하기</button>
+    <p>결과는 기록에 저장됩니다. 같은 기록 ID로 다시 분석하면 기존 결과를 교체합니다. 사진 원본은 서버에 보관하지 않습니다.</p>
+  </fieldset>
+</form>
+<p id="message" role="status" aria-live="polite"></p>
+<section id="results" hidden aria-label="사진 분석 비교">
+  <div class="controls">
+    <label><input id="show-boxes" type="checkbox" checked> YOLO 박스 표시</label>
+    <label><input id="show-masks" type="checkbox" checked> SAM 마스크 표시</label>
+  </div>
+  <div class="grid">
+    <figure><figcaption>원본</figcaption><div class="image"><img id="original" alt="업로드한 원본 사진"></div></figure>
+    <figure><figcaption>탐지·분할 결과</figcaption><div class="image"><img id="overlay-image" alt="분석 사진"><svg id="overlay" aria-hidden="true"></svg></div></figure>
+  </div>
+  <ul id="detections"></ul>
+  <details><summary>API 응답 데이터</summary><pre id="raw"></pre></details>
+</section>
+<script>
+  const $ = (id) => document.getElementById(id);
+  let token = '';
+  let imageUrl = '';
+  const statusNames = {
+    completed: 'SAM 분할 완료', no_mask: 'SAM 마스크 없음', failed: 'SAM 호출 또는 응답 처리 실패',
+    unavailable: 'Meta API 키 미설정', skipped_no_consent: '동의 없음 — YOLO만 수행',
+  };
+  function message(text, error = false) {
+    $('message').textContent = text;
+    $('message').dataset.error = String(error);
+  }
+  async function request(url, options) {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok) {
+      if (response.status === 401) token = '';
+      throw new Error(data.message || data.error_description || `요청 실패 (${response.status})`);
+    }
+    return data;
+  }
+  function svgElement(tag, attrs, parent) {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [name, value] of Object.entries(attrs)) element.setAttribute(name, String(value));
+    parent.append(element);
+    return element;
+  }
+  function showLayers() {
+    const boxes = $('overlay').querySelector('[data-layer=boxes]');
+    const masks = $('overlay').querySelector('[data-layer=masks]');
+    if (boxes) boxes.style.display = $('show-boxes').checked ? '' : 'none';
+    if (masks) masks.style.display = $('show-masks').checked ? '' : 'none';
+  }
+  $('show-boxes').addEventListener('change', showLayers);
+  $('show-masks').addEventListener('change', showLayers);
+  function render(data) {
+    const photo = data.photo_analysis.photos[0];
+    const detections = photo.detections;
+    const [width, height] = detections[0]?.image_size || [$('original').naturalWidth, $('original').naturalHeight];
+    const svg = $('overlay');
+    svg.replaceChildren();
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    const masks = svgElement('g', {'data-layer': 'masks'}, svg);
+    const boxes = svgElement('g', {'data-layer': 'boxes'}, svg);
+    $('detections').replaceChildren();
+    for (const detection of detections) {
+      const [left, top, right, bottom] = detection.bbox;
+      svgElement('rect', {x: left, y: top, width: right-left, height: bottom-top,
+        fill: 'none', stroke: '#ff8c00', 'stroke-width': 3, 'vector-effect': 'non-scaling-stroke'}, boxes);
+      const mask = detection.mask;
+      if (mask?.svg_path) {
+        const bounds = mask.bounds;
+        const local = svgElement('svg', {x: bounds.left, y: bounds.top,
+          width: bounds.right-bounds.left, height: bounds.bottom-bounds.top,
+          viewBox: `0 0 ${mask.size[1]} ${mask.size[0]}`, preserveAspectRatio: 'none'}, masks);
+        svgElement('path', {d: mask.svg_path, fill: '#00b779', 'fill-opacity': 0.45, 'fill-rule': 'evenodd'}, local);
+      }
+      const item = document.createElement('li');
+      item.textContent = `객체 ${detection.object_id} · ${detection.label} · YOLO 신뢰도 ${(detection.confidence*100).toFixed(1)}% · ${statusNames[detection.segmentation_status] || detection.segmentation_status}`;
+      $('detections').append(item);
+    }
+    showLayers();
+    $('raw').textContent = JSON.stringify(data, null, 2);
+    $('results').hidden = false;
+    const count = detections.filter(d => d.mask?.svg_path).length;
+    message(data.photo_analysis.applied
+      ? `YOLO ${detections.length}개 탐지 · SAM 마스크 ${count}개. ${detections.length ? '아래 항목별 처리 상태를 확인하세요.' : '탐지된 하자가 없어 SAM을 호출하지 않았습니다.'}`
+      : '샘플 모드입니다. 서버의 YOLO_MODEL_PATH 설정을 확인하세요.');
+  }
+  $('photo').addEventListener('change', () => {
+    $('results').hidden = true;
+    message('');
+  });
+  $('form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const file = $('photo').files[0];
+    if (!file || !['image/jpeg', 'image/png'].includes(file.type) || file.size > 10*1024*1024) {
+      message('10MB 이하의 JPEG 또는 PNG 사진을 선택하세요.', true);
+      return;
+    }
+    $('fields').disabled = true;
+    $('results').hidden = true;
+    try {
+      if (imageUrl) URL.revokeObjectURL(imageUrl);
+      imageUrl = URL.createObjectURL(file);
+      $('original').src = $('overlay-image').src = imageUrl;
+      await Promise.all([$('original').decode(), $('overlay-image').decode()]);
+      if (!token) {
+        message('로그인 중…');
+        const auth = await request('/auth/token', {method: 'POST', body: new URLSearchParams({
+          username: $('email').value, password: $('password').value, grant_type: 'password',
+        })});
+        token = auth.access_token;
+        $('password').value = '';
+      }
+      const headers = {Authorization: `Bearer ${token}`};
+      if (!$('record').value.trim()) {
+        const record = await request('/records', {method: 'POST', headers});
+        $('record').value = record.record_id;
+      }
+      const body = new FormData();
+      body.append('photos', file);
+      body.append('photo_roles', 'overview');
+      body.append('location', $('location').value);
+      body.append('material', $('material').value);
+      body.append('external_analysis_consent', String($('consent').checked));
+      message('YOLO 탐지·SAM 분할 중…');
+      const data = await request(`/records/${encodeURIComponent($('record').value.trim())}/analyze`, {method: 'POST', headers, body});
+      render(data);
+    } catch (error) {
+      message(error.message, true);
+    } finally {
+      $('fields').disabled = false;
+    }
+  });
+</script>
+</html>

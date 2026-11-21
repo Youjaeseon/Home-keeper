@@ -5,15 +5,16 @@ from fastapi import APIRouter, Body, Depends, File, Form, Path, UploadFile
 from psycopg.types.json import Jsonb
 
 from app.auth import get_current_user
+from app.config import get_settings
 from app.db import read_transaction, transaction
 from app.errors import invalid_request, message_conflict, not_found, revision_conflict
 from app.sample_analysis import (
     MAX_PHOTO_BYTES,
     PHOTO_ROLES,
-    SOURCE as ANALYSIS_SOURCE,
     build_sample_analysis,
 )
 from app.sample_questions import SOURCE, build_sample_decision
+from app.vision import analyze_photos
 from app.schemas import (
     AnalyzeResponse,
     ConflictErrorResponse,
@@ -596,17 +597,25 @@ def update_record(
     summary="사진·위치·재질 일괄 분석",
     description=(
         "사진 1~2장과 위치·재질·선택 증상 메모를 multipart로 한 번에 받아 분석 결과를 저장합니다.\n\n"
-        "- 현재는 실제 YOLO·비전 LLM·텍스트 LLM을 호출하지 않고, 입력값만 사용한 **결정적 샘플 결과**를 반환합니다. `source`는 항상 `sample`입니다.\n"
-        "- 사진 원본·표시 좌표·신뢰도는 저장하거나 만들지 않습니다. 샘플 `photo_analysis.applied`는 `false`, 사진 상태는 `not_analyzed`, `detections`는 빈 배열입니다.\n"
+        "- `YOLO_MODEL_PATH` 설정 시 YOLO 사진 탐지를 수행합니다. 외부 분석 동의와 `MODEL_API_KEY`가 있으면 Meta SAM 3.1로 탐지 영역을 분할합니다.\n"
+        "- 탐지 결과·박스·신뢰도·마스크는 저장하며 사진 원본은 저장하지 않습니다. SAM 실패 시 탐지 결과와 분할 실패 상태를 저장합니다. 사진당 최대 16개를 탐지합니다.\n"
+        "- 모델 경로 미설정 시 기존 샘플 모드입니다. 심각도·원인·대응 안내는 모든 모드에서 입력값 기반 샘플 진단이며 `diagnosis.source=sample`입니다.\n"
         "- 사진은 1~2장, JPEG/PNG/HEIC/HEIF, 한 장당 10MB 이하만 허용합니다. `photo_roles`는 사진 수와 같아야 하며 서로 달라야 합니다.\n"
         "- 제출한 위치·재질·증상이 실제로 바뀌면 `input_revision`을 올리고 `diagnosis_generation`을 증가시킵니다. 분석 중 입력이 바뀌면 아무것도 저장하지 않고 `409`를 반환합니다.\n"
         "- 성공·실패 모두 업로드 임시 파일을 닫고, 원본 사진이나 로그는 남기지 않습니다."
     ),
-    response_description="샘플 사진 분석 상태와 저장된 구조화 진단 결과",
+    response_description="사진 분석 결과와 저장된 입력값 기반 샘플 진단",
     responses={
         404: _RECORD_NOT_FOUND_RESPONSE,
         409: _ANALYZE_CONFLICT_RESPONSE,
         422: _VALIDATION_ERROR_RESPONSE,
+        503: _error_response(
+            ErrorResponse,
+            "사진 분석 의존성 또는 YOLO 모델을 실행할 수 없습니다. 기존 결과는 유지됩니다.",
+            {"yolo_unavailable": {"summary": "YOLO 실행 불가", "value": {
+                "code": "yolo_unavailable", "message": "하자 탐지 모델을 실행할 수 없습니다.",
+            }}},
+        ),
     },
 )
 def analyze_record(
@@ -616,7 +625,10 @@ def analyze_record(
     ],
     photos: Annotated[
         list[UploadFile],
-        File(description="사진 파일 1~2장. 첫 번째 사진은 필수입니다."),
+        File(
+            description="사진 파일 1~2장. 첫 번째 사진은 필수입니다.",
+            json_schema_extra={"items": {"type": "string", "format": "binary"}},
+        ),
     ],
     photo_roles: Annotated[
         list[str],
@@ -624,7 +636,7 @@ def analyze_record(
     ],
     external_analysis_consent: Annotated[
         bool,
-        Form(description="외부 비전 분석 전송 동의 여부. 샘플 모드에서는 실제 외부 전송을 하지 않습니다."),
+        Form(description="Meta SAM API 사진 전송 동의 여부. false이면 로컬 YOLO 탐지만 수행합니다."),
     ],
     location: Annotated[
         str,
@@ -667,6 +679,19 @@ def analyze_record(
             photo_roles=photo_roles,
             external_analysis_consent=external_analysis_consent,
         )
+        if get_settings().yolo_model_path:
+            sample.photo_analysis.update(analyze_photos(photos, photo_roles, external_analysis_consent))
+            sample.diagnosis["observations"] = (
+                "사진 탐지 결과는 별도 사진 분석 영역에 저장했습니다. "
+                "이 진단은 위치·재질·증상 입력만으로 만든 샘플이며 사진 탐지를 반영하지 않습니다."
+            )
+            sample.diagnosis["estimation_notice"] = (
+                "사진 탐지와 별개로 심각도·원인·대응 안내는 입력값 기반 샘플입니다. 현장 확인이 필요합니다."
+            )
+            sample.diagnosis["reason"] = (
+                "입력값으로 산정한 샘플 심각도이며 사진 탐지 결과를 반영하지 않은 참고용 수치입니다."
+            )
+            sample.diagnosis["unknowns"][0] = "탐지 부위의 실제 크기와 손상 깊이"
 
         with transaction() as conn:
             record = _lock_record(conn, record_id, owner_id)
@@ -712,7 +737,7 @@ def analyze_record(
             "diagnosis_generation": updated["diagnosis_generation"],
             "photo_analysis": sample.photo_analysis,
             "diagnosis": sample.diagnosis,
-            "source": ANALYSIS_SOURCE,
+            "source": sample.photo_analysis["source"],
         }
     finally:
         for photo in photos:

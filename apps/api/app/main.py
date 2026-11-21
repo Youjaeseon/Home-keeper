@@ -1,8 +1,9 @@
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from scalar_fastapi import add_scalar_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -47,7 +48,7 @@ _API_DESCRIPTION = """
 
 ### 사진·위치·재질 일괄 분석
 - `POST /records/{record_id}/analyze`는 사진 1~2장과 위치·재질·증상·외부 분석 동의를 multipart로 받아 샘플 진단을 저장합니다.
-- 현재는 실제 사진 분석이나 LLM을 호출하지 않으며, `photo_analysis.applied=false`, `detections=[]`, `source=sample`로 실제 분석이 아님을 표시합니다.
+- `YOLO_MODEL_PATH` 설정 시 실제 사진 탐지를 수행하며 동의·키가 있으면 Meta SAM 3.1로 분할합니다. 경로 미설정 시 샘플 모드입니다. 심각도·원인·대응 안내는 입력값 기반 샘플 진단입니다.
 
 ### 점검·견적 요청문
 - `POST /records/{record_id}/drafts/{kind}`는 저장된 입력과 진단으로 `landlord`(임대인 점검) 또는 `provider`(업체 견적) 요청문을 생성합니다. 입력 버전과 진단 생성 번호가 모두 같은 기존 요청문은 재사용하며, `regenerate=true`일 때만 모델을 다시 호출합니다.
@@ -141,6 +142,14 @@ def _openapi_with_multipart_descriptions():
 
 
 app.openapi = _openapi_with_multipart_descriptions
+
+
+@app.get("/vision-test", include_in_schema=False)
+def vision_test():
+    return FileResponse(
+        Path(__file__).with_name("vision-test.html"),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def _error(status: int, code: str, message: str, **extra) -> JSONResponse:
