@@ -3,6 +3,7 @@
 !.env.example
 *.pem
 *.key
+models/*.pt
 .venv/
 node_modules/
 .expo/
