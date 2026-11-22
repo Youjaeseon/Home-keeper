@@ -73,6 +73,7 @@
 5. **하드코딩 키·시크릿 점검**: 팀원 코드 전체에서 API 키, Supabase `service_role` 키, 토큰, 비밀번호 하드코딩은 발견되지 않았습니다. 팀원 앱의 비밀번호는 in-memory 비교였고 이번에 Supabase Auth로 교체했습니다. 환경변수는 기존 `apps/mobile/.env.example`의 `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`를 그대로 씁니다.
 6. **Expo SDK·의존성**: 팀원 앱과 기존 앱 모두 Expo SDK 58, React Native 0.88.1, Expo Router라 충돌이 없었습니다. 병합 결과는 팀원 의존성 + `@supabase/supabase-js`, `expo-sqlite`(세션 저장)입니다. 팀원 앱의 `@expo/ngrok`은 개발 도구라 뺐습니다. `app.json`에 `expo-sqlite` 플러그인과 사진·카메라 권한 문구를 넣었습니다. `@expo/ui`, `expo-glass-effect`, `expo-symbols` 등은 현재 코드에서 쓰지 않지만 팀원 설정을 유지했습니다.
 7. **린트 (GAP-024, Low)**: `npx expo lint`에서 팀원 원본 코드 `app/dm/index.tsx:233`(`useRef(new Animated.Value(...)).current`)가 React Compiler 규칙 `react-hooks/refs` 오류 4건을 냅니다. 동작에는 문제가 없고 팀원 UI 코드라 수정하지 않았습니다. 이번에 추가한 코드의 린트 오류는 0건입니다.
+8. **토큰 발급 시각 허용 오차 0초 (GAP-032, High)**: 백엔드 `auth.py:58`의 `jwt.decode`가 leeway 없이 `iat`를 검사해, 서버 시계가 Supabase보다 몇 초만 느려도 방금 받은 토큰을 "The token is not yet valid (iat)"로 거절합니다. 앱은 이를 401로 받아 '로그인이 만료되었습니다'를 띄웁니다(`store/app-store.tsx:161`). 2026-11-22 맥 시계 4초 지연으로 실제 재현했습니다. 해결: 서버 시계 자동 동기화(NTP), 백엔드 `jwt.decode`에 leeway(예: 30초) 추가를 권장합니다(이번 작업에서는 수정하지 않음).
 
 ## 3. 백엔드에 부족하거나 추가가 필요한 항목
 
@@ -195,6 +196,7 @@
 | GAP-029 | Low | 기능 | 진단 재생성 API | 없음 | 실패 시 다시 시도 | 프론트 추가 |
 | GAP-030 | Low | 기능 | 소식지 상세 API | 펼치기만 | 목록·상세 | 프론트 추가 |
 | GAP-031 | Low | 용어 | `심각도`, `견적 요청서`, `업체 제안서` | `위험도`, `견적서`, `제안서` | GLOSSARY | 팀 결정: 화면 용어 통일 |
+| GAP-032 | High | 인증·인프라 | jwt.decode leeway 0 (`auth.py:58`) | 로그인 직후 API 호출 | 언급 없음 | 백엔드 수정: leeway 추가, 운영 서버 NTP 동기화 |
 
 ## 부록: 검증 결과
 
