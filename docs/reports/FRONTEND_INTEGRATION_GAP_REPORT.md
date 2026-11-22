@@ -46,6 +46,11 @@
 
 웹 알림: `react-native-web`의 `Alert.alert`는 브라우저에서 아무것도 띄우지 않아 `lib/alert.ts` `showAlert`(웹은 `window.alert`)로 바꿨습니다.
 
+### 견적 요청서 전달 규칙 변경 (Hyeok 요청)
+
+- 같은 지역(출장 지역)의 업체 계정이면 특화 분야와 관계없이 모든 진행 중 견적 요청서를 받습니다. 목록·상세·제안서 제출 조건에서 작업 종류 일치를 뺐습니다(`apps/api/app/quotes.py`). `docs/adr/0003`의 "지역·특화 분야 기반 1:N" 규칙과 달라져 팀 공유가 필요합니다.
+- 새 한국 DB에는 업체 계정이 0개라 실제로 받을 업체가 없습니다. 업체 계정 방식은 결정 대기: (A) 가입 화면에서 업체 선택(공유 DB 권한 변경 필요, `docs/drafts/provider-accounts-A-signup-grants.sql`), (B) 시연용 업체 로그인을 미리 만들고 연결(`docs/drafts/provider-accounts-B-link-demo-vendors.sql`). 두 파일 모두 초안이며 실행하지 않았습니다.
+
 ### 웹 데모 실화면 점검 (2026-11-22, 390×844)
 
 | 화면 | 결과 | 조치 |

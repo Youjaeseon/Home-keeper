@@ -314,13 +314,18 @@ def test_quote_request_role_lists_and_detail_isolation(
         ).status_code
         == 404
     )
+    # Same-region providers receive every request regardless of specialty.
     assert (
         client.get(
             f"/quote-requests/{request_id}",
             headers=auth_headers(token_for(wrong_work_user)),
         ).status_code
-        == 404
+        == 200
     )
+    other_work_list = client.get(
+        "/quote-requests", headers=auth_headers(token_for(wrong_work_user))
+    ).json()
+    assert [item["request_id"] for item in other_work_list] == [request_id]
     assert (
         client.get(
             f"/quote-requests/{request_id}",

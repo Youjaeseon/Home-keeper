@@ -208,13 +208,10 @@ def _detail(conn, request_id: UUID, user_id: UUID) -> dict:
             """
             SELECT 1
             FROM provider_regions AS provider_region
-            JOIN provider_work_types AS provider_work
-              ON provider_work.provider_id = provider_region.provider_id
             WHERE provider_region.provider_id = %s
               AND provider_region.region_id = %s
-              AND provider_work.work_type_id = %s
             """,
-            (provider["id"], row["region_id"], row["work_type_id"]),
+            (provider["id"], row["region_id"]),
         ).fetchone() is not None
 
     if not owner and not matched and proposal_access is None:
@@ -362,7 +359,7 @@ def create_quote_request(
     description=(
         "역할에 따라 목록이 달라집니다.\n\n"
         "- 요청인: 본인이 보낸 요청서를 최신순으로 반환하며 `proposal_count`와 사진 Signed URL을 포함합니다.\n"
-        "- 업체: 출장 지역과 특화 분야가 모두 맞는 진행 중 요청서와 본인이 이미 제안서를 보낸 요청서만 반환하며 `my_proposal_id`·`my_proposal_status`를 포함합니다.\n"
+        "- 업체: 출장 지역이 같은 진행 중 요청서(특화 분야와 무관하게 전체)와 본인이 이미 제안서를 보낸 요청서만 반환하며 `my_proposal_id`·`my_proposal_status`를 포함합니다.\n"
         "- 업체에게는 경쟁 업체 제안서 수를 노출하지 않습니다."
     ),
 )
@@ -408,16 +405,11 @@ def list_quote_requests(owner_id: UUID = Depends(get_current_user)):
                         WHERE provider_region.provider_id = %s
                           AND provider_region.region_id = request.region_id
                     )
-                    AND EXISTS (
-                        SELECT 1 FROM provider_work_types AS provider_work
-                        WHERE provider_work.provider_id = %s
-                          AND provider_work.work_type_id = request.work_type_id
-                    )
                 )
             )
             ORDER BY request.created_at DESC, request.id DESC
             """,
-            (provider["id"], provider["id"], provider["id"]),
+            (provider["id"], provider["id"]),
         ).fetchall()
         return [
             _summary(
@@ -435,10 +427,10 @@ def list_quote_requests(owner_id: UUID = Depends(get_current_user)):
     response_model=QuoteRequestDetailOut,
     summary="견적 요청서 상세",
     description=(
-        "요청인 본인, 지역·특화 분야가 모두 맞는 업체, 이미 제안서를 보낸 업체만 조회할 수 있습니다.\n\n"
+        "요청인 본인, 같은 지역의 업체, 이미 제안서를 보낸 업체만 조회할 수 있습니다.\n\n"
         "- 요청인에게는 도착한 모든 제안서를, 업체에게는 본인 제안서만 반환합니다.\n"
         "- 사진은 비공개 Storage의 단기 Signed URL로 반환합니다.\n"
-        "- 권한이 없는 사용자·타 지역·타 분야 업체는 `404`입니다."
+        "- 권한이 없는 사용자·타 지역 업체는 `404`입니다."
     ),
     responses={404: _NOT_FOUND_RESPONSE, 422: _VALIDATION_RESPONSE},
 )
@@ -455,7 +447,7 @@ def get_quote_request(
     response_model=QuoteProposalOut,
     summary="업체 제안서 제출",
     description=(
-        "지역과 특화 분야가 모두 맞는 업체가 진행 중 요청서에 제안서를 1건 제출합니다.\n\n"
+        "같은 지역의 업체가 진행 중 요청서에 제안서를 1건 제출합니다.\n\n"
         "- 요청인 계정은 `422`, 비매칭 업체는 `404`입니다.\n"
         "- 마감·취소된 요청서는 `409`(`request_not_open`), 같은 요청서에 이미 제출했으면 `409`(`proposal_already_exists`)입니다.\n"
         "- 최소 금액은 0원 이상, 최대 금액은 최소 금액 이상이어야 하며 메모는 공백 없이 2000자 이하입니다."
@@ -481,13 +473,10 @@ def create_quote_proposal(
             """
             SELECT 1
             FROM provider_regions AS provider_region
-            JOIN provider_work_types AS provider_work
-              ON provider_work.provider_id = provider_region.provider_id
             WHERE provider_region.provider_id = %s
               AND provider_region.region_id = %s
-              AND provider_work.work_type_id = %s
             """,
-            (provider["id"], request["region_id"], request["work_type_id"]),
+            (provider["id"], request["region_id"]),
         ).fetchone()
         if matched is None:
             raise not_found("견적 요청서를 찾을 수 없습니다.")
