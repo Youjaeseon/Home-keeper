@@ -8,7 +8,7 @@ import { Button, Card, Chip, DeleteButton, Field, Hero, Screen, Txt } from '@/co
 import { C, F, STROKE } from '@/constants/theme';
 import { useApp } from '@/store/app-store';
 import type { Estimate, Proposal } from '@/types';
-import { showAlert } from '@/lib/alert';
+import { confirmAlert, showAlert } from '@/lib/alert';
 
 type Tab = 'messages' | 'quotes';
 /** 제안 금액 표시·입력 (원 단위) */
@@ -119,6 +119,7 @@ function Quotes() {
     accepted,
     acceptProposal,
     cancelAccept,
+    completeDeal,
     openRoom,
     sendMessage,
   } = useApp();
@@ -173,6 +174,35 @@ function Quotes() {
     }
   };
 
+  /** 거래 완료 → 되돌릴 수 없음을 확인한 뒤 완료로 마감하고 업체에게 알립니다. 알림 실패는 완료를 막지 않습니다. */
+  const completeAndNotify = async (e: Estimate, p: Proposal) => {
+    if (accepting.current) return;
+    const ok = await confirmAlert(
+      '거래를 완료할까요?',
+      `${p.vendorName}님과의 거래를 완료 처리해요. 완료하면 되돌리거나 다시 수락할 수 없어요.`,
+      '완료',
+    );
+    if (!ok) return;
+    accepting.current = true;
+    try {
+      const err = await completeDeal(e.id);
+      if (err) {
+        alertIf(err);
+        return;
+      }
+      const room = await openRoom({ vendorId: p.vendorId });
+      if (room.roomId) {
+        await sendMessage(
+          room.roomId,
+          p.vendorId,
+          `[거래 완료] 고객이 ${e.defect} · ${[e.location, e.position].filter(Boolean).join(' · ')} 견적 거래를 완료 처리했어요. 감사합니다.`,
+        );
+      }
+    } finally {
+      accepting.current = false;
+    }
+  };
+
   /** 수락 취소 → 그 업체에게 고객이 수락을 취소했다고 알립니다. 알림이 실패해도 취소는 그대로 둡니다. */
   const cancelAndNotify = async (e: Estimate, p: Proposal) => {
     if (accepting.current) return;
@@ -215,9 +245,19 @@ function Quotes() {
       {list.map((e) => {
         const mine = proposals.find((p) => p.estimateId === e.id && p.vendorId === me);
         const related = all.filter((p) => p.estimateId === e.id).sort((a, b) => a.price - b.price);
+        const done = e.status === 'completed';
         return (
-          <Card key={e.id}>
-            <EstimateSummary e={e} showSender={vendor} onDelete={() => void removeEstimate(e.id).then(alertIf)} />
+          // 완료된 거래는 회색으로 흐리게 하고 누를 수 없게 합니다.
+          <View key={e.id} style={done && s.done} pointerEvents={done ? 'none' : 'auto'}>
+            <Card>
+              {done && (
+                <View style={s.doneBadge}>
+                  <Txt variant="label" color={C.onPrimary} style={{ fontFamily: F.bold }}>
+                    거래 완료
+                  </Txt>
+                </View>
+              )}
+              <EstimateSummary e={e} showSender={vendor} onDelete={() => void removeEstimate(e.id).then(alertIf)} />
             {vendor ? (
               mine ? (
                 <ProposalBox p={mine} title="보낸 업체 제안서" onDelete={() => removeProposal(mine.id)} />
@@ -237,16 +277,18 @@ function Quotes() {
                   <ProposalBox
                     key={p.id}
                     p={p}
-                    chat
+                    chat={!done}
                     onDelete={() => removeProposal(p.id)}
-                    accept={!accepted[e.id] ? 'open' : accepted[e.id] === p.id ? 'accepted' : 'closed'}
+                    accept={done ? undefined : !accepted[e.id] ? 'open' : accepted[e.id] === p.id ? 'accepted' : 'closed'}
                     onAccept={() => void acceptAndChat(e, p)}
                     onCancelAccept={() => void cancelAndNotify(e, p)}
+                    onComplete={() => void completeAndNotify(e, p)}
                   />
                 ))}
               </>
             )}
-          </Card>
+            </Card>
+          </View>
         );
       })}
     </>
@@ -295,6 +337,7 @@ function ProposalBox({
   accept,
   onAccept,
   onCancelAccept,
+  onComplete,
 }: {
   p: Proposal;
   title?: string;
@@ -304,6 +347,7 @@ function ProposalBox({
   accept?: AcceptState;
   onAccept?: () => void;
   onCancelAccept?: () => void;
+  onComplete?: () => void;
 }) {
   const [asking, setAsking] = useState(false);
   const closed = accept === 'closed';
@@ -391,16 +435,30 @@ function ProposalBox({
               </Pressable>
             ) : accept === 'accepted' ? (
               // 수락 취소: 요청서를 다시 열어 다른 업체 제안서를 수락할 수 있습니다. (GAP-014)
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${p.vendorName} 수락 취소`}
-                hitSlop={6}
-                onPress={onCancelAccept}
-                style={[s.pill, { backgroundColor: C.danger }]}>
-                <Txt variant="label" color={C.onPrimary} style={{ fontFamily: F.bold }}>
-                  수락 취소
-                </Txt>
-              </Pressable>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${p.vendorName} 수락 취소`}
+                  hitSlop={6}
+                  onPress={onCancelAccept}
+                  style={[s.pill, { backgroundColor: C.danger }]}>
+                  <Txt variant="label" color={C.onPrimary} style={{ fontFamily: F.bold }}>
+                    수락 취소
+                  </Txt>
+                </Pressable>
+                {onComplete && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${p.vendorName} 거래 완료`}
+                    hitSlop={6}
+                    onPress={onComplete}
+                    style={[s.pill, s.pillGreen]}>
+                    <Txt variant="label" color={C.onPrimary} style={{ fontFamily: F.bold }}>
+                      완료
+                    </Txt>
+                  </Pressable>
+                )}
+              </View>
             ) : (
               <View />
             )}
@@ -503,6 +561,14 @@ const s = StyleSheet.create({
   chatHint: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   boxFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   proposalAccepted: { borderWidth: 2, borderColor: C.primary },
+  done: { opacity: 0.45 },
+  doneBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: C.sub,
+  },
   ask: { backgroundColor: C.card, borderRadius: 16, padding: 12, gap: 10 },
   pill: { minHeight: 34, paddingHorizontal: 16, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   pillGreen: { backgroundColor: C.primary },

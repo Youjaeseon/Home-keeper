@@ -158,7 +158,7 @@ export type Estimate = {
   position: string;
   memo: string;
   createdAt: number;
-  status?: 'open' | 'accepted' | 'cancelled';
+  status?: 'open' | 'accepted' | 'cancelled' | 'completed';
   acceptedProposalId?: string | null;
 };
 

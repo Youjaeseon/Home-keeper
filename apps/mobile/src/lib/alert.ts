@@ -11,3 +11,22 @@ export function showAlert(title: string, message?: string) {
   }
   Alert.alert(title, message);
 }
+
+/**
+ * 확인·취소 두 버튼으로 묻습니다. 확인을 누르면 true.
+ * 웹에서는 window.confirm을 씁니다.
+ */
+export function confirmAlert(title: string, message: string, confirmText = '확인'): Promise<boolean> {
+  if (Platform.OS === 'web') return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  return new Promise((resolve) => {
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: '취소', style: 'cancel', onPress: () => resolve(false) },
+        { text: confirmText, style: 'destructive', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}

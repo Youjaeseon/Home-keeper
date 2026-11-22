@@ -14,6 +14,7 @@ import {
   acceptQuoteProposal,
   registerProvider,
   cancelQuoteAcceptance,
+  completeQuoteRequest,
   ApiError,
   cancelQuoteRequest,
   chatSocketUrl,
@@ -107,6 +108,7 @@ type Store = {
   acceptProposal: (estimateId: string, proposalId: string) => Promise<string | null>;
   /** 수락 취소: 요청서를 다시 열어 다른 업체 제안서를 수락할 수 있게 합니다. (GAP-014) */
   cancelAccept: (estimateId: string) => Promise<string | null>;
+  completeDeal: (estimateId: string) => Promise<string | null>;
 };
 
 const AppContext = createContext<Store | null>(null);
@@ -697,6 +699,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         if (e instanceof ApiError && e.code === 'request_not_accepted') return '수락된 견적 요청서가 아니에요.';
         if (e instanceof ApiError && e.code === 'request_already_open') return '같은 분석 결과로 진행 중인 다른 견적 요청서가 있어 되돌릴 수 없어요.';
+        return messageOf(e);
+      }
+    },
+    async completeDeal(estimateId) {
+      try {
+        await completeQuoteRequest(estimateId);
+        await refreshQuotes();
+        return null;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'quote_completion_unavailable') return '완료 처리를 아직 할 수 없어요. (서버 준비 중)';
+        if (e instanceof ApiError && e.code === 'request_not_accepted') return '수락된 견적 요청서만 완료할 수 있어요.';
         return messageOf(e);
       }
     },

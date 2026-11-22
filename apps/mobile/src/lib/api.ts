@@ -146,7 +146,7 @@ export type QuoteRequestSummary = {
   severity_score: number | null;
   severity_level: SeverityLevel | null;
   suspected_types: string[];
-  status: 'open' | 'accepted' | 'cancelled';
+  status: 'open' | 'accepted' | 'cancelled' | 'completed';
   accepted_proposal_id: string | null;
   proposal_count: number;
   my_proposal_id: string | null;
@@ -591,6 +591,11 @@ export function submitQuoteProposal(
 /** 수락 취소: 요청서를 다시 진행 중으로 되돌립니다. (GAP-014) */
 export function cancelQuoteAcceptance(requestId: string): Promise<QuoteRequestDetail> {
   return apiRequest<QuoteRequestDetail>(`/quote-requests/${requestId}/cancel-accept`, { method: 'POST' });
+}
+
+/** 수락한 거래를 완료로 마감합니다. 019 미적용 서버는 503 quote_completion_unavailable. */
+export function completeQuoteRequest(requestId: string): Promise<QuoteRequestDetail> {
+  return apiRequest<QuoteRequestDetail>(`/quote-requests/${requestId}/complete`, { method: 'POST' });
 }
 
 export function acceptQuoteProposal(
