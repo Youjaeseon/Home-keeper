@@ -608,6 +608,9 @@ class RegionOut(BaseModel):
     region_id: UUID = Field(description="지역 UUID.")
     name: str = Field(description="지역 식별 이름(예: `yongin`).")
     display_name: str = Field(description="화면에 표시할 지역 이름(시·군·구 포함).")
+    parent_id: UUID | None = Field(
+        default=None, description="상위 지역(시·도) UUID. 시·도 자체면 `null`입니다. 2단계 지역 선택에 씁니다."
+    )
 
 
 class RecordListItem(BaseModel):

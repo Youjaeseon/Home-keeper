@@ -195,8 +195,11 @@ def test_regions_are_public_and_include_demo_region(client, admin):
     regions = response.json()
     assert regions
     yongin = next(region for region in regions if region["name"] == "yongin")
+    gyeonggi = next(region for region in regions if region["name"] == "gyeonggi")
+    assert gyeonggi["parent_id"] is None
     assert yongin == {
         "region_id": str(_yongin_id(admin)),
         "name": "yongin",
         "display_name": "경기도 용인시",
+        "parent_id": gyeonggi["region_id"],
     }

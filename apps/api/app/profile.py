@@ -186,7 +186,7 @@ def list_regions():
     with read_transaction() as conn:
         return conn.execute(
             """
-            SELECT id AS region_id, name, display_name
+            SELECT id AS region_id, name, display_name, parent_id
             FROM regions
             ORDER BY display_name, id
             """
