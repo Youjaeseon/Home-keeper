@@ -119,6 +119,41 @@ _PROPOSAL_SELECT = """
 """
 
 
+def _notify_quote_change(request_id) -> None:
+    """Push a 'quotes_changed' event over the chat WebSocket so lists refresh live.
+
+    Recipients: the requester, provider accounts in the request's region, and
+    providers who already proposed. Best effort: failures never affect the request.
+    """
+    try:
+        import anyio.from_thread
+
+        from app.chat import hub
+
+        with read_transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT requester_id AS user_id FROM quote_requests WHERE id = %s
+                UNION
+                SELECT p.account_user_id FROM quote_requests q
+                JOIN provider_regions pr ON pr.region_id = q.region_id
+                JOIN providers p ON p.id = pr.provider_id
+                WHERE q.id = %s AND p.account_user_id IS NOT NULL
+                UNION
+                SELECT p.account_user_id FROM quote_proposals qp
+                JOIN providers p ON p.id = qp.provider_id
+                WHERE qp.request_id = %s AND p.account_user_id IS NOT NULL
+                """,
+                (request_id, request_id, request_id),
+            ).fetchall()
+        user_ids = {row["user_id"] for row in rows}
+        anyio.from_thread.run(
+            hub.broadcast, user_ids, {"type": "quotes_changed", "request_id": str(request_id)}
+        )
+    except Exception:
+        pass
+
+
 def _provider_for_user(conn, user_id: UUID) -> dict | None:
     return conn.execute(
         "SELECT * FROM providers WHERE account_user_id = %s", (user_id,)
@@ -351,7 +386,9 @@ def create_quote_request(
         request_id = created["id"]
 
     with read_transaction() as conn:
-        return _detail(conn, request_id, owner_id)
+        detail = _detail(conn, request_id, owner_id)
+    _notify_quote_change(request_id)
+    return detail
 
 
 @router.get(
@@ -501,6 +538,7 @@ def create_quote_proposal(
         proposal = conn.execute(
             _PROPOSAL_SELECT + " WHERE proposal.id = %s", (created["id"],)
         ).fetchone()
+    _notify_quote_change(request_id)
     return _proposal_out(proposal)
 
 
@@ -566,7 +604,9 @@ def accept_quote_proposal(
         )
 
     with read_transaction() as conn:
-        return _detail(conn, request_id, owner_id)
+        detail = _detail(conn, request_id, owner_id)
+    _notify_quote_change(request_id)
+    return detail
 
 
 @router.post(
@@ -630,7 +670,9 @@ def cancel_quote_acceptance(
         )
 
     with read_transaction() as conn:
-        return _detail(conn, request_id, owner_id)
+        detail = _detail(conn, request_id, owner_id)
+    _notify_quote_change(request_id)
+    return detail
 
 
 @router.post(
@@ -671,7 +713,9 @@ def complete_quote_request(
         raise quote_completion_unavailable() from None
 
     with read_transaction() as conn:
-        return _detail(conn, request_id, owner_id)
+        detail = _detail(conn, request_id, owner_id)
+    _notify_quote_change(request_id)
+    return detail
 
 
 @router.post(
@@ -712,4 +756,6 @@ def cancel_quote_request(
         )
 
     with read_transaction() as conn:
-        return _detail(conn, request_id, owner_id)
+        detail = _detail(conn, request_id, owner_id)
+    _notify_quote_change(request_id)
+    return detail
