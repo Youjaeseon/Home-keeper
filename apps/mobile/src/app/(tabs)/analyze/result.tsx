@@ -119,13 +119,16 @@ export default function AnalyzeResultScreen() {
   }
 
   const color = riskColor(r.risk);
-  // 진단에 맞는 분야의 업체만 보여 줍니다(Hyeok 결정). 진단이 고른 작업 종류이거나, 하자 유형에 대응하는 분야면 맞는 업체입니다.
-  // 맞는 업체가 하나도 없으면(판단 보류 등) 지역 업체를 모두 보여 줍니다.
-  const DEFECT_FIELD: Record<string, string> = { 곰팡이: '곰팡이 제거', 균열: '균열 보수', 벗겨짐: '벽지·도장 보수' };
+  // 하자 유형에 맞는 분야의 업체만 추천합니다(Hyeok 결정). 균열·벗겨짐은 도장 업체, 곰팡이는 곰팡이 제거 업체입니다.
+  // 하자 유형을 알 수 없을 때(판단 보류 등)만 진단이 고른 작업 종류로 고르고, 그래도 없으면 지역 업체를 모두 보여 줍니다.
+  const DEFECT_FIELD: Record<string, string> = { 곰팡이: '곰팡이 제거', 균열: '벽지·도장 보수', 벗겨짐: '벽지·도장 보수' };
   const field = DEFECT_FIELD[r.defect];
-  const fits = (v: Vendor) =>
-    (!!r.workTypeId && v.specialtyIds.includes(r.workTypeId)) || (!!field && v.specialties.includes(field));
-  const matched = vendorList.vendors.filter(fits);
+  // 진단 근거에 물기·누수가 있으면 누수·원인 점검 업체도 뒤에 함께 추천합니다.
+  const water = !!r.riskReasons?.some((f) => f.label === '물기·누수');
+  const fieldFit = (v: Vendor) =>
+    field ? v.specialties.includes(field) : !!r.workTypeId && v.specialtyIds.includes(r.workTypeId);
+  const fits = (v: Vendor) => fieldFit(v) || (water && v.specialties.includes('원인 점검'));
+  const matched = [...vendorList.vendors.filter(fieldFit), ...vendorList.vendors.filter((v) => !fieldFit(v) && fits(v))];
   const vendors = matched.length > 0 ? matched : vendorList.vendors;
   const sent = estimates.some((e) => e.analysisId === r.id && e.status !== 'cancelled' && user?.role !== '업체');
 
