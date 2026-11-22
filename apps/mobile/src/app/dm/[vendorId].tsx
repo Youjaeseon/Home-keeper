@@ -1,12 +1,14 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { ArrowUp, MessagesSquare } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Txt } from '@/components/ui';
 import { C, F, MAX_W, STROKE } from '@/constants/theme';
+import { confirmAlert } from '@/lib/alert';
 import { useApp } from '@/store/app-store';
+import type { Message } from '@/types';
 
 /** 업체와의 1:1 실시간 채팅 (POST /chat/rooms, GET/POST /chat/rooms/{id}/messages, WebSocket /chat/ws) */
 export default function ChatScreen() {
@@ -16,7 +18,10 @@ export default function ChatScreen() {
     name?: string;
     roomId?: string;
   }>();
-  const { messages, analyses, threads, openRoom, loadMessages, sendMessage } = useApp();
+  const { messages, analyses, threads, openRoom, loadMessages, sendMessage, editMessage, deleteMessage } = useApp();
+  // 내 메시지 길게 누르기(웹은 오른쪽 클릭) → 수정·삭제 메뉴
+  const [menuFor, setMenuFor] = useState<Message | null>(null);
+  const [editing, setEditing] = useState<Message | null>(null);
   const [roomId, setRoomId] = useState<string | null>(roomParam ?? null);
   const [error, setError] = useState<string | null>(null);
   const vendorName = name ?? threads.find((t) => t.vendorId === vendorId)?.name;
@@ -63,6 +68,15 @@ export default function ChatScreen() {
   const onSend = async () => {
     const t = text.trim();
     if (!t || !roomId) return;
+    if (editing) {
+      const err = await editMessage(roomId, editing.id, t);
+      setError(err);
+      if (!err) {
+        setEditing(null);
+        setText('');
+      }
+      return;
+    }
     setText('');
     const err = await sendMessage(roomId, vendor.id, t);
     if (err) {
@@ -96,12 +110,34 @@ export default function ChatScreen() {
           }
           renderItem={({ item }) => {
             const mine = item.from === 'me';
+            // 서버 메시지는 editable(내 일반 메시지)일 때만, 데모 채팅은 내 메시지면 수정·삭제할 수 있습니다.
+            const canEdit = mine && item.editable !== false;
+            const openMenu = () => canEdit && setMenuFor(item);
+            const webMenu =
+              Platform.OS === 'web' && canEdit
+                ? {
+                    onContextMenu: (e: { preventDefault: () => void }) => {
+                      e.preventDefault();
+                      openMenu();
+                    },
+                  }
+                : {};
             return (
-              <View style={[s.bubble, mine ? s.mine : s.theirs]}>
+              <Pressable
+                onLongPress={openMenu}
+                delayLongPress={350}
+                disabled={!canEdit}
+                {...webMenu}
+                style={[s.bubble, mine ? s.mine : s.theirs, editing?.id === item.id && s.editingBubble]}>
                 <Txt variant="body" color={mine ? C.onPrimary : C.text}>
                   {item.text}
                 </Txt>
-              </View>
+                {item.edited && (
+                  <Txt variant="caption" color={mine ? C.onPrimary : C.sub} style={{ opacity: 0.75 }}>
+                    (수정됨)
+                  </Txt>
+                )}
+              </Pressable>
             );
           }}
         />
@@ -109,6 +145,24 @@ export default function ChatScreen() {
           <Txt variant="caption" color={C.danger} style={{ marginHorizontal: 24 }}>
             {error}
           </Txt>
+        )}
+        {editing && (
+          <View style={s.editBar}>
+            <Txt variant="caption" color={C.primary}>
+              메시지 수정 중
+            </Txt>
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => {
+                setEditing(null);
+                setText('');
+              }}>
+              <Txt variant="caption" muted>
+                취소
+              </Txt>
+            </Pressable>
+          </View>
         )}
         <View style={s.inputRow}>
           <TextInput
@@ -128,6 +182,53 @@ export default function ChatScreen() {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      {/* 내 메시지 수정·삭제 메뉴 */}
+      <Modal visible={!!menuFor} transparent animationType="fade" onRequestClose={() => setMenuFor(null)}>
+        <Pressable style={s.backdrop} onPress={() => setMenuFor(null)}>
+          <View style={s.menu}>
+            <Pressable
+              accessibilityRole="button"
+              style={s.menuItem}
+              onPress={() => {
+                if (!menuFor) return;
+                setEditing(menuFor);
+                setText(menuFor.text);
+                setMenuFor(null);
+              }}>
+              <Txt variant="bodyStrong">수정</Txt>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              style={s.menuItem}
+              onPress={() => {
+                const target = menuFor;
+                setMenuFor(null);
+                if (!target || !roomId) return;
+                void confirmAlert('메시지를 삭제할까요?', '상대방 화면에서도 지워지고 되돌릴 수 없어요.', '삭제').then(
+                  async (ok) => {
+                    if (!ok) return;
+                    const err = await deleteMessage(roomId, target.id);
+                    setError(err);
+                    if (!err && editing?.id === target.id) {
+                      setEditing(null);
+                      setText('');
+                    }
+                  },
+                );
+              }}>
+              <Txt variant="bodyStrong" color={C.danger}>
+                삭제
+              </Txt>
+            </Pressable>
+            <Pressable accessibilityRole="button" style={s.menuItem} onPress={() => setMenuFor(null)}>
+              <Txt variant="body" muted>
+                취소
+              </Txt>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -146,6 +247,11 @@ const s = StyleSheet.create({
   bubble: { maxWidth: '80%', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 22 },
   mine: { alignSelf: 'flex-end', backgroundColor: C.primary, borderBottomRightRadius: 8 },
   theirs: { alignSelf: 'flex-start', backgroundColor: C.card, borderBottomLeftRadius: 8 },
+  editingBubble: { opacity: 0.6 },
+  editBar: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 24, marginBottom: -8 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.25)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  menu: { width: '100%', maxWidth: 320, borderRadius: 24, backgroundColor: C.card, paddingVertical: 6 },
+  menuItem: { paddingVertical: 16, alignItems: 'center' },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
