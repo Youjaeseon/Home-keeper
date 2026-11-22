@@ -1,0 +1,46 @@
+services:
+  web:
+    image: home-keeper-web:latest
+    build:
+      context: .
+      dockerfile: apps/mobile/Dockerfile
+      args:
+        EXPO_PUBLIC_API_URL: ${EXPO_PUBLIC_API_URL:-}
+        EXPO_PUBLIC_SUPABASE_URL: ${EXPO_PUBLIC_SUPABASE_URL:-}
+        EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY:-}
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1}:${WEB_PORT:-8080}:8080"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    image: home-keeper-api:latest
+    build:
+      context: ./apps/api
+    env_file:
+      - path: ./apps/api/.env
+        format: raw
+    environment:
+      # Supply the admin connection only to an explicit migration command.
+      MIGRATION_DATABASE_URL: ""
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"
+    volumes:
+      - type: bind
+        source: ./models
+        target: /srv/models
+        read_only: true
+        bind:
+          create_host_path: false
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -42,8 +42,11 @@ def get_settings() -> Settings:
         supabase_jwt_audience=os.environ.get("SUPABASE_JWT_AUDIENCE", "authenticated"),
         supabase_jwt_issuer=os.environ.get("SUPABASE_JWT_ISSUER") or f"{supabase_url}/auth/v1",
         llm_api_key=os.environ.get("LLM_API_KEY") or None,
-        llm_base_url=os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
-        llm_model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+        # Defaults match the deployed Gemini setup; any OpenAI-compatible endpoint can override.
+        llm_base_url=os.environ.get(
+            "LLM_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"
+        ).rstrip("/"),
+        llm_model=os.environ.get("LLM_MODEL", "gemini-3.5-flash-lite"),
         llm_timeout_seconds=float(os.environ.get("LLM_TIMEOUT_SECONDS", "20")),
         vision_llm_model=os.environ.get("VISION_LLM_MODEL") or None,
         # Optional reasoning_effort for "thinking" models (e.g. none/low). Unset keeps the provider default.
