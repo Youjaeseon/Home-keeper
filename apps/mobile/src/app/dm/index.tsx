@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronRight, Send } from 'lucide-react-native';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { ChevronLeft, ChevronRight, Send } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
@@ -30,8 +30,29 @@ export default function DmListScreen() {
     { key: 'quotes', label: user?.role === '업체' ? '견적 요청서' : '업체 제안서' },
   ];
 
+  // 채팅 탭(바로가기)이나 새로고침으로 들어오면 돌아갈 화면 기록이 없어 기본 뒤로 버튼이 사라집니다.
+  // 그때만 같은 모양의 '뒤로' 버튼을 직접 달고, 누르면 소식지(홈)로 갑니다.
+  const noHistory = !router.canGoBack();
+
   return (
     <Screen>
+      {noHistory && (
+        <Stack.Screen
+          options={{
+            headerLeft: () => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="뒤로"
+                hitSlop={8}
+                onPress={() => router.replace('/news')}
+                style={({ pressed }) => [s.back, pressed && { opacity: 0.6 }]}>
+                <ChevronLeft size={22} color={C.text} strokeWidth={STROKE} />
+                <Txt variant="body">뒤로</Txt>
+              </Pressable>
+            ),
+          }}
+        />
+      )}
       <View style={s.tabs}>
         {TABS.map((t) => {
           const on = t.key === tab;
@@ -541,6 +562,7 @@ function ProposalForm({ estimateId }: { estimateId: string }) {
 }
 
 const s = StyleSheet.create({
+  back: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 8, paddingVertical: 6 },
   tabs: { flexDirection: 'row', backgroundColor: C.card, borderRadius: 999, padding: 5, gap: 4 },
   tab: { flex: 1, minHeight: 42, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   tabOn: { backgroundColor: C.primary },
