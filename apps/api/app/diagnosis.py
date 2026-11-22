@@ -53,14 +53,36 @@ SYSTEM_PROMPT = """\
 - work_type은 제공된 등록 작업 목록에서만 고르고, 맞는 작업이 없거나 원인이 복합적이면 "원인 점검"을 고른다.
 - 출력은 지정된 키만 가진 JSON 객체 하나뿐이다.
 
-[유형별 참고 카드: 원인 → 사진 신호 → 대응]
-- 곰팡이: 결로 → 창틀·외벽 모서리 띠 모양, 물방울 자국 → 결로 부위 건조·단열 점검 / 누수 → 천장·벽 번짐, 갈색 테두리 → 윗집·배관 누수 확인 / 습한 공간 → 화장실·주방 실리콘·줄눈 점 → 실리콘·줄눈 교체
-- 균열: 건조수축 → 가는 머리카락 균열, 도장면 표면 → 보수재 충전 후 경과 관찰 / 구조 변형 → 계단형·사선, 폭이 넓음, 관통 → 점검 필요 / 누수 동반 → 균열 주변 얼룩·백화 → 방수 점검
-- 벗겨짐: 습기 → 들뜸·부풀음, 물자국 동반 → 원인 습기 먼저 제거 후 재도장·도배 / 노후·접착 불량 → 마른 상태로 벗겨짐 → 해당 면 재시공
 """
+
+# 유형별 참고 카드: 사진에서 의심되는 유형의 카드만 프롬프트에 넣어 입력을 줄입니다(없으면 전부).
+_KNOWLEDGE_CARDS = {
+    "곰팡이": "- 곰팡이: 결로 → 창틀·외벽 모서리 띠 모양, 물방울 자국 → 결로 부위 건조·단열 점검 / 누수 → 천장·벽 번짐, 갈색 테두리 → 윗집·배관 누수 확인 / 습한 공간 → 화장실·주방 실리콘·줄눈 점 → 실리콘·줄눈 교체",
+    "균열": "- 균열: 건조수축 → 가는 머리카락 균열, 도장면 표면 → 보수재 충전 후 경과 관찰 / 구조 변형 → 계단형·사선, 폭이 넓음, 관통 → 점검 필요 / 누수 동반 → 균열 주변 얼룩·백화 → 방수 점검",
+    "벗겨짐": "- 벗겨짐: 습기 → 들뜸·부풀음, 물자국 동반 → 원인 습기 먼저 제거 후 재도장·도배 / 노후·접착 불량 → 마른 상태로 벗겨짐 → 해당 면 재시공",
+}
+
+
+def _photo_types(photo_analysis: dict | None) -> list[str]:
+    types: list[str] = []
+    for photo in (photo_analysis or {}).get("photos") or []:
+        for detection in photo.get("detections") or []:
+            label = normalize_label(str(detection.get("label") or ""))
+            if label in _KNOWLEDGE_CARDS and label not in types:
+                types.append(label)
+        observation = photo.get("vision_observation")
+        if isinstance(observation, dict):
+            for label in observation.get("suspected_types") or []:
+                if label in _KNOWLEDGE_CARDS and label not in types:
+                    types.append(label)
+    return types
+
 
 PROMPT_TEMPLATE = """\
 아래 정보로 하자 진단을 만들어 주세요.
+
+[참고 카드: 원인 → 사진 신호 → 대응]
+{cards}
 
 [사용자 입력]
 - 위치: {location}
@@ -172,7 +194,9 @@ def _photo_lines(photo_analysis: dict | None) -> str:
 
 def build_prompt(record: dict, work_types: list[dict]) -> str:
     symptoms = str(record.get("symptoms") or "").strip()
+    types = _photo_types(record.get("photo_observations")) or list(_KNOWLEDGE_CARDS)
     return PROMPT_TEMPLATE.format(
+        cards="\n".join(_KNOWLEDGE_CARDS[t] for t in types),
         location=_redact(str(record.get("location") or "미입력")),
         material=_redact(str(record.get("material") or "미입력")),
         symptoms=_redact(symptoms) if symptoms else "미입력",

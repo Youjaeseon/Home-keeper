@@ -6,6 +6,7 @@ Prompts, model responses, and request bodies are never logged.
 """
 
 import json
+import logging
 import time
 
 import httpx
@@ -43,6 +44,8 @@ class LlmQuotaExceeded(LlmError):
 
 # Gemini's OpenAI-compatible endpoint returns brief 503 "high demand" spikes; one retry usually succeeds.
 _RETRY_STATUSES = {500, 503}
+# Per-call model latency (no prompt or response content) to find slow analysis stages.
+_call_log = logging.getLogger("uvicorn.error")
 _RETRY_DELAY_SECONDS = 1.5
 
 
@@ -52,6 +55,7 @@ def _post_chat(payload: dict) -> httpx.Response:
     if effort:
         payload = {**payload, "reasoning_effort": effort}
     for attempt in range(2):
+        started = time.perf_counter()
         try:
             response = httpx.post(
                 f"{settings.llm_base_url}/chat/completions",
@@ -60,9 +64,22 @@ def _post_chat(payload: dict) -> httpx.Response:
                 timeout=settings.llm_timeout_seconds,
             )
         except httpx.TimeoutException as exc:
+            _call_log.info("llm call model=%s attempt=%d timeout after %.0fms", payload.get("model"), attempt + 1, (time.perf_counter() - started) * 1000)
             raise LlmTimeout from exc
         except httpx.HTTPError as exc:
             raise LlmError from exc
+        usage = {}
+        if response.status_code == 200:
+            try:
+                usage = response.json().get("usage") or {}
+            except ValueError:
+                usage = {}
+        details = usage.get("completion_tokens_details") or {}
+        _call_log.info(
+            "llm call model=%s attempt=%d status=%d %.0fms prompt=%s completion=%s reasoning=%s",
+            payload.get("model"), attempt + 1, response.status_code, (time.perf_counter() - started) * 1000,
+            usage.get("prompt_tokens"), usage.get("completion_tokens"), details.get("reasoning_tokens"),
+        )
         if response.status_code in _RETRY_STATUSES and attempt == 0:
             time.sleep(_RETRY_DELAY_SECONDS)
             continue
