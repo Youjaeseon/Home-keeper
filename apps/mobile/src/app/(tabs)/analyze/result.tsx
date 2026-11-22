@@ -153,7 +153,7 @@ export default function AnalyzeResultScreen() {
   };
 
   return (
-    <Screen>
+    <Screen scrollKey={analysisId}>
       {/* 원형 사진 + 테두리 심각도 링 (사진 위 손상 위치 원은 표시하지 않음) */}
       <RiskPhotoRing uri={r.photoUri} risk={r.risk} />
 
