@@ -3,6 +3,7 @@ import { ChevronRight, Info, Phone, Star } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
+import { VendorBadge } from '@/components/vendor-badge';
 import { AppBar, Card, Chip, Hero, Notice, Screen, Txt } from '@/components/ui';
 import { C, STROKE } from '@/constants/theme';
 import { messageOf } from '@/lib/api';
@@ -49,9 +50,7 @@ export default function VendorsScreen() {
           }
           style={({ pressed }) => pressed && { opacity: 0.85 }}>
           <Card style={s.row}>
-            <View style={s.badge}>
-              <Txt variant="title">{v.label}</Txt>
-            </View>
+            <VendorBadge vendor={v} />
             <View style={{ flex: 1, gap: 4 }}>
               <Txt variant="h2">{v.name}</Txt>
               <Txt variant="sub" muted>
@@ -85,14 +84,6 @@ export default function VendorsScreen() {
 
 const s = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18 },
-  badge: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: C.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
   phone: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
 });

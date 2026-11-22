@@ -18,6 +18,7 @@ import {
 import { ActivityIndicator, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { DefectPhoto } from '@/components/defect-photo';
+import { VendorBadge } from '@/components/vendor-badge';
 import { RiskLegend, RiskPhotoRing } from '@/components/risk-gauge';
 import { Banner, Button, Card, CardHeader, Chip, Field, Notice, Screen, Txt } from '@/components/ui';
 import { C, R, riskColor, riskLabel, STROKE } from '@/constants/theme';
@@ -318,9 +319,7 @@ export default function AnalyzeResultScreen() {
               }
               style={({ pressed }) => pressed && { opacity: 0.85 }}>
               <Card style={[s.vendor, fit && s.vendorFit]}>
-                <View style={s.vendorBadge}>
-                  <Txt variant="title">{v.label}</Txt>
-                </View>
+                <VendorBadge vendor={v} />
                 <View style={{ flex: 1, gap: 4 }}>
                   {fit && (
                     <View style={s.rank}>
@@ -402,14 +401,6 @@ const s = StyleSheet.create({
   },
   vendor: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18, borderWidth: 2, borderColor: C.card },
   vendorFit: { borderColor: C.primary },
-  vendorBadge: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: C.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   rank: {
     alignSelf: 'flex-start',
     backgroundColor: C.primary,
