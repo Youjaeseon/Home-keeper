@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { ChevronRight, Clock, LogOut } from 'lucide-react-native';
+import { ChevronRight, Clock, LogOut, Wrench } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -93,6 +93,9 @@ export default function ProfileScreen() {
           ))}
         </Card>
       )}
+
+      {/* 하단 탭을 4개로 줄여 업체 목록은 여기서 엽니다. (GAP-020) */}
+      <Button title="우리 지역 업체 보기" variant="soft" icon={Wrench} onPress={() => router.push('/vendors')} />
 
       <Button
         title="로그아웃"
