@@ -558,6 +558,11 @@ export function submitQuoteProposal(
   });
 }
 
+/** 수락 취소: 요청서를 다시 진행 중으로 되돌립니다. (GAP-014) */
+export function cancelQuoteAcceptance(requestId: string): Promise<QuoteRequestDetail> {
+  return apiRequest<QuoteRequestDetail>(`/quote-requests/${requestId}/cancel-accept`, { method: 'POST' });
+}
+
 export function acceptQuoteProposal(
   requestId: string,
   proposalId: string,

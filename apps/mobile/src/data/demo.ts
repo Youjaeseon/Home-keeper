@@ -122,3 +122,31 @@ export const DEMO_MESSAGES: Message[] = [
 
 export const demoAutoReply = (vendorName: string) =>
   `${vendorName}입니다. 문의 감사합니다. 사진을 확인한 뒤 예상 견적과 방문 가능 일정을 안내해 드릴게요.\n※ 가상 업체 자동 응답입니다.`;
+
+/**
+ * 실제 견적 요청서에도 시연용 가상 업체 제안서를 붙여 줍니다(앱 안에서만, 서버 저장 없음).
+ * 실제 업체 계정이 없는 지역에서도 제안서 비교·수락·채팅 흐름을 보여 주기 위한 것입니다.
+ */
+export function demoProposalsFor(estimateId: string, defect: string, createdAt: number): Proposal[] {
+  const picks: [string, number, string][] =
+    defect === '곰팡이'
+      ? [['a', 7, '곰팡이 제거와 방지 코팅까지 포함한 금액입니다. 주말 방문 가능해요.'], ['d', 5, '제거 작업만 진행합니다. 환기 상태 점검은 무료로 해 드려요.']]
+      : defect === '균열'
+        ? [['b', 8, '균열 부위를 메우고 도장까지 마감하는 금액입니다.'], ['d', 6, '부분 보수 기준 금액입니다. 30분 정도 걸려요.']]
+        : [['b', 7, '들뜬 마감재를 걷어 내고 다시 도장하는 금액입니다.'], ['c', 9, '습기 원인부터 점검하고 보수 범위를 안내해 드려요.']];
+  return picks.map(([key, man, memo], i) => {
+    const v = DEMO_VENDORS.find((x) => x.id === `demo-vendor-${key}`)!;
+    return {
+      id: `demo-auto-${estimateId}-${key}`,
+      estimateId,
+      vendorId: v.id,
+      vendorName: v.name,
+      vendorIntro: v.description,
+      vendorRegion: '경기 용인',
+      price: man * 10000,
+      priceMax: man * 10000,
+      memo,
+      createdAt: createdAt + (i + 1) * 60_000,
+    };
+  });
+}

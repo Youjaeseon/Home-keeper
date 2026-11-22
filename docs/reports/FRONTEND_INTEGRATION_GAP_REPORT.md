@@ -18,7 +18,7 @@
 | GAP-008 | `confidence` 필드와 신뢰도 표시 제거 | `types.ts`, `analyze/result.tsx` |
 | GAP-009 | 근접 사진은 요청하지 않은 기능이라 넣지 않음(사진 1장 `overview`만 전송, Hyeok 결정) | `analyze/detail.tsx`, `services/analyze.ts` |
 | GAP-011 | 분석 요청마다 외부 AI 사진 전송 동의 체크(기본값은 가입 시 동의 여부). 가입 화면의 필수 동의는 유지 | `analyze/detail.tsx` |
-| GAP-014 | 수락 취소 버튼 제거, 수락된 제안서는 `수락됨` 표시만 | `app/dm/index.tsx`, `store/app-store.tsx` |
+| GAP-014 | 수락 후 빨간 `수락 취소` 버튼으로 되돌리기(Hyeok 결정, `docs/adr/0003`의 수락 확정 규칙을 바꿈). 서버 `POST /quote-requests/{id}/cancel-accept`, 시연용 제안서는 앱 안에서 처리 | `app/dm/index.tsx`, `store/app-store.tsx`, `apps/api/app/quotes.py` |
 | GAP-021 | 화면에서 제외(Hyeok 결정). 백엔드 `drafts/provider` API는 그대로 | - |
 | GAP-024 | `useRef(...).current`를 `useState` 초기화로 바꿔 린트 오류 0건 | `app/dm/index.tsx` |
 | GAP-025 | 권장 대응만 표시. AI 관찰·준비물·확인하지 못한 정보는 화면에서 제외(Hyeok 결정) | `analyze/result.tsx` |
@@ -39,6 +39,8 @@
 | GAP-023 | 제안 금액은 원 단위 최소~최대 직접 입력 | `app/dm/index.tsx`, `store/app-store.tsx` |
 | GAP-031 | 문서 용어(심각도, 견적 요청서, 업체 제안서) | 화면 문구 전체 |
 | 위험도(심각도) 구간 | 서버 기준 40·70 유지 | 현재 동작 유지 |
+
+시연용 가상 데이터(추가): 요청인의 실제 견적 요청서에도 가상 업체 제안서 2건을 앱 안에서 붙입니다(서버 저장 없음, 수락·수락 취소·채팅 모두 앱 안에서 처리). 용인에 실제 업체 계정이 없어 제안서 흐름을 보여 주기 위한 것입니다.
 
 시연용 가상 데이터: 팀원 로컬 앱의 가상 업체 4곳·예시 견적 요청서 3건·업체 제안서 7건과 예시 대화 2개를 `data/demo.ts`로 옮겼습니다(id는 `demo-`로 시작, 지역 용인·유형 3종·금액 원 단위로 맞춤). 서버 데이터 뒤에 함께 보이고, 가상 업체와의 채팅·수락·제안·삭제는 앱 안에서만 처리하며 서버에는 저장하지 않습니다. 서버가 채팅 불가 샘플 업체만 줄 때는 가상 업체로 대신 보여 줍니다. 소식지는 서버에 실제 공고가 있어 예시 소식을 넣지 않았고, 분석 기록 예시는 팀원 로컬 앱에도 없어 넣지 않았습니다.
 
@@ -68,7 +70,7 @@
 | GAP-011 | `external_analysis_consent` 생략 시 `false` | `records.py`, `docs/design/API_DESIGN.md`, `docs/guides/API_USAGE.md` |
 | GAP-016 | 견적 요청서에 `requester_nickname` | `quotes.py`, `schemas.py`, `store/app-store.tsx` |
 | GAP-017 | 업체 제안서의 업체 정보에 `region_names` | `quotes.py`, `schemas.py`, `store/app-store.tsx` |
-| GAP-014 | 보류: 팀 결정 필요. 수락 취소는 `docs/adr/0003`(수락 1건 확정, 나머지 자동 종료)과 충돌 | 앱은 `수락됨` 표시만 |
+| GAP-014 | `POST /quote-requests/{id}/cancel-accept` 추가. 요청서를 `open`으로, 수락 제안서와 그 수락으로 마감된 제안서를 `pending`으로 되돌림. 스키마·권한 변경 없음. `docs/adr/0003`의 "수락은 최종" 규칙과 달라져 팀 공유 필요 | `quotes.py`, `errors.py`, `tests/test_quotes.py` |
 | GAP-015 | 보류: 팀 결정 필요. 기록 삭제는 런타임 역할에 `records` DELETE 권한이 없어 공유 DB 마이그레이션이 필요 | 앱은 화면에서만 숨김 |
 
 백엔드 테스트는 단언을 추가·수정했지만 테스트 DB가 없어 실행하지 않았습니다(`test_auth.py`, `test_profile.py`, `test_analyze.py`, `test_quotes.py`, 신규 `test_cors.py`).

@@ -8,10 +8,11 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 
 import { Platform } from 'react-native';
 
-import { DEMO_ESTIMATES, DEMO_MESSAGES, DEMO_PROPOSALS, DEMO_VENDORS, demoAutoReply, demoRoomId, isDemo } from '@/data/demo';
+import { DEMO_ESTIMATES, DEMO_MESSAGES, DEMO_PROPOSALS, DEMO_VENDORS, demoAutoReply, demoProposalsFor, demoRoomId, isDemo } from '@/data/demo';
 import { matchRegion, toApiHousing, toUser } from '@/lib/adapters';
 import {
   acceptQuoteProposal,
+  cancelQuoteAcceptance,
   ApiError,
   cancelQuoteRequest,
   chatSocketUrl,
@@ -101,6 +102,8 @@ type Store = {
   /** 수락한 업체 제안서: 견적 요청서 id → 업체 제안서 id (서버 accepted_proposal_id) */
   accepted: Record<string, string>;
   acceptProposal: (estimateId: string, proposalId: string) => Promise<string | null>;
+  /** 수락 취소: 요청서를 다시 열어 다른 업체 제안서를 수락할 수 있게 합니다. (GAP-014) */
+  cancelAccept: (estimateId: string) => Promise<string | null>;
 };
 
 const AppContext = createContext<Store | null>(null);
@@ -437,7 +440,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     messages: [...messages, ...demoMessages],
     // 유저에게는 시연용 견적 요청서·업체 제안서를, 업체에게는 시연용 견적 요청서를 함께 보여 줍니다.
     estimates: [...estimates, ...DEMO_ESTIMATES],
-    proposals: [...proposals, ...DEMO_PROPOSALS, ...demoSentProposals],
+    proposals: [
+      ...proposals,
+      ...DEMO_PROPOSALS,
+      ...demoSentProposals,
+      // 요청인의 실제 요청서에는 시연용 가상 업체 제안서를 함께 붙입니다(진행 중·수락 상태만).
+      ...(isProvider
+        ? []
+        : estimates
+            .filter((e) => e.userId === me && e.status !== 'cancelled')
+            .flatMap((e) => demoProposalsFor(e.id, e.defect, e.createdAt))),
+    ],
     hidden: hiddenKeys.filter((k) => k.startsWith(`${me}:`)).map((k) => k.slice(me.length + 1)),
     async signup(account) {
       if (account.role === '업체') {
@@ -682,7 +695,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...demoAccepted,
     },
     async acceptProposal(estimateId, proposalId) {
-      if (isDemo(estimateId)) {
+      // 시연용 요청서이거나, 실제 요청서에 붙은 시연용 제안서면 앱 안에서만 수락합니다.
+      if (isDemo(estimateId) || isDemo(proposalId)) {
         setDemoAccepted((prev) => ({ ...prev, [estimateId]: proposalId }));
         return null;
       }
@@ -692,6 +706,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return null;
       } catch (e) {
         if (e instanceof ApiError && e.code === 'request_not_open') return '이미 마감되었거나 취소된 견적 요청서예요.';
+        return messageOf(e);
+      }
+    },
+    async cancelAccept(estimateId) {
+      if (demoAccepted[estimateId]) {
+        setDemoAccepted((prev) => {
+          const next = { ...prev };
+          delete next[estimateId];
+          return next;
+        });
+        return null;
+      }
+      try {
+        await cancelQuoteAcceptance(estimateId);
+        await refreshQuotes();
+        return null;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'request_not_accepted') return '수락된 견적 요청서가 아니에요.';
+        if (e instanceof ApiError && e.code === 'request_already_open') return '같은 분석 결과로 진행 중인 다른 견적 요청서가 있어 되돌릴 수 없어요.';
         return messageOf(e);
       }
     },
