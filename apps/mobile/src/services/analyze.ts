@@ -27,7 +27,8 @@ const KNOWN: DefectType[] = ['곰팡이', '균열', '벗겨짐'];
 export function toDefect(suspected: string[], undetermined: boolean): DefectType {
   if (undetermined) return '판단 보류';
   // 3종이 아니면 서버가 준 첫 유형을 그대로 씁니다. 판단 보류는 심각도가 없을 때만 표시합니다.
-  return KNOWN.find((d) => suspected.includes(d)) ?? suspected[0] ?? '판단 보류';
+  // 서버가 준 순서(가장 유력한 유형이 먼저)를 따릅니다.
+  return suspected.find((t) => KNOWN.includes(t)) ?? suspected[0] ?? '판단 보류';
 }
 
 function guessMime(uri: string) {
