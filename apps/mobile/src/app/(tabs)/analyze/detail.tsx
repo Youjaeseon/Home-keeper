@@ -1,7 +1,9 @@
+import { Image } from 'expo-image';
+import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, Sparkles } from 'lucide-react-native';
+import { Check, ImagePlus, Sparkles, X } from 'lucide-react-native';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { DefectPhoto } from '@/components/defect-photo';
 import { Select } from '@/components/select';
@@ -21,9 +23,17 @@ export default function AnalyzeDetailScreen() {
 
   const [location, setLocation] = useState(LOCATIONS[0]);
   const [position, setPosition] = useState(POSITIONS[0]);
-  // TODO(integration-gap): GAP-006 백엔드 analyze는 재질(material)이 필수라 팀원 UI에 재질 선택칸을 추가했습니다.
+  // 백엔드 analyze는 재질(material)이 필수입니다. (GAP-006)
   const [material, setMaterial] = useState(MATERIALS[0]);
+  // '기타'를 고르면 직접 입력합니다. (GAP-006, GAP-013)
+  const [customLocation, setCustomLocation] = useState('');
+  const [customPosition, setCustomPosition] = useState('');
+  const [customMaterial, setCustomMaterial] = useState('');
   const [memo, setMemo] = useState('');
+  // 근접 사진(선택). 백엔드는 overview 1장 + closeup 1장까지 받습니다. (GAP-009)
+  const [closeupUri, setCloseupUri] = useState<string | null>(null);
+  // 분석 요청마다 외부 AI 사진 전송 동의를 받습니다. 기본값은 가입 시 동의 여부입니다. (GAP-011)
+  const [consent, setConsent] = useState(analysisConsent);
   const [step, setStep] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,20 +46,40 @@ export default function AnalyzeDetailScreen() {
     );
   }
 
+  const OTHER = '기타';
+  const resolve = (value: string, custom: string) => (value === OTHER ? custom.trim() : value);
+
+  const pickCloseup = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, exif: false });
+      if (!result.canceled && result.assets[0]) setCloseupUri(result.assets[0].uri);
+    } catch {
+      Alert.alert('사진을 불러오지 못했습니다', '잠시 후 다시 시도해 주세요.');
+    }
+  };
+
   const onAnalyze = async () => {
     setError(null);
+    const finalLocation = resolve(location, customLocation);
+    const finalPosition = resolve(position, customPosition);
+    const finalMaterial = resolve(material, customMaterial);
+    if (!finalLocation || !finalPosition || !finalMaterial) {
+      setError("'기타'를 고른 칸은 직접 입력해 주세요.");
+      return;
+    }
     try {
       const result = await analyzeDefect(
         {
           photo,
-          location,
-          position,
-          material,
+          closeupUri,
+          location: finalLocation,
+          position: finalPosition,
+          material: finalMaterial,
           occurredAt: today(),
           memo,
           housing: user.housing,
           regionId: user.regionId,
-          consent: analysisConsent,
+          consent,
         },
         setStep,
       );
@@ -70,8 +100,17 @@ export default function AnalyzeDetailScreen() {
 
       <Card>
         <Select label="장소" value={location} options={LOCATIONS} onChange={setLocation} />
+        {location === OTHER && (
+          <Field label="장소 직접 입력" value={customLocation} onChangeText={setCustomLocation} placeholder="예: 작은방" />
+        )}
         <Select label="위치" value={position} options={POSITIONS} onChange={setPosition} />
+        {position === OTHER && (
+          <Field label="위치 직접 입력" value={customPosition} onChangeText={setCustomPosition} placeholder="예: 문틀 옆" />
+        )}
         <Select label="재질" value={material} options={MATERIALS} onChange={setMaterial} />
+        {material === OTHER && (
+          <Field label="재질 직접 입력" value={customMaterial} onChangeText={setCustomMaterial} placeholder="예: 원목 문틀" />
+        )}
         <Field
           label="기타"
           value={memo}
@@ -80,6 +119,36 @@ export default function AnalyzeDetailScreen() {
           multiline
           style={{ minHeight: 88, paddingTop: 14, textAlignVertical: 'top' }}
         />
+        <View style={{ gap: 8 }}>
+          <Txt variant="label" muted>
+            근접 사진 (선택)
+          </Txt>
+          {closeupUri ? (
+            <View style={s.closeup}>
+              <Image source={{ uri: closeupUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="근접 사진 빼기"
+                onPress={() => setCloseupUri(null)}
+                style={s.closeupRemove}>
+                <X size={14} color={C.onPrimary} strokeWidth={2.6} />
+              </Pressable>
+            </View>
+          ) : (
+            <Button title="근접 사진 추가" icon={ImagePlus} variant="outline" onPress={pickCloseup} />
+          )}
+        </View>
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: consent }}
+          accessibilityLabel="외부 AI 사진 분석 동의"
+          onPress={() => setConsent((v) => !v)}
+          style={s.agree}>
+          <View style={[s.box, consent && s.boxOn]}>{consent && <Check size={15} color={C.onPrimary} strokeWidth={3} />}</View>
+          <Txt variant="sub" color={C.text} style={{ flex: 1 }}>
+            이 사진을 외부 AI(비전 LLM·Meta SAM)로 보내 분석하는 데 동의해요. 동의하지 않으면 사진을 외부로 보내지 않아 분석이 제한될 수 있어요.
+          </Txt>
+        </Pressable>
         {error && (
           <Txt variant="sub" color={C.danger}>
             {error}
@@ -119,6 +188,30 @@ export default function AnalyzeDetailScreen() {
 }
 
 const s = StyleSheet.create({
+  closeup: { width: 96, height: 96, borderRadius: 16, overflow: 'hidden', backgroundColor: C.accent },
+  closeupRemove: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  agree: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  box: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: C.faint,
+    backgroundColor: C.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  boxOn: { backgroundColor: C.primary, borderColor: C.primary },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stepDot: {
     width: 26,
