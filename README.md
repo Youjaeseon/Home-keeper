@@ -5,25 +5,25 @@
 ## 주요 기능
 
 - **회원 인증·프로필**: Supabase 이메일 로그인, 닉네임·거주 지역·선택 등록 주소·거주 형태(`월세·전세·반전세·자가·기타`) 등록·수정
-- **하자 일괄 분석·결과**: 사진(1~2장)·위치·재질·증상 메모 일괄 제출, 심각도·추정 원인·해결방안·재발 방지책 조회 *(YOLO 탐지·Meta SAM 3.1 분할 연결, 진단 안내는 샘플)*
+- **하자 일괄 분석·결과**: 사진(1~2장)·위치·재질·증상 메모 일괄 제출, 심각도·추정 원인·해결방안·재발 방지책 조회 *(자체 학습 YOLO 탐지·Meta SAM 3.1 분할·Google Gemini 진단)*
 - **내 분석 기록**: 본인 하자 기록 목록 조회 및 과거 분석 결과 재열람
 - **주거 지원 사업 소식지**: 공공데이터포털 보조금24 Open API 수동·주기 동기화 + 검증 시드 기반 지역/전국 공고 조회, 프로필 지역 고정, 카테고리 필터, 마감 분류 및 정렬 *(백엔드·모바일 구현 완료)*
-- **요청문·업체 검색·1:1 채팅**: 저장된 진단 기반 임대인 점검·업체 견적 요청문(LLM, 실패 시 기본 양식 폴백), 지역·작업 동시 일치 업체 검색, 하자 요약을 공유하는 요청인–업체 채팅 REST·WebSocket·방별 미읽음 수 *(백엔드 구현 완료)*
-- **후속 예정 기능**: 사진 탐지 기반 진단 생성, 요청문·업체 검색·채팅 모바일 화면(WebSocket·읽음 호출 연결 포함), 실제 업체·계정 데이터, 회원가입·4개 탭
+- **요청문·업체 검색·1:1 채팅**: 저장된 진단 기반 임대인 점검·업체 견적 요청문(LLM, 실패 시 기본 양식 폴백), 지역·작업 동시 일치 업체 검색, 하자 요약을 공유하는 요청인–업체 채팅 REST·WebSocket·방별 미읽음 수 *(백엔드·모바일 구현 완료)*
+- **후속 예정 기능**: 실제 업체·계정 데이터
 
 11월 21일 시안 검토에서 이메일·비밀번호 인증 유지, 프로필 사진 제외, 진단 신뢰도 필드 추가, WebSocket·채팅방별 미읽음 수 표시를 확정했습니다. WebSocket·미읽음 수는 백엔드에 구현했고, 진단 신뢰도는 정의가 정해질 때까지 추가하지 않았습니다. 소셜 로그인은 시간 여유 시 재검토하며, 비회원 열람·날짜 입력·사진 보관·업체 추천 연결·가상 업체 응답은 [프로젝트 계획의 검토 목록](docs/plans/PROJECT_PLAN.md#11월-21일-프론트-시안-검토)에 미정으로 분류했습니다.
 
 ## 사용 기술
 
-- **Backend**: Python 3.13 (`>=3.11`), FastAPI, PostgreSQL 16+, psycopg, PyJWT, Scalar, uv
+- **Backend**: Python 3.13 (`>=3.11`), FastAPI, PostgreSQL, psycopg, PyJWT, Scalar, uv
 - **Mobile**: Node.js 20+, React Native 0.88, Expo 58 (Expo Router), TypeScript 6
-- **Auth & External API**: Supabase Auth, 공공데이터포털 보조금24 Open API, OpenAI 호환 LLM API
+- **Auth & External API**: Supabase Auth, 공공데이터포털 보조금24 Open API, Google Gemini API
 
 ## 실행 환경
 
 - Python 3.11 이상 (`apps/api/.python-version`: `3.13`), [uv](https://docs.astral.sh/uv/)
 - Node.js 20 이상, npm
-- PostgreSQL 16 이상 (로컬 DB 또는 Supabase)
+- PostgreSQL (로컬 DB 또는 Supabase)
 - Supabase 프로젝트(인증용) 또는 로컬 테스트용 JWT
 - Expo Go / iOS Simulator / Android Emulator (모바일 실행 시)
 
@@ -61,6 +61,11 @@
    npm run typecheck --workspace @career-pair/mobile
    ```
 
+## Docker 배포
+
+FastAPI 서버의 배포용 이미지와 Compose 구성을 제공합니다. 서버 환경변수·모델 준비,
+마이그레이션·실행·업데이트 방법은 [Docker 배포 가이드](docs/guides/DEPLOYMENT.md)를 참고하세요.
+
 ## 주요 명령어
 
 | 명령어 | 동작 |
@@ -92,7 +97,7 @@ docs/
 
 ## YOLO·Meta SAM 3.1 연결
 
-`models/best.pt`는 서버에만 두며 Git에 포함하지 않습니다. 현재 체크포인트는 `crack`, `paint_peel` 두 클래스를 탐지합니다.
+`models/best.pt`는 서버에만 두며 Git에 포함하지 않습니다. 현재 자체 학습 체크포인트는 `crack`, `paint_peel` 두 클래스를 탐지합니다.
 
 - `apps/api/.env`에 `YOLO_MODEL_PATH=../../models/best.pt`를 설정합니다(`npm run api` 기준).
 - Meta Model API 키는 서버 환경변수 `MODEL_API_KEY`에 설정합니다. 앱에는 키를 넣지 않습니다.
@@ -106,8 +111,8 @@ docs/
 
 ## 현재 상태와 남은 작업
 
-- **구현 완료**: 백엔드 API(기록 CRUD·일괄 사진 분석·프로필·지역·소식지·요청문·업체 검색·채팅 REST·WebSocket·방별 미읽음 수 + 보류 레거시 `messages`·`next-question`), DB 마이그레이션 `001`–`017`, 보조금24 수동 동기화 및 검증 시드 4건, 모바일 로그인·프로필·분석 입력·결과·기록 목록·소식지 화면, 백엔드 테스트 및 모바일 타입 검사 통과
-- **남은 작업**: Home Keeper Supabase에 `011`–`017` 적용 여부 확인 및 실기기/실제 로그인 토큰 검증, 요청문·업체 검색·채팅 모바일 화면(WebSocket·읽음 연결), 실제 업체·계정 데이터와 `LLM_API_KEY` 연동 검증, 요청문 생성 시 증상 메모 외부 전송·동의 방식 확정, 회원가입·4개 탭, 사진 탐지 기반 진단 생성, 진단 신뢰도 정의 확정
+- **구현 완료**: 백엔드 API(기록 CRUD·일괄 사진 분석·프로필·지역·소식지·요청문·업체 검색·채팅 REST·WebSocket·방별 미읽음 수 + 보류 레거시 `messages`·`next-question`), DB 마이그레이션 `001`–`018`, 보조금24 수동 동기화 및 검증 시드 4건, 모바일 회원가입·로그인·프로필·5개 탭·분석 입력·결과·기록 목록·소식지·업체 검색·채팅/견적·요청문 화면, 백엔드 테스트 및 모바일 타입 검사 통과
+- **남은 작업**: Home Keeper Supabase에 `011`–`018` 적용 여부 확인 및 실기기/실제 로그인 토큰 검증, 실제 업체·계정 데이터와 `LLM_API_KEY` 연동 검증, 요청문 생성 시 증상 메모 외부 전송·동의 방식 확정, 진단 신뢰도 정의 확정
 
 ## 문서 안내
 
@@ -118,6 +123,7 @@ docs/
 | [백엔드 구현 체크리스트](docs/plans/BACKEND_CHECKLIST.md) | 구현된 기능, 남은 MVP 작업과 통합 검증 |
 | [MVP 계획](docs/plans/MVP_PLAN.md) | 사용자 흐름, 역할, 시연 범위와 남은 제품 결정 |
 | [백엔드 설계](docs/design/BACKEND_DESIGN.md) | 인증, 기록·일괄 분석·소식지·채팅 처리 규칙 |
+| [서비스 구조](docs/design/SERVICE_ARCHITECTURE.md) | 앱·API·DB·Storage·외부 AI·소식지 수집 배치의 연결과 경계 |
 | [DB 설계](docs/design/DB_DESIGN.md) | 테이블·제약·인덱스와 실제 마이그레이션에서 확정한 내용 |
 | [API 설계](docs/design/API_DESIGN.md) | 현재 API 계약과 후속 API 계획, 요청·응답 예시 |
 | [용어집](GLOSSARY.md) | 요청인, 업체, 거주 형태, 소식지, 주거 지원 사업, 하자 기록 등의 의미 |
