@@ -265,16 +265,19 @@ function ProposalBox({
             {title}
           </Txt>
         )}
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        {/* 금액 범위가 길면 업체명이 한 글자 폭으로 눌리므로, 금액은 업체 정보 아래 줄에 둡니다. */}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
           <View style={{ flex: 1, gap: 2 }}>
-            <Txt variant="bodyStrong">{p.vendorName}</Txt>
-            <Txt variant="caption" muted>
-              {[p.vendorRegion, p.vendorIntro].filter(Boolean).join(' · ')}
+            {!!p.vendorName && <Txt variant="bodyStrong">{p.vendorName}</Txt>}
+            {(!!p.vendorRegion || !!p.vendorIntro) && (
+              <Txt variant="caption" muted>
+                {[p.vendorRegion, p.vendorIntro].filter(Boolean).join(' · ')}
+              </Txt>
+            )}
+            <Txt variant="title" color={C.primary}>
+              {p.priceMax && p.priceMax !== p.price ? `${won(p.price)}~${won(p.priceMax)}` : won(p.price)}
             </Txt>
           </View>
-          <Txt variant="title" color={C.primary}>
-            {p.priceMax && p.priceMax !== p.price ? `${won(p.price)}~${won(p.priceMax)}` : won(p.price)}
-          </Txt>
           <DeleteButton label="업체 제안서" onDelete={onDelete} />
         </View>
         {p.memo !== '' && (
