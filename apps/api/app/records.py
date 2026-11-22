@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.db import read_transaction, transaction
 from app import diagnosis, llm, storage
 from app.errors import (
+    llm_quota_exceeded,
     diagnosis_llm_failed,
     diagnosis_llm_timeout,
     diagnosis_llm_unavailable,
@@ -774,6 +775,8 @@ def analyze_record(
                 )
             except llm.LlmUnavailable:
                 raise diagnosis_llm_unavailable() from None
+            except llm.LlmQuotaExceeded:
+                raise llm_quota_exceeded() from None
             except llm.LlmTimeout:
                 raise diagnosis_llm_timeout() from None
             except llm.LlmError:

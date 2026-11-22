@@ -152,3 +152,11 @@ def request_not_accepted() -> ApiError:
         "request_not_accepted",
         "수락된 견적 요청서가 아닙니다.",
     )
+
+
+def llm_quota_exceeded() -> ApiError:
+    return ApiError(
+        503,
+        "llm_quota_exceeded",
+        "AI 모델 사용 한도를 넘었습니다. 잠시 후 다시 시도하거나 운영자에게 모델·키 설정을 확인해 달라고 요청해 주세요.",
+    )

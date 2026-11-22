@@ -105,3 +105,28 @@ def test_transport_timeout_and_failure_are_distinguished(monkeypatch):
     monkeypatch.setattr("app.llm.httpx.post", broken)
     with pytest.raises(llm.LlmError):
         llm.generate_text("x")
+
+
+def test_quota_errors_are_reported_separately(monkeypatch):
+    monkeypatch.setattr("app.llm.get_settings", lambda: _settings())
+    monkeypatch.setattr("app.llm.httpx.post", lambda *_args, **_kwargs: _Response(429, {}))
+    with pytest.raises(llm.LlmQuotaExceeded):
+        llm.generate_text("x")
+
+
+def test_brief_high_demand_is_retried_once(monkeypatch):
+    calls = []
+    responses = [
+        _Response(503, {}),
+        _Response(200, {"choices": [{"message": {"content": "초안"}}]}),
+    ]
+
+    def fake_post(*_args, **_kwargs):
+        calls.append(1)
+        return responses[len(calls) - 1]
+
+    monkeypatch.setattr("app.llm.get_settings", lambda: _settings())
+    monkeypatch.setattr("app.llm.httpx.post", fake_post)
+    monkeypatch.setattr("app.llm.time.sleep", lambda _seconds: None)
+    assert llm.generate_text("x") == "초안"
+    assert len(calls) == 2
