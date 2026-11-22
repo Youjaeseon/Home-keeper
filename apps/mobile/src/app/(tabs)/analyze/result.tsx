@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Camera,
   ChevronRight,
@@ -15,26 +15,56 @@ import {
   ShieldCheck,
   Wrench,
 } from 'lucide-react-native';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { DefectPhoto } from '@/components/defect-photo';
 import { RiskLegend, RiskPhotoRing } from '@/components/risk-gauge';
 import { Banner, Button, Card, CardHeader, Chip, Field, Notice, Screen, Txt } from '@/components/ui';
 import { C, R, riskColor, riskLabel, STROKE } from '@/constants/theme';
-import { VENDORS } from '@/data/vendors';
+import { fetchVendors } from '@/services/vendors';
+import type { Vendor } from '@/types';
 import { useApp } from '@/store/app-store';
 
 /** 스케치 7: 분석 결과 — 손상 위치 원, 위험도, 원인, 해결방안, 재발방지, 업체 A~D */
 export default function AnalyzeResultScreen() {
   const { analysisId } = useLocalSearchParams<{ analysisId: string }>();
-  const { analyses, user, estimates, sendEstimate } = useApp();
+  const { analyses, user, estimates, sendEstimate, loadAnalysis } = useApp();
   const [memo, setMemo] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [vendorList, setVendorList] = useState<{ vendors: Vendor[]; isSample: boolean }>({ vendors: [], isSample: false });
+  const [sending, setSending] = useState(false);
   const r = analyses.find((a) => a.id === analysisId);
+  const workTypeId = r?.workTypeId;
 
-  if (!r) {
+  // 화면에 들어올 때마다 최신 결과(새 사진 Signed URL 포함)를 다시 받습니다.
+  useEffect(() => {
+    if (!analysisId) return;
+    loadAnalysis(analysisId).then((err) => {
+      setLoadError(err);
+      setLoading(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisId]);
+
+  useEffect(() => {
+    if (!user?.regionId || loading) return;
+    fetchVendors(user.regionId, workTypeId)
+      .then(setVendorList)
+      .catch(() => setVendorList({ vendors: [], isSample: false }));
+  }, [user?.regionId, workTypeId, loading]);
+
+  if (!r || (loading && !r.cause)) {
+    if (loading) {
+      return (
+        <Screen>
+          <ActivityIndicator />
+        </Screen>
+      );
+    }
     return (
       <Screen>
-        <Txt variant="h2">분석 결과를 찾을 수 없습니다.</Txt>
+        <Txt variant="h2">{loadError ?? '분석 결과를 찾을 수 없습니다.'}</Txt>
         <Button title="사진 분석으로" onPress={() => router.replace('/analyze')} />
       </Screen>
     );
@@ -46,7 +76,8 @@ export default function AnalyzeResultScreen() {
         <DefectPhoto uri={r.photoUri} size={200} />
         <Banner
           title={r.guide.title}
-          subtitle={`AI 신뢰도가 낮아(${Math.round(r.confidence * 100)}%) 결과를 확정하지 않았어요.`}
+          subtitle="사진·입력만으로는 근거가 부족해 판단을 보류했어요."
+
           icon={RefreshCcw}
         />
         <Card>
@@ -60,9 +91,17 @@ export default function AnalyzeResultScreen() {
 
   const color = riskColor(r.risk);
   // 이 하자가 전문 분야인 업체를 '추천'으로 표시하고 위에 둡니다.
-  const fits = (sp: readonly string[]) => sp.includes(r.defect);
-  const vendors = [...VENDORS].sort((a, b) => Number(fits(b.specialties)) - Number(fits(a.specialties)));
-  const sent = estimates.some((e) => e.analysisId === r.id && e.userId === user?.loginId);
+  // 진단이 추천한 작업 종류가 특화 분야인 업체를 '추천'으로 표시합니다. (서버가 이미 별점순 정렬)
+  const fits = (v: Vendor) => !!r.workTypeId && v.specialtyIds.includes(r.workTypeId);
+  const vendors = [...vendorList.vendors].sort((a, b) => Number(fits(b)) - Number(fits(a)));
+  const sent = estimates.some((e) => e.analysisId === r.id && e.status !== 'cancelled' && user?.role !== '업체');
+
+  const onSendEstimate = async () => {
+    setSending(true);
+    const err = await sendEstimate(r, memo.trim());
+    setSending(false);
+    if (err) Alert.alert('견적서를 보내지 못했습니다', err);
+  };
 
   return (
     <Screen>
@@ -90,9 +129,16 @@ export default function AnalyzeResultScreen() {
           </View>
         </View>
         <RiskLegend />
-        <Txt variant="caption" muted>
-          AI 신뢰도 {Math.round(r.confidence * 100)}%
-        </Txt>
+        {r.confidence !== null && (
+          <Txt variant="caption" muted>
+            AI 신뢰도 {Math.round(r.confidence * 100)}%
+          </Txt>
+        )}
+        {!!r.estimationNotice && (
+          <Txt variant="caption" muted style={{ textAlign: 'center' }}>
+            {r.estimationNotice}
+          </Txt>
+        )}
       </Card>
 
       <Card>
@@ -177,13 +223,17 @@ export default function AnalyzeResultScreen() {
       <View style={{ gap: 12, marginTop: 8 }}>
         <Txt variant="title">직접 해결이 어렵다면</Txt>
         {vendors.map((v) => {
-          const fit = fits(v.specialties);
+          const fit = fits(v);
           return (
             <Pressable
               key={v.id}
               accessibilityRole="button"
               accessibilityLabel={`${v.name}에 문의하기`}
-              onPress={() => router.push({ pathname: '/dm/[vendorId]', params: { vendorId: v.id, analysisId: r.id } })}
+              onPress={() =>
+                v.chatAvailable
+                  ? router.push({ pathname: '/dm/[vendorId]', params: { vendorId: v.id, analysisId: r.id, name: v.name } })
+                  : Alert.alert('앱 채팅을 지원하지 않는 업체예요', v.isSample ? '시연용 샘플 업체입니다.' : `전화(${v.phone})로 문의해 주세요.`)
+              }
               style={({ pressed }) => pressed && { opacity: 0.85 }}>
               <Card style={[s.vendor, fit && s.vendorFit]}>
                 <View style={s.vendorBadge}>
@@ -202,8 +252,8 @@ export default function AnalyzeResultScreen() {
                     {v.description}
                   </Txt>
                   <View style={s.chips}>
-                    {v.specialties.map((sp) => (
-                      <Chip key={sp} label={sp} active={sp === r.defect} />
+                    {v.specialties.map((sp, i) => (
+                      <Chip key={sp} label={sp} active={v.specialtyIds[i] === r.workTypeId} />
                     ))}
                   </View>
                   <View style={s.phone}>
@@ -218,7 +268,11 @@ export default function AnalyzeResultScreen() {
             </Pressable>
           );
         })}
-        <Notice icon={MessageCircle}>업체를 누르면 분석 결과를 첨부해 견적을 문의할 수 있어요. (가상 업체)</Notice>
+        <Notice icon={MessageCircle}>
+          {vendorList.isSample
+            ? '이 지역에 등록된 업체가 없어 시연용 샘플 업체를 보여 드려요. 샘플 업체와는 채팅할 수 없어요.'
+            : '업체를 누르면 분석 결과를 첨부해 견적을 문의할 수 있어요.'}
+        </Notice>
       </View>
 
       {/* 견적서: 주변 업체 회원에게 한 번에 보내기 (유저 회원만) */}
@@ -252,7 +306,7 @@ export default function AnalyzeResultScreen() {
                 multiline
                 style={{ minHeight: 76, paddingTop: 14, textAlignVertical: 'top' }}
               />
-              <Button title="주변 업체에 전송" icon={Send} onPress={() => sendEstimate(r, memo.trim())} />
+              <Button title="주변 업체에 전송" icon={Send} onPress={onSendEstimate} loading={sending} />
             </>
           )}
         </Card>

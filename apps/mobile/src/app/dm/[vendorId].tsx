@@ -1,21 +1,47 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { ArrowUp, MessagesSquare } from 'lucide-react-native';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Txt } from '@/components/ui';
 import { C, F, MAX_W, STROKE } from '@/constants/theme';
-import { getVendor } from '@/data/vendors';
 import { useApp } from '@/store/app-store';
 
-/** 업체와의 1:1 대화 (가상 업체 자동 응답) */
+/** 업체와의 1:1 실시간 채팅 (POST /chat/rooms, GET/POST /chat/rooms/{id}/messages, WebSocket /chat/ws) */
 export default function ChatScreen() {
-  const { vendorId, analysisId, name } = useLocalSearchParams<{ vendorId: string; analysisId?: string; name?: string }>();
-  const { messages, analyses, sendMessage } = useApp();
-  // 목록에 있는 가상 업체가 아니면(제안서를 보낸 업체 회원) 넘겨받은 이름으로 대화방을 엽니다.
-  const vendor = getVendor(vendorId) ?? (name ? { id: vendorId, name } : undefined);
+  const { vendorId, analysisId, name, roomId: roomParam } = useLocalSearchParams<{
+    vendorId: string;
+    analysisId?: string;
+    name?: string;
+    roomId?: string;
+  }>();
+  const { messages, analyses, threads, openRoom, loadMessages, sendMessage } = useApp();
+  const [roomId, setRoomId] = useState<string | null>(roomParam ?? null);
+  const [error, setError] = useState<string | null>(null);
+  const vendorName = name ?? threads.find((t) => t.vendorId === vendorId)?.name;
+  const vendor = vendorId ? { id: vendorId, name: vendorName ?? '대화' } : undefined;
   const analysis = analyses.find((a) => a.id === analysisId);
+
+  // 방을 열고(분석 결과에서 왔으면 기록 요약을 함께 공유) 이력을 불러옵니다.
+  useEffect(() => {
+    if (!vendorId) return;
+    let alive = true;
+    openRoom({ vendorId, roomId: roomParam, analysisId }).then(async (res) => {
+      if (!alive) return;
+      if (res.error || !res.roomId) {
+        setError(res.error ?? '채팅방을 열지 못했습니다.');
+        return;
+      }
+      setRoomId(res.roomId);
+      const err = await loadMessages(res.roomId);
+      if (alive) setError(err);
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendorId, roomParam, analysisId]);
 
   // 분석 결과에서 들어오면 견적서 내용을 미리 채워 둡니다.
   const [text, setText] = useState(
@@ -24,7 +50,7 @@ export default function ChatScreen() {
       : '',
   );
   const listRef = useRef<FlatList>(null);
-  const thread = messages.filter((m) => m.vendorId === vendorId);
+  const thread = messages.filter((m) => m.roomId === roomId);
 
   if (!vendor) {
     return (
@@ -34,11 +60,15 @@ export default function ChatScreen() {
     );
   }
 
-  const onSend = () => {
+  const onSend = async () => {
     const t = text.trim();
-    if (!t) return;
-    sendMessage(vendor.id, t);
+    if (!t || !roomId) return;
     setText('');
+    const err = await sendMessage(roomId, vendor.id, t);
+    if (err) {
+      setError(err);
+      setText(t);
+    } else setError(null);
   };
 
   return (
@@ -60,7 +90,7 @@ export default function ChatScreen() {
                 <MessagesSquare size={28} color={C.text} strokeWidth={STROKE} />
               </View>
               <Txt variant="sub" muted style={{ textAlign: 'center' }}>
-                {vendor.name}에 문의를 남겨 보세요.{'\n'}가상 업체가 자동으로 답변합니다.
+                {error ?? `${vendor.name}에 문의를 남겨 보세요.`}
               </Txt>
             </View>
           }
@@ -75,6 +105,11 @@ export default function ChatScreen() {
             );
           }}
         />
+        {error && thread.length > 0 && (
+          <Txt variant="caption" color={C.danger} style={{ marginHorizontal: 24 }}>
+            {error}
+          </Txt>
+        )}
         <View style={s.inputRow}>
           <TextInput
             value={text}

@@ -37,6 +37,22 @@ npm run typecheck --workspace @career-pair/mobile
 
 `src/lib/`는 Supabase Auth 세션 저장(`storage*.ts`), 환경변수(`env.ts`), 백엔드 API 클라이언트(`api.ts`)입니다.
 
+## 백엔드 연동
+
+| 기능 | 화면 | API |
+|---|---|---|
+| 로그인·가입·로그아웃·세션 복원 | `index.tsx`, `signup.tsx` | Supabase Auth (`signInWithPassword`, `signUp`, `signOut`, `getSession`, `onAuthStateChange`) |
+| 로그인 없이 둘러보기 | `index.tsx` | Supabase 익명 로그인 (서버 설정에서 허용 필요) |
+| 프로필 | `profile-setup.tsx`, `(tabs)/profile.tsx`, 소식지 조건 수정 | `GET/PUT /me/profile`, `GET /regions` |
+| AI 분석 | `(tabs)/analyze/detail.tsx` | `POST /records` → `POST /records/{id}/analyze` → `GET /records/{id}` |
+| 분석 결과·내 기록 | `(tabs)/analyze/result.tsx`, `(tabs)/profile.tsx` | `GET /records`, `GET /records/{id}`, `POST /records/{id}/drafts/landlord`(실패 시 `/template`) |
+| 소식지 | `(tabs)/news.tsx` | `GET /support-programs` |
+| 업체 | `(tabs)/vendors.tsx`, 분석 결과 | `GET /providers` |
+| 견적서·제안서·수락 | `dm/index.tsx`, 분석 결과 | `/quote-requests` 계열 |
+| 채팅 | `dm/index.tsx`, `dm/[vendorId].tsx` | `/chat/rooms` 계열 + `WS /chat/ws` |
+
+화면 라벨 ↔ 백엔드 값 변환은 `src/lib/adapters.ts`, `src/services/*.ts`, `src/store/app-store.tsx`에 있습니다. 백엔드와 맞지 않아 남겨 둔 부분은 코드의 `TODO(integration-gap): GAP-XXX`와 `docs/reports/FRONTEND_INTEGRATION_GAP_REPORT.md`를 보세요.
+
 ## 규칙
 
 - API key는 앱 코드에 넣지 않습니다. 앱은 팀 backend만 호출하고 key는 backend에 둡니다.

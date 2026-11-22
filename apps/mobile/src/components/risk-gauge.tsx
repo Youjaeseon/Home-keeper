@@ -98,9 +98,9 @@ export function RiskPhotoRing({
 /** 3구간 범례 */
 export function RiskLegend() {
   const items = [
-    { c: C.riskLow, t: '낮음 0~59' },
-    { c: C.riskMid, t: '주의 60~79' },
-    { c: C.riskHigh, t: '높음 80~100' },
+    { c: C.riskLow, t: '낮음 0~39' },
+    { c: C.riskMid, t: '주의 40~69' },
+    { c: C.riskHigh, t: '높음 70~100' },
   ];
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 14 }}>

@@ -2,12 +2,10 @@ import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronRight, Send } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Chip, DeleteButton, Field, Hero, Screen, Txt } from '@/components/ui';
 import { C, F, STROKE } from '@/constants/theme';
-import { SAMPLE_ESTIMATES, SAMPLE_PROPOSALS } from '@/data/samples';
-import { VENDORS } from '@/data/vendors';
 import { useApp } from '@/store/app-store';
 import type { Estimate, Proposal } from '@/types';
 
@@ -49,32 +47,44 @@ export default function DmListScreen() {
   );
 }
 
+/** 메시지 탭: GET /chat/rooms (상대 이름, 최근 메시지, 미읽음 수) */
 function Messages() {
-  const { messages } = useApp();
+  const { threads, refreshThreads, user } = useApp();
+  useEffect(() => {
+    void refreshThreads().catch(() => null);
+  }, [refreshThreads]);
   return (
     <>
-      <Hero title="메시지" subtitle="업체와 나눈 대화를 모아 볼 수 있어요." />
+      <Hero
+        title="메시지"
+        subtitle={user?.role === '업체' ? '요청인과 나눈 대화를 모아 볼 수 있어요.' : '업체와 나눈 대화를 모아 볼 수 있어요.'}
+      />
       <Card style={{ padding: 8, gap: 0 }}>
-        {VENDORS.map((v, i) => {
-          const thread = messages.filter((m) => m.vendorId === v.id);
-          const last = thread[thread.length - 1];
+        {threads.length === 0 && (
+          <Txt variant="sub" muted style={{ padding: 14 }}>
+            아직 대화가 없어요. 업체 목록이나 분석 결과에서 업체에 문의해 보세요.
+          </Txt>
+        )}
+        {threads.map((t, i) => {
           return (
             <Pressable
-              key={v.id}
+              key={t.roomId}
               accessibilityRole="button"
-              accessibilityLabel={`${v.name} 대화 열기`}
-              onPress={() => router.push({ pathname: '/dm/[vendorId]', params: { vendorId: v.id } })}
+              accessibilityLabel={`${t.name} 대화 열기`}
+              onPress={() =>
+                router.push({ pathname: '/dm/[vendorId]', params: { vendorId: t.vendorId, roomId: t.roomId, name: t.name } })
+              }
               style={({ pressed }) => [s.row, i > 0 && s.divider, pressed && { opacity: 0.7 }]}>
               <View style={s.avatar}>
-                <Txt variant="h2">{v.label}</Txt>
+                <Txt variant="h2">{t.name.slice(0, 1)}</Txt>
               </View>
               <View style={{ flex: 1, gap: 2 }}>
-                <Txt variant="bodyStrong">{v.name}</Txt>
+                <Txt variant="bodyStrong">{t.name}</Txt>
                 <Txt variant="sub" muted numberOfLines={1}>
-                  {last ? last.text : '아직 대화가 없어요'}
+                  {t.last ?? '아직 대화가 없어요'}
                 </Txt>
               </View>
-              {last && last.from === 'vendor' ? (
+              {t.unread > 0 ? (
                 <View style={s.unread} />
               ) : (
                 <ChevronRight size={18} color={C.faint} strokeWidth={STROKE} />
@@ -87,14 +97,31 @@ function Messages() {
   );
 }
 
-/** 유저: 받은 제안서 (견적서별로 묶음) / 업체: 받은 견적서와 보낸 제안서. 예시 데이터를 함께 보여 줍니다. */
+/** 유저: 받은 제안서 (견적서별로 묶음) / 업체: 받은 견적서와 보낸 제안서. (GET /quote-requests, GET /quote-requests/{id}) */
 function Quotes() {
-  const { user, estimates, proposals, hidden, removeEstimate, removeProposal, accepted, acceptProposal, cancelAccept } = useApp();
+  const {
+    user,
+    session,
+    estimates,
+    proposals,
+    hidden,
+    refreshQuotes,
+    removeEstimate,
+    removeProposal,
+    accepted,
+    acceptProposal,
+    cancelAccept,
+  } = useApp();
+  useEffect(() => {
+    void refreshQuotes().catch(() => null);
+  }, [refreshQuotes]);
   if (!user) return null;
+  const me = session?.user.id ?? '';
   const vendor = user.role === '업체';
-  const own = vendor ? estimates.filter((e) => e.userId !== user.loginId) : estimates.filter((e) => e.userId === user.loginId);
-  const list = [...own, ...SAMPLE_ESTIMATES].filter((e) => !hidden.includes(e.id));
-  const all = [...proposals, ...SAMPLE_PROPOSALS].filter((p) => !hidden.includes(p.id));
+  const own = vendor ? estimates.filter((e) => e.userId !== me) : estimates.filter((e) => e.userId === me);
+  const list = own.filter((e) => !hidden.includes(e.id) && e.status !== 'cancelled');
+  const all = proposals.filter((p) => !hidden.includes(p.id));
+  const alertIf = (err: string | null) => err && Alert.alert('처리하지 못했습니다', err);
 
   return (
     <>
@@ -108,11 +135,11 @@ function Quotes() {
         </Txt>
       )}
       {list.map((e) => {
-        const mine = proposals.find((p) => p.estimateId === e.id && p.vendorId === user.loginId);
+        const mine = proposals.find((p) => p.estimateId === e.id && p.vendorId === me);
         const related = all.filter((p) => p.estimateId === e.id).sort((a, b) => a.price - b.price);
         return (
           <Card key={e.id}>
-            <EstimateSummary e={e} showSender={vendor} onDelete={() => removeEstimate(e.id)} />
+            <EstimateSummary e={e} showSender={vendor} onDelete={() => void removeEstimate(e.id).then(alertIf)} />
             {vendor ? (
               mine ? (
                 <ProposalBox p={mine} title="보낸 제안서" onDelete={() => removeProposal(mine.id)} />
@@ -135,8 +162,8 @@ function Quotes() {
                     chat
                     onDelete={() => removeProposal(p.id)}
                     accept={!accepted[e.id] ? 'open' : accepted[e.id] === p.id ? 'accepted' : 'closed'}
-                    onAccept={() => acceptProposal(e.id, p.id)}
-                    onCancelAccept={() => cancelAccept(e.id)}
+                    onAccept={() => void acceptProposal(e.id, p.id).then(alertIf)}
+                    onCancelAccept={() => alertIf(cancelAccept(e.id))}
                   />
                 ))}
               </>
@@ -208,13 +235,9 @@ function ProposalBox({
     Animated.timing(fade, { toValue: closed ? 0.3 : 1, duration: 450, useNativeDriver: true }).start();
   }, [closed, fade]);
 
-  // 받은 제안서를 누르면 그 업체와의 채팅으로 이동합니다.
+  // 받은 제안서를 누르면 그 업체와의 채팅으로 이동합니다(수락 전에도 POST /chat/rooms로 채팅 가능).
   const openChat = () => {
-    const known = VENDORS.find((v) => v.name === p.vendorName);
-    router.push({
-      pathname: '/dm/[vendorId]',
-      params: known ? { vendorId: known.id } : { vendorId: p.vendorId, name: p.vendorName },
-    });
+    router.push({ pathname: '/dm/[vendorId]', params: { vendorId: p.vendorId, name: p.vendorName } });
   };
   return (
     <Animated.View style={{ opacity: fade }} pointerEvents={closed ? 'none' : 'auto'}>
@@ -237,7 +260,7 @@ function ProposalBox({
             </Txt>
           </View>
           <Txt variant="title" color={C.primary}>
-            {p.price}만원
+            {p.priceMax && p.priceMax !== p.price ? `${p.price}~${p.priceMax}만원` : `${p.price}만원`}
           </Txt>
           <DeleteButton label="제안서" onDelete={onDelete} />
         </View>
@@ -319,7 +342,14 @@ function ProposalForm({ estimateId }: { estimateId: string }) {
   const { user, sendProposal } = useApp();
   const [price, setPrice] = useState(PRICES[0]);
   const [memo, setMemo] = useState('');
+  const [busy, setBusy] = useState(false);
   if (!user) return null;
+  const onSend = async () => {
+    setBusy(true);
+    const err = await sendProposal(estimateId, price, memo.trim());
+    setBusy(false);
+    if (err) Alert.alert('제안서를 보내지 못했습니다', err);
+  };
 
   return (
     <View style={s.proposal}>
@@ -361,7 +391,7 @@ function ProposalForm({ estimateId }: { estimateId: string }) {
         multiline
         style={{ minHeight: 76, paddingTop: 14, textAlignVertical: 'top' }}
       />
-      <Button title="제안서 보내기" icon={Send} onPress={() => sendProposal(estimateId, price, memo.trim())} />
+      <Button title="제안서 보내기" icon={Send} onPress={onSend} loading={busy} />
     </View>
   );
 }

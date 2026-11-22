@@ -18,6 +18,9 @@ export const HOUSINGS: Housing[] = ['월세', '전세', '반전세', '자가', '
 
 export const LOCATIONS = ['안방', '화장실', '주방', '거실', '베란다', '천장', '기타'];
 
+/** 하자 표면 재질 (백엔드 analyze 필수 입력 material) */
+export const MATERIALS = ['벽지', '타일', '실리콘', '도장면(페인트)', '콘크리트', '석고보드', '창틀', '바닥재', '기타'];
+
 /** 손상이 생긴 자리 */
 export const POSITIONS = ['모서리', '벽면', '천장', '바닥', '창틀', '기타'];
 

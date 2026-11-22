@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { ChevronRight, Clock, LogOut } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Select } from '@/components/select';
@@ -13,8 +13,13 @@ import { useApp } from '@/store/app-store';
 export default function ProfileScreen() {
   const { user, regions, updateUser, logout, analyses, removeAnalysis } = useApp();
   const [nickname, setNickname] = useState(user?.nickname ?? '');
+  const [savedNickname, setSavedNickname] = useState(user?.nickname ?? '');
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setNickname(user?.nickname ?? ''), [user?.nickname]);
+  // 서버에 저장된 닉네임이 바뀌면 입력칸도 맞춥니다.
+  if ((user?.nickname ?? '') !== savedNickname) {
+    setSavedNickname(user?.nickname ?? '');
+    setNickname(user?.nickname ?? '');
+  }
   if (!user) return null;
 
   const save = async (patch: Parameters<typeof updateUser>[0]) => setError(await updateUser(patch));

@@ -1,13 +1,14 @@
 import { router } from 'expo-router';
 import { ChevronDown, ChevronUp, Pencil, ScanSearch } from 'lucide-react-native';
-import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
 
 import { Select } from '@/components/select';
 import { AppBar, Banner, Button, Card, Hero, Screen, Txt } from '@/components/ui';
 import { C, F, R, STROKE } from '@/constants/theme';
-import { sortNewsFor } from '@/data/news';
 import { HOUSINGS, regionLabel } from '@/data/options';
+import { messageOf } from '@/lib/api';
+import { fetchNews } from '@/services/news';
 import { useApp } from '@/store/app-store';
 
 const PAGE_SIZE = 3;
@@ -18,11 +19,25 @@ export default function NewsScreen() {
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  if (!user) return null;
+  const [visible, setVisible] = useState<Awaited<ReturnType<typeof fetchNews>>['items']>([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
-  const list = sortNewsFor(user.region, user.housing);
-  const pageCount = Math.ceil(list.length / PAGE_SIZE);
-  const visible = list.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  // 서버가 프로필 지역·거주 형태에 맞춰 정렬하므로 조건이 바뀌면 다시 불러옵니다.
+  const signedIn = !!user;
+  useEffect(() => {
+    if (!signedIn) return;
+    fetchNews(page, PAGE_SIZE)
+      .then((res) => {
+        setVisible(res.items);
+        setTotal(res.total);
+        setError(null);
+      })
+      .catch((e) => setError(messageOf(e)));
+  }, [page, signedIn, user?.regionId, user?.housing]);
+
+  if (!user) return null;
+  const pageCount = Math.ceil(total / PAGE_SIZE);
 
   return (
     <Screen safeTop>
@@ -52,7 +67,12 @@ export default function NewsScreen() {
       </View>
 
       <Card style={{ padding: 8, gap: 0 }}>
-        {visible.map(({ item }, i) => {
+        {error && (
+          <Txt variant="sub" color={C.danger} style={{ padding: 16 }}>
+            {error}
+          </Txt>
+        )}
+        {visible.map((item, i) => {
           const open = openId === item.id;
           const Chevron = open ? ChevronUp : ChevronDown;
           return (
@@ -81,6 +101,11 @@ export default function NewsScreen() {
               {open && (
                 <Txt variant="sub" color={C.text}>
                   {item.summary}
+                </Txt>
+              )}
+              {open && !!item.url && (
+                <Txt variant="caption" color={C.primary} onPress={() => Linking.openURL(item.url)}>
+                  공고 원문 보기
                 </Txt>
               )}
             </Pressable>

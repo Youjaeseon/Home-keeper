@@ -495,8 +495,24 @@ export function getProviderDetail(providerId: string): Promise<ProviderDetail> {
   return apiRequest<ProviderDetail>(`/providers/${providerId}`);
 }
 
-export function getDraftTemplate(recordId: string): Promise<DraftTemplate> {
-  return apiRequest<DraftTemplate>(`/records/${recordId}/drafts/provider/template`);
+export type DraftKind = 'landlord' | 'provider';
+
+export type DraftResponse = {
+  kind: DraftKind;
+  text: string;
+  input_revision: number;
+  diagnosis_generation: number;
+};
+
+export function createDraft(recordId: string, kind: DraftKind): Promise<DraftResponse> {
+  return apiRequest<DraftResponse>(`/records/${recordId}/drafts/${kind}`, { method: 'POST' });
+}
+
+export function getDraftTemplate(
+  recordId: string,
+  kind: DraftKind = 'provider',
+): Promise<DraftTemplate> {
+  return apiRequest<DraftTemplate>(`/records/${recordId}/drafts/${kind}/template`);
 }
 
 export function createQuoteRequest(
@@ -549,5 +565,78 @@ export function createChatRoom(input: {
   return apiRequest<ChatRoom>('/chat/rooms', {
     method: 'POST',
     body: JSON.stringify(input),
+  });
+}
+
+export type ChatRoomListItem = ChatRoom & {
+  counterpart_name: string;
+  last_message_preview: string | null;
+  unread_count: number;
+};
+
+export type ChatMessage = {
+  message_id: string;
+  room_id: string;
+  sender_id: string;
+  sender_role: 'requester' | 'provider';
+  message_type: 'text' | 'record_summary';
+  record_id: string | null;
+  content: string;
+  payload: unknown;
+  client_message_id: string;
+  created_at: string;
+};
+
+export type ChatMessageListResponse = {
+  messages: ChatMessage[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+};
+
+export type ChatReadReceipt = {
+  room_id: string;
+  last_read_at: string;
+  unread_count: number;
+};
+
+export function getChatRooms(): Promise<ChatRoomListItem[]> {
+  return apiRequest<ChatRoomListItem[]>('/chat/rooms');
+}
+
+export function getChatMessages(
+  roomId: string,
+  { limit = 100, offset = 0 }: { limit?: number; offset?: number } = {},
+): Promise<ChatMessageListResponse> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return apiRequest<ChatMessageListResponse>(`/chat/rooms/${roomId}/messages?${params}`);
+}
+
+export function sendChatMessage(
+  roomId: string,
+  input: { client_message_id: string; content: string },
+): Promise<ChatMessage> {
+  return apiRequest<ChatMessage>(`/chat/rooms/${roomId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function markChatRoomRead(roomId: string): Promise<ChatReadReceipt> {
+  return apiRequest<ChatReadReceipt>(`/chat/rooms/${roomId}/read`, { method: 'POST' });
+}
+
+/** 실시간 채팅 WebSocket 주소 (http → ws). 토큰은 연결할 때 붙입니다. */
+export function chatSocketUrl(): string {
+  return `${apiBaseUrl.replace(/^http/, 'ws')}/chat/ws`;
+}
+
+/** 클라이언트 메시지 멱등성 UUID (v4 형식) */
+export function newClientMessageId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
 }

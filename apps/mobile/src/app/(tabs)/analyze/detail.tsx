@@ -7,7 +7,8 @@ import { DefectPhoto } from '@/components/defect-photo';
 import { Select } from '@/components/select';
 import { Button, Card, Field, Screen, Txt } from '@/components/ui';
 import { C } from '@/constants/theme';
-import { LOCATIONS, POSITIONS } from '@/data/options';
+import { LOCATIONS, MATERIALS, POSITIONS } from '@/data/options';
+import { messageOf } from '@/lib/api';
 import { ANALYSIS_STEPS, analyzeDefect } from '@/services/analyze';
 import { useApp } from '@/store/app-store';
 import { today } from '@/utils';
@@ -15,11 +16,13 @@ import { today } from '@/utils';
 /** 스케치 6: 분석 Page ② — 분석 사진 정보 기입 (장소, 위치, 기타) → 분석 요청 */
 export default function AnalyzeDetailScreen() {
   const { photoId } = useLocalSearchParams<{ photoId: string }>();
-  const { photos, user, saveAnalysis } = useApp();
+  const { photos, user, saveAnalysis, analysisConsent } = useApp();
   const photo = photos.find((p) => p.id === photoId);
 
   const [location, setLocation] = useState(LOCATIONS[0]);
   const [position, setPosition] = useState(POSITIONS[0]);
+  // TODO(integration-gap): GAP-006 백엔드 analyze는 재질(material)이 필수라 팀원 UI에 재질 선택칸을 추가했습니다.
+  const [material, setMaterial] = useState(MATERIALS[0]);
   const [memo, setMemo] = useState('');
   const [step, setStep] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,13 +40,23 @@ export default function AnalyzeDetailScreen() {
     setError(null);
     try {
       const result = await analyzeDefect(
-        { photo, location, position, occurredAt: today(), memo, housing: user.housing },
+        {
+          photo,
+          location,
+          position,
+          material,
+          occurredAt: today(),
+          memo,
+          housing: user.housing,
+          regionId: user.regionId,
+          consent: analysisConsent,
+        },
         setStep,
       );
       saveAnalysis(result);
       router.replace({ pathname: '/analyze/result', params: { analysisId: result.id } });
-    } catch {
-      setError('분석 서버에 연결하지 못했습니다. 네트워크를 확인하고 다시 시도해 주세요.');
+    } catch (e) {
+      setError(messageOf(e) || '분석 서버에 연결하지 못했습니다. 네트워크를 확인하고 다시 시도해 주세요.');
     } finally {
       setStep(null);
     }
@@ -58,6 +71,7 @@ export default function AnalyzeDetailScreen() {
       <Card>
         <Select label="장소" value={location} options={LOCATIONS} onChange={setLocation} />
         <Select label="위치" value={position} options={POSITIONS} onChange={setPosition} />
+        <Select label="재질" value={material} options={MATERIALS} onChange={setMaterial} />
         <Field
           label="기타"
           value={memo}

@@ -47,10 +47,11 @@ export const STROKE = 2.2;
 /** 웹에서 볼 때 모바일 폭으로 고정 */
 export const MAX_W = 520;
 
+/** 위험도 구간은 백엔드 severity_level 기준(low < 40 ≤ medium < 70 ≤ high)과 맞춥니다. */
 export function riskColor(risk: number) {
-  return risk >= 80 ? C.riskHigh : risk >= 60 ? C.riskMid : C.riskLow;
+  return risk >= 70 ? C.riskHigh : risk >= 40 ? C.riskMid : C.riskLow;
 }
 
 export function riskLabel(risk: number) {
-  return risk >= 80 ? '높음' : risk >= 60 ? '주의' : '낮음';
+  return risk >= 70 ? '높음' : risk >= 40 ? '주의' : '낮음';
 }

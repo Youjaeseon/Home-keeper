@@ -6,11 +6,40 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import { Platform } from 'react-native';
+
 import { matchRegion, toApiHousing, toUser } from '@/lib/adapters';
-import { ApiError, getMyProfile, getRegions, messageOf, saveMyProfile, type Region } from '@/lib/api';
+import {
+  acceptQuoteProposal,
+  ApiError,
+  cancelQuoteRequest,
+  chatSocketUrl,
+  createChatRoom,
+  createDraft,
+  createQuoteRequest,
+  getChatMessages,
+  getChatRooms,
+  getDraftTemplate,
+  getMyProfile,
+  getProviderDetail,
+  getQuoteRequestDetail,
+  getQuoteRequests,
+  getRecord,
+  getRecords,
+  getRegions,
+  markChatRoomRead,
+  messageOf,
+  newClientMessageId,
+  saveMyProfile,
+  sendChatMessage,
+  submitQuoteProposal,
+  type ChatMessage,
+  type QuoteRequestDetail,
+  type Region,
+} from '@/lib/api';
 import { supabase } from '@/lib/supabase';
-import { getVendor } from '@/data/vendors';
-import type { Account, AnalysisResult, Estimate, Housing, Message, Photo, Proposal, User } from '@/types';
+import { splitLocation, toAnalysisResult, toDefect } from '@/services/analyze';
+import type { Account, AnalysisResult, ChatThread, Estimate, Housing, Message, Photo, Proposal, User } from '@/types';
 import { uid } from '@/utils';
 
 /** 프로필 등록 화면에 넘길 가입 입력값 (프로필 저장 실패 시 같은 계정으로 재시도) */
@@ -36,29 +65,44 @@ type Store = {
   saveProfile: (input: { nickname: string; regionId: string; housing: Housing }) => Promise<string | null>;
   /** 닉네임·지역·거주형태 수정 (PUT /me/profile). 지역은 표시 이름으로 받습니다. */
   updateUser: (patch: Partial<Pick<User, 'nickname' | 'region' | 'housing'>>) => Promise<string | null>;
+  /** 로컬에서 고른 사진 (분석 요청 전, 기기 안에만 있음) */
   photos: Photo[];
+  /** 내 분석 기록 (GET /records + GET /records/{id}) */
   analyses: AnalysisResult[];
+  /** 채팅 목록 (GET /chat/rooms) */
+  threads: ChatThread[];
+  /** 불러온 채팅방 메시지 (GET /chat/rooms/{id}/messages + WebSocket) */
   messages: Message[];
+  /** 견적 요청서 (GET /quote-requests). 화면 이름은 '견적서' */
   estimates: Estimate[];
+  /** 업체 제안서 (GET /quote-requests/{id}의 proposals). 화면 이름은 '제안서' */
   proposals: Proposal[];
   addPhoto: (uri: string) => Photo;
   removePhoto: (id: string) => void;
   saveAnalysis: (result: AnalysisResult) => void;
-  sendMessage: (vendorId: string, text: string) => void;
-  /** 유저 → 주변 업체: 견적서 전송 */
-  sendEstimate: (analysis: AnalysisResult, memo: string) => void;
-  /** 업체 → 유저: 제안서 전송 */
-  sendProposal: (estimateId: string, price: number, memo: string) => void;
-  /** 지운(숨긴) 견적서·제안서 id. 예시나 남이 보낸 항목은 내 화면에서만 숨깁니다. */
+  refreshAnalyses: () => Promise<void>;
+  /** 결과 화면 진입 시 최신 상세(새 Signed URL)를 다시 받습니다. */
+  loadAnalysis: (id: string) => Promise<string | null>;
+  refreshThreads: () => Promise<void>;
+  /** 업체와의 채팅방을 열거나 만듭니다(POST /chat/rooms). 분석 기록을 함께 공유할 수 있습니다. */
+  openRoom: (input: { vendorId: string; roomId?: string; analysisId?: string }) => Promise<{ roomId?: string; error?: string }>;
+  loadMessages: (roomId: string) => Promise<string | null>;
+  sendMessage: (roomId: string, vendorId: string, text: string) => Promise<string | null>;
+  refreshQuotes: () => Promise<void>;
+  /** 유저 → 주변 업체: 견적 요청서 전송 (POST /quote-requests) */
+  sendEstimate: (analysis: AnalysisResult, memo: string) => Promise<string | null>;
+  /** 업체 → 유저: 제안서 전송 (POST /quote-requests/{id}/proposals) */
+  sendProposal: (estimateId: string, price: number, memo: string) => Promise<string | null>;
+  /** 내 화면에서만 숨긴 항목 id (서버 삭제 API가 없는 항목) */
   hidden: string[];
   removeAnalysis: (id: string) => void;
-  removeEstimate: (id: string) => void;
+  removeEstimate: (id: string) => Promise<string | null>;
   removeProposal: (id: string) => void;
-  /** 내가 수락한 제안서: 견적서 id → 제안서 id */
+  /** 수락한 제안서: 견적서 id → 제안서 id (서버 accepted_proposal_id) */
   accepted: Record<string, string>;
-  acceptProposal: (estimateId: string, proposalId: string) => void;
-  /** 수락 취소: 수락 전 상태로 되돌립니다. */
-  cancelAccept: (estimateId: string) => void;
+  acceptProposal: (estimateId: string, proposalId: string) => Promise<string | null>;
+  /** 수락 취소: 백엔드 미지원 */
+  cancelAccept: (estimateId: string) => string;
 };
 
 const AppContext = createContext<Store | null>(null);
@@ -82,11 +126,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [regions, setRegions] = useState<Region[]>([]);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [analyses, setAnalyses] = useState<AnalysisResult[]>([]);
+  const [threads, setThreads] = useState<ChatThread[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [hiddenKeys, setHiddenKeys] = useState<string[]>([]);
-  const [acceptedKeys, setAcceptedKeys] = useState<Record<string, string>>({});
   const loadedFor = useRef<string | null>(null);
 
   /** 세션이 생기면 지역 목록과 프로필을 불러옵니다. 프로필 404 → 등록 화면. */
@@ -96,7 +140,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setRegions(regionList);
       try {
         const profile = await getMyProfile();
-        setUser(toUser(profile, next.user.email ?? '', regionList));
+        const nextUser = toUser(profile, next.user.email ?? '', regionList);
+        if (profile.provider_id) {
+          // 업체 계정: 업체 소개는 GET /providers/{id}에서 가져옵니다(표시 전용).
+          const detail = await getProviderDetail(profile.provider_id).catch(() => null);
+          nextUser.intro = detail?.description ?? undefined;
+        }
+        setUser(nextUser);
         setNeedsProfile(false);
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) {
@@ -134,6 +184,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setNeedsProfile(false);
         setPendingProfile(null);
         setRegions([]);
+        setPhotos([]);
+        setAnalyses([]);
+        setThreads([]);
+        setMessages([]);
+        setEstimates([]);
+        setProposals([]);
       }
     });
     return () => {
@@ -147,8 +203,226 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return loadProfile(next);
   };
 
-  const me = user?.loginId ?? '';
+  const me = session?.user.id ?? '';
   const hide = (id: string) => setHiddenKeys((prev) => [...prev, `${me}:${id}`]);
+  const isProvider = user?.role === '업체';
+  const housing = user?.housing ?? '기타';
+  const analysesRef = useRef(analyses);
+  useEffect(() => {
+    analysesRef.current = analyses;
+  }, [analyses]);
+  const loadedRooms = useRef(new Set<string>());
+
+  const toMessage = useCallback(
+    (m: ChatMessage, vendorId: string): Message => ({
+      id: m.message_id,
+      roomId: m.room_id,
+      vendorId,
+      from: m.sender_id === me ? 'me' : 'vendor',
+      text: m.content,
+      at: Date.parse(m.created_at),
+    }),
+    [me],
+  );
+
+  const mergeMessages = useCallback((incoming: Message[]) => {
+    setMessages((prev) => {
+      const map = new Map(prev.map((m) => [m.id, m]));
+      for (const m of incoming) map.set(m.id, m);
+      return [...map.values()].sort((x, y) => x.at - y.at);
+    });
+  }, []);
+
+  const refreshAnalyses = useCallback(async () => {
+    const items = await getRecords();
+    setAnalyses((prev) => {
+      const known = new Map(prev.map((a) => [a.id, a]));
+      return items
+        .filter((r) => r.severity_level !== null)
+        .map((r) => {
+          const old = known.get(r.record_id);
+          const undetermined = r.severity_level === 'undetermined';
+          const { location, position } = splitLocation(r.location);
+          const created = Date.parse(r.created_at);
+          const summary: AnalysisResult = {
+            id: r.record_id,
+            photoId: r.record_id,
+            photoUri: old?.photoUri ?? '',
+            location,
+            position,
+            occurredAt: new Date(created).toLocaleDateString('ko-KR'),
+            housing,
+            defect: toDefect(r.suspected_types, undetermined),
+            risk: r.severity_score ?? 0,
+            confidence: null,
+            region: null,
+            cause: '',
+            solutions: [],
+            prevention: [],
+            guide: { title: '', body: '' },
+            needsRetake: undetermined,
+            createdAt: created,
+          };
+          return old && old.cause ? { ...old, defect: summary.defect, risk: summary.risk } : summary;
+        });
+    });
+  }, [housing]);
+
+  const refreshThreads = useCallback(async () => {
+    const rooms = await getChatRooms();
+    setThreads(
+      rooms.map((r) => ({
+        roomId: r.room_id,
+        vendorId: r.provider_id,
+        name: r.counterpart_name,
+        last: r.last_message_preview,
+        unread: r.unread_count,
+      })),
+    );
+  }, []);
+
+  const loadMessages = useCallback(
+    async (roomId: string) => {
+      try {
+        const room = threads.find((t) => t.roomId === roomId);
+        const all: Message[] = [];
+        for (let offset = 0; ; offset += 100) {
+          const page = await getChatMessages(roomId, { limit: 100, offset });
+          all.push(...page.messages.map((m) => toMessage(m, room?.vendorId ?? '')));
+          if (!page.has_more) break;
+        }
+        loadedRooms.current.add(roomId);
+        mergeMessages(all);
+        await markChatRoomRead(roomId).catch(() => null);
+        setThreads((prev) => prev.map((t) => (t.roomId === roomId ? { ...t, unread: 0 } : t)));
+        return null;
+      } catch (e) {
+        return messageOf(e);
+      }
+    },
+    [threads, toMessage, mergeMessages],
+  );
+
+  const refreshQuotes = useCallback(async () => {
+    const list = await getQuoteRequests();
+    const details = await Promise.all(
+      list.map((q) => getQuoteRequestDetail(q.request_id).catch(() => ({ ...q, proposals: [] }) as QuoteRequestDetail)),
+    );
+    setEstimates(
+      details.map((q) => ({
+        id: q.request_id,
+        // 요청인 목록은 모두 내 요청서, 업체 목록은 모두 다른 사람 요청서입니다.
+        userId: isProvider ? `requester:${q.request_id}` : me,
+        // TODO(integration-gap): GAP-016 업체에게 요청인 닉네임을 주지 않아 지역만 표시합니다.
+        userNickname: isProvider ? '요청인' : (user?.nickname ?? ''),
+        region: q.region_name,
+        analysisId: q.record_id,
+        photoUri: q.photos[0]?.url ?? '',
+        defect: q.suspected_types[0] ?? q.work_type_name,
+        risk: q.severity_score ?? 0,
+        location: splitLocation(q.location).location,
+        position: splitLocation(q.location).position || q.work_type_name,
+        memo: q.memo ?? '',
+        createdAt: Date.parse(q.created_at),
+        status: q.status,
+        acceptedProposalId: q.accepted_proposal_id,
+      })),
+    );
+    setProposals(
+      details.flatMap((q) =>
+        q.proposals.map((p) => ({
+          id: p.proposal_id,
+          estimateId: q.request_id,
+          vendorId: isProvider ? me : p.provider.provider_id,
+          vendorName: p.provider.name,
+          vendorIntro: p.provider.description ?? '',
+          // TODO(integration-gap): GAP-017 제안서 응답에 업체 지역이 없습니다.
+          vendorRegion: '',
+          price: Math.round(p.min_price / 10000),
+          priceMax: Math.round(p.max_price / 10000),
+          memo: p.memo,
+          createdAt: Date.parse(p.created_at),
+        })),
+      ),
+    );
+  }, [isProvider, me, user?.nickname]);
+
+  // 로그인 후 목록 불러오기
+  useEffect(() => {
+    if (!user) return;
+    // 서버 데이터 동기화(비동기 fetch 후 setState)이므로 의도된 effect입니다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void refreshAnalyses().catch(() => null);
+    void refreshThreads().catch(() => null);
+    void refreshQuotes().catch(() => null);
+  }, [user, refreshAnalyses, refreshThreads, refreshQuotes]);
+
+  // 실시간 채팅 WebSocket: 끊기면 재연결하고, 재연결 뒤에는 REST로 이력을 다시 맞춥니다.
+  const roomsRef = useRef({ loadMessages, refreshThreads, toMessage, mergeMessages, threads });
+  useEffect(() => {
+    roomsRef.current = { loadMessages, refreshThreads, toMessage, mergeMessages, threads };
+  }, [loadMessages, refreshThreads, toMessage, mergeMessages, threads]);
+  useEffect(() => {
+    if (!user || !session) return;
+    let ws: WebSocket | null = null;
+    let closed = false;
+    let retry = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const connect = async () => {
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token || closed) return;
+      // 네이티브는 Authorization 헤더, 웹 브라우저는 헤더를 못 붙여 access_token 쿼리를 씁니다.
+      ws =
+        Platform.OS === 'web'
+          ? new WebSocket(`${chatSocketUrl()}?access_token=${encodeURIComponent(token)}`)
+          : new (WebSocket as unknown as new (u: string, p: undefined, o: object) => WebSocket)(chatSocketUrl(), undefined, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+      ws.onmessage = (ev) => {
+        let event: { type?: string; room_id?: string; message?: ChatMessage };
+        try {
+          event = JSON.parse(String(ev.data));
+        } catch {
+          return;
+        }
+        const r = roomsRef.current;
+        if (event.type === 'ready') {
+          if (retry > 0) for (const id of loadedRooms.current) void r.loadMessages(id);
+          retry = 0;
+          return;
+        }
+        if (event.type === 'message' && event.message) {
+          const room = r.threads.find((t) => t.roomId === event.room_id);
+          if (loadedRooms.current.has(event.message.room_id)) r.mergeMessages([r.toMessage(event.message, room?.vendorId ?? '')]);
+          void r.refreshThreads().catch(() => null);
+        }
+      };
+      ws.onclose = () => {
+        if (closed) return;
+        retry += 1;
+        timer = setTimeout(connect, Math.min(30000, 1000 * 2 ** retry));
+      };
+    };
+    void connect();
+    return () => {
+      closed = true;
+      if (timer) clearTimeout(timer);
+      ws?.close();
+    };
+  }, [user, session]);
+
+  const landlordDraft = async (recordId: string): Promise<string | null> => {
+    try {
+      return (await createDraft(recordId, 'landlord')).text;
+    } catch (e) {
+      // 모델 실패(502/503/504)면 모델 없이 만든 기본 양식으로 대체합니다.
+      if (e instanceof ApiError && [502, 503, 504].includes(e.status)) {
+        return (await getDraftTemplate(recordId, 'landlord').catch(() => null))?.text ?? null;
+      }
+      return null;
+    }
+  };
 
   const store: Store = {
     ready,
@@ -159,7 +433,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     regions,
     analysisConsent: !!session && !session.user.is_anonymous,
     photos,
-    analyses,
+    analyses: analyses.filter((a) => !hiddenKeys.includes(`${me}:${a.id}`)),
+    threads,
     messages,
     estimates,
     proposals,
@@ -264,87 +539,115 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setPhotos((prev) => prev.filter((p) => p.id !== id));
     },
     saveAnalysis(result) {
-      setAnalyses((prev) => [result, ...prev]);
+      setAnalyses((prev) => [result, ...prev.filter((a) => a.id !== result.id)]);
     },
-    sendMessage(vendorId, text) {
-      const mine: Message = { id: uid(), vendorId, from: 'me', text, at: Date.now() };
-      setMessages((prev) => [...prev, mine]);
-      // 가상 업체 자동 응답 (시뮬레이션)
-      setTimeout(() => {
-        const vendor = getVendor(vendorId);
-        const reply: Message = {
-          id: uid(),
-          vendorId,
-          from: 'vendor',
-          text: `${vendor?.name ?? '업체'}입니다. 문의 감사합니다. 사진을 확인한 뒤 예상 견적과 방문 가능 일정을 안내해 드릴게요.\n※ 가상 업체 자동 응답입니다.`,
-          at: Date.now(),
-        };
-        setMessages((prev) => [...prev, reply]);
-      }, 1200);
+    refreshAnalyses,
+    async loadAnalysis(id) {
+      try {
+        const detail = await getRecord(id);
+        const old = analysesRef.current.find((a) => a.id === id);
+        // 자가 거주자는 임대인 요청문을 만들지 않습니다.
+        const tenant = housing !== '자가' && housing !== '기타' && !isProvider;
+        const draft = tenant && detail.diagnosis ? await landlordDraft(id) : null;
+        const result = toAnalysisResult(detail, {
+          housing,
+          occurredAt: old?.occurredAt ?? new Date().toLocaleDateString('ko-KR'),
+          createdAt: old?.createdAt ?? Date.now(),
+          photoUri: old?.photoUri,
+          landlordDraft: draft,
+        });
+        if (!result) return '아직 진단 결과가 없는 기록입니다.';
+        setAnalyses((prev) => (prev.some((a) => a.id === id) ? prev.map((a) => (a.id === id ? result : a)) : [result, ...prev]));
+        return null;
+      } catch (e) {
+        return messageOf(e);
+      }
     },
-    sendEstimate(analysis, memo) {
-      if (!user) return;
-      const estimate: Estimate = {
-        id: uid(),
-        userId: user.loginId,
-        userNickname: user.nickname,
-        region: user.region,
-        analysisId: analysis.id,
-        photoUri: analysis.photoUri,
-        defect: analysis.defect,
-        risk: analysis.risk,
-        location: analysis.location,
-        position: analysis.position,
-        memo,
-        createdAt: Date.now(),
-      };
-      setEstimates((prev) => [estimate, ...prev]);
+    refreshThreads,
+    async openRoom({ vendorId, roomId, analysisId }) {
+      if (roomId && !analysisId) return { roomId };
+      try {
+        const room = await createChatRoom({ provider_id: vendorId, record_id: analysisId ?? null });
+        await refreshThreads().catch(() => null);
+        return { roomId: room.room_id };
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) return { error: '이 업체는 아직 앱 채팅을 지원하지 않아요. 전화로 문의해 주세요.' };
+        return { error: messageOf(e) };
+      }
     },
-    sendProposal(estimateId, price, memo) {
-      if (!user) return;
-      const proposal: Proposal = {
-        id: uid(),
-        estimateId,
-        vendorId: user.loginId,
-        vendorName: user.nickname,
-        vendorIntro: user.intro ?? '',
-        vendorRegion: user.region,
-        price,
-        memo,
-        createdAt: Date.now(),
-      };
-      setProposals((prev) => [proposal, ...prev]);
+    loadMessages,
+    async sendMessage(roomId, vendorId, text) {
+      try {
+        const saved = await sendChatMessage(roomId, { client_message_id: newClientMessageId(), content: text });
+        loadedRooms.current.add(roomId);
+        mergeMessages([toMessage(saved, vendorId)]);
+        return null;
+      } catch (e) {
+        return messageOf(e);
+      }
+    },
+    refreshQuotes,
+    async sendEstimate(analysis, memo) {
+      try {
+        await createQuoteRequest({ record_id: analysis.id, memo: memo || null });
+        await refreshQuotes();
+        return null;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'request_already_open') return '이 분석 결과로 이미 진행 중인 견적서가 있어요.';
+        if (e instanceof ApiError && e.code === 'diagnosis_required') return '진단 결과가 바뀌었어요. 분석을 다시 확인해 주세요.';
+        return messageOf(e);
+      }
+    },
+    async sendProposal(estimateId, price, memo) {
+      if (!memo.trim()) return '제안 메모를 입력해 주세요. (작업 범위·방문 가능 일정 등)';
+      try {
+        await submitQuoteProposal(estimateId, { min_price: price * 10000, max_price: price * 10000, memo: memo.trim() });
+        await refreshQuotes();
+        return null;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'proposal_already_exists') return '이미 이 견적서에 제안서를 보냈어요.';
+        if (e instanceof ApiError && e.code === 'request_not_open') return '이미 마감된 견적서예요.';
+        return messageOf(e);
+      }
     },
     accepted: Object.fromEntries(
-      Object.entries(acceptedKeys)
-        .filter(([k]) => k.startsWith(`${me}:`))
-        .map(([k, v]) => [k.slice(me.length + 1), v]),
+      estimates.filter((e) => e.acceptedProposalId).map((e) => [e.id, e.acceptedProposalId as string]),
     ),
-    acceptProposal(estimateId, proposalId) {
-      setAcceptedKeys((prev) => ({ ...prev, [`${me}:${estimateId}`]: proposalId }));
+    async acceptProposal(estimateId, proposalId) {
+      try {
+        await acceptQuoteProposal(estimateId, proposalId);
+        await refreshQuotes();
+        return null;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'request_not_open') return '이미 마감되었거나 취소된 견적서예요.';
+        return messageOf(e);
+      }
     },
-    cancelAccept(estimateId) {
-      setAcceptedKeys((prev) => {
-        const next = { ...prev };
-        delete next[`${me}:${estimateId}`];
-        return next;
-      });
+    cancelAccept() {
+      // TODO(integration-gap): GAP-014 백엔드에 수락 취소 API가 없습니다. 수락은 되돌릴 수 없습니다.
+      return '수락 취소는 아직 지원되지 않아요. 업체와 채팅으로 조율해 주세요.';
     },
     removeAnalysis(id) {
-      setAnalyses((prev) => prev.filter((a) => a.id !== id));
+      // TODO(integration-gap): GAP-015 기록 삭제 API가 없어 내 화면에서만 숨깁니다.
+      hide(id);
     },
-    removeEstimate(id) {
-      // 내가 보낸 견적서는 받은 제안서와 함께 완전히 지우고, 그 밖(예시·받은 견적서)은 내 화면에서만 숨깁니다.
-      if (estimates.some((e) => e.id === id && e.userId === me)) {
-        setEstimates((prev) => prev.filter((e) => e.id !== id));
-        setProposals((prev) => prev.filter((p) => p.estimateId !== id));
-      } else hide(id);
+    async removeEstimate(id) {
+      const mine = estimates.find((e) => e.id === id && e.userId === me);
+      if (mine && mine.status === 'open') {
+        try {
+          await cancelQuoteRequest(id);
+          await refreshQuotes();
+          return null;
+        } catch (e) {
+          return messageOf(e);
+        }
+      }
+      hide(id);
+      return null;
     },
     removeProposal(id) {
-      // 내가 보낸 제안서는 완전히 지우고, 받은 제안서(예시 포함)는 내 화면에서만 숨깁니다.
-      if (proposals.some((p) => p.id === id && p.vendorId === me)) {
-        setProposals((prev) => prev.filter((p) => p.id !== id));
-      } else hide(id);
+      // TODO(integration-gap): GAP-015 제안서 삭제·철회 API가 없어 내 화면에서만 숨깁니다.
+      hide(id);
     },
   };
 

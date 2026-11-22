@@ -35,16 +35,23 @@ export type Account = {
 
 export type Photo = { id: string; uri: string; createdAt: number };
 
-export type DefectType = '곰팡이' | '균열' | '누수' | '결로' | '판단 보류';
+/** 백엔드 진단 유형은 '균열' | '벗겨짐' | '곰팡이'뿐입니다. '누수'·'결로'는 팀원 UI 전용 라벨입니다. (GAP-007) */
+export type DefectType = '곰팡이' | '균열' | '벗겨짐' | '누수' | '결로' | '판단 보류';
 
 export type AnalysisInput = {
   photo: Photo;
   location: string;
   /** 손상 위치 (벽면, 천장 등) */
   position: string;
+  /** 표면 재질 (백엔드 필수 입력) */
+  material: string;
   occurredAt: string; // YYYY.MM.DD
   memo: string;
   housing: Housing;
+  /** 분석 지역 UUID (프로필 지역) */
+  regionId: string | null;
+  /** 외부 AI(SAM·비전 LLM) 사진 전송 동의 */
+  consent: boolean;
 };
 
 /** 손상 위치. 사진 크기 대비 0~1 비율 (원의 중심 x, y와 반지름 r) */
@@ -70,8 +77,8 @@ export type AnalysisResult = {
   defect: DefectType;
   /** 위험도 0~100 */
   risk: number;
-  /** 모델 신뢰도 0~1 */
-  confidence: number;
+  /** 모델 신뢰도 0~1. 백엔드 진단에는 없는 값이라 null입니다. (GAP-008) */
+  confidence: number | null;
   region: DefectRegion | null;
   cause: string;
   solutions: string[];
@@ -79,6 +86,12 @@ export type AnalysisResult = {
   guide: Guide;
   needsRetake: boolean;
   createdAt: number;
+  /** 추천 작업 종류 (업체 추천·견적 요청서에 사용) */
+  workTypeId?: string | null;
+  /** 결과가 추정임을 알리는 서버 안내 문구 */
+  estimationNotice?: string;
+  /** 서버 진단 출처: llm 또는 sample */
+  source?: 'llm' | 'sample';
 };
 
 export type Vendor = {
@@ -87,11 +100,20 @@ export type Vendor = {
   name: string;
   description: string;
   phone: string;
-  specialties: DefectType[];
+  /** 특화 분야(작업 종류) 이름 */
+  specialties: string[];
+  specialtyIds: string[];
+  rating: number;
+  reviewCount: number;
+  /** 앱 내 채팅 가능 여부 (샘플 업체는 false) */
+  chatAvailable: boolean;
+  /** 실제 후보가 없어 서버가 돌려준 시연용 샘플인지 */
+  isSample: boolean;
 };
 
 export type Message = {
   id: string;
+  roomId: string;
   vendorId: string;
   from: 'me' | 'vendor';
   text: string;
@@ -120,12 +142,14 @@ export type Estimate = {
   photoAsset?: number;
   /** 예시 데이터 여부 */
   sample?: boolean;
-  defect: DefectType;
+  defect: string;
   risk: number;
   location: string;
   position: string;
   memo: string;
   createdAt: number;
+  status?: 'open' | 'accepted' | 'cancelled';
+  acceptedProposalId?: string | null;
 };
 
 /** 업체가 견적서를 보낸 유저에게 보내는 제안서 */
@@ -136,8 +160,20 @@ export type Proposal = {
   vendorName: string;
   vendorIntro: string;
   vendorRegion: string;
-  /** 만원 단위 (5~10) */
+  /** 만원 단위 (최소 금액) */
   price: number;
+  /** 만원 단위 최대 금액. 최소와 같으면 단일 가격입니다. */
+  priceMax?: number;
   memo: string;
   createdAt: number;
+};
+
+/** 채팅 목록 한 줄 (GET /chat/rooms) */
+export type ChatThread = {
+  roomId: string;
+  /** 업체 UUID */
+  vendorId: string;
+  name: string;
+  last: string | null;
+  unread: number;
 };
