@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Camera,
   ChevronRight,
@@ -37,6 +37,9 @@ const ACTION_LABEL = {
 /** 스케치 7: 분석 결과 — 손상 위치 원, 심각도, 원인, 해결방안, 재발방지, 업체 A~D */
 export default function AnalyzeResultScreen() {
   const { analysisId } = useLocalSearchParams<{ analysisId: string }>();
+  // 분석 기록에서 다시 열 때(같은 기록이어도, 분석 탭에 남아 있던 화면이어도) 맨 위부터 보이게 합니다.
+  const [focusCount, setFocusCount] = useState(0);
+  useFocusEffect(useCallback(() => setFocusCount((n) => n + 1), []));
   const { analyses, user, estimates, sendEstimate, loadAnalysis, makeLandlordDraft } = useApp();
   const [memo, setMemo] = useState('');
   const [loading, setLoading] = useState(true);
@@ -119,14 +122,30 @@ export default function AnalyzeResultScreen() {
   }
 
   const color = riskColor(r.risk);
-  // 진단에 맞는 분야의 업체만 보여 줍니다(Hyeok 결정). 진단이 고른 작업 종류이거나, 하자 유형에 대응하는 분야면 맞는 업체입니다.
-  // 맞는 업체가 하나도 없으면(판단 보류 등) 지역 업체를 모두 보여 줍니다.
-  const DEFECT_FIELD: Record<string, string> = { 곰팡이: '곰팡이 제거', 균열: '균열 보수', 벗겨짐: '벽지·도장 보수' };
+  // 하자 유형에 맞는 분야의 업체만 추천합니다(Hyeok 결정). 균열·벗겨짐은 도장 업체, 곰팡이는 곰팡이 제거 업체입니다.
+  // 하자 유형을 알 수 없을 때(판단 보류 등)만 진단이 고른 작업 종류로 고르고, 그래도 없으면 지역 업체를 모두 보여 줍니다.
+  const DEFECT_FIELD: Record<string, string> = { 곰팡이: '곰팡이 제거', 균열: '벽지·도장 보수', 벗겨짐: '벽지·도장 보수' };
   const field = DEFECT_FIELD[r.defect];
-  const fits = (v: Vendor) =>
-    (!!r.workTypeId && v.specialtyIds.includes(r.workTypeId)) || (!!field && v.specialties.includes(field));
-  const matched = vendorList.vendors.filter(fits);
-  const vendors = matched.length > 0 ? matched : vendorList.vendors;
+  // 진단 근거에 물기·누수가 있으면 누수·원인 점검 업체도 뒤에 함께 추천합니다.
+  const water = !!r.riskReasons?.some((f) => f.label === '물기·누수');
+  const fieldFit = (v: Vendor) =>
+    field ? v.specialties.includes(field) : !!r.workTypeId && v.specialtyIds.includes(r.workTypeId);
+  const fits = (v: Vendor) => fieldFit(v) || (water && v.specialties.includes('원인 점검'));
+  // 추천 업체는 최대 3곳(Hyeok 결정): 분야 일치 → 물기·누수 보조 업체 → 앱 채팅 가능 → 전화번호 있음 → 이름순.
+  // 맞는 업체가 3곳보다 적으면 같은 지역 업체로 채우고, '추천' 배지는 맞는 업체에만 붙습니다.
+  const rank = (v: Vendor) => [
+    fieldFit(v) ? 0 : fits(v) ? 1 : 2,
+    v.chatAvailable ? 0 : 1,
+    v.phone.replace(/[^0-9]/g, '').length >= 7 ? 0 : 1,
+  ];
+  const vendors = [...vendorList.vendors]
+    .sort((a, b) => {
+      const ra = rank(a);
+      const rb = rank(b);
+      for (let i = 0; i < ra.length; i += 1) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+      return a.name.localeCompare(b.name, 'ko');
+    })
+    .slice(0, 3);
   const sent = estimates.some((e) => e.analysisId === r.id && e.status !== 'cancelled' && user?.role !== '업체');
 
   const onSendEstimate = async () => {
@@ -137,7 +156,7 @@ export default function AnalyzeResultScreen() {
   };
 
   return (
-    <Screen>
+    <Screen scrollKey={`${analysisId}:${focusCount}`}>
       {/* 원형 사진 + 테두리 심각도 링 (사진 위 손상 위치 원은 표시하지 않음) */}
       <RiskPhotoRing uri={r.photoUri} risk={r.risk} />
 
@@ -394,6 +413,17 @@ export default function AnalyzeResultScreen() {
             </Card>
           );
         })}
+        {vendorList.vendors.length > vendors.length && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push('/vendors')}
+            style={({ pressed }) => [s.allVendors, pressed && { opacity: 0.6 }]}>
+            <Txt variant="label" color={C.primary}>
+              업체 전체 보기
+            </Txt>
+            <ChevronRight size={16} color={C.primary} strokeWidth={STROKE} />
+          </Pressable>
+        )}
         <Notice icon={MessageCircle}>
           {vendors.some((v) => v.realListing)
             ? '실제 업체예요. 전화번호를 누르면 전화로 연결돼요. (앱 채팅은 앱에 가입한 업체만 지원해요)'
@@ -420,6 +450,7 @@ function QuoteRow({ label, value }: { label: string; value: string }) {
 }
 
 const s = StyleSheet.create({
+  allVendors: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, paddingVertical: 6 },
   reasons: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
   guide: { backgroundColor: C.accent, borderRadius: R.card, padding: 22, gap: 12 },
   guideIcon: {

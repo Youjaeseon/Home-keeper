@@ -133,8 +133,10 @@ export type Message = {
   at: number;
   /** 수정된 메시지 */
   edited?: boolean;
-  /** 내가 보낸 일반 메시지라 수정·삭제할 수 있음 */
+  /** 내가 보낸 일반 메시지라 수정할 수 있음 */
   editable?: boolean;
+  /** 내가 보낸 메시지(일반·분석 요약)라 삭제할 수 있음 */
+  deletable?: boolean;
 };
 
 export type NewsItem = {

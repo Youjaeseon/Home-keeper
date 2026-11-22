@@ -249,6 +249,30 @@ def build_template(kind: DraftKind, record: dict) -> str:
     return "\n".join(lines)
 
 
+# 임대인 문자: 분석 보고서가 아니라 세입자가 그대로 보낼 수 있는 정중한 요청 문자 (Hyeok 결정, 법 조항 인용 없음)
+LANDLORD_SYSTEM_PROMPT = """\
+너는 세입자가 집주인(임대인)에게 보낼 정중한 하자 수리 요청 문자를 써 주는 도우미다.
+- 그대로 보낼 수 있는 문자 한 통만 쓴다. 제목·번호 목록·마크다운·이모지 없이 5~7문장, 300자 안팎.
+- 순서: 인사와 '○○호 세입자입니다' → 발견 시기('○월 ○일쯤')와 위치·상태 한두 문장, '사진 첨부드립니다' → 불편이나 악화 우려 한 문장 → 점검·수리 요청과 방문 가능한 날짜 문의 → '편하실 때 회신 부탁드립니다'와 감사 인사.
+- 원인은 '결로나 누수가 의심됩니다'처럼 짧게만 쓰고 단정하지 않는다. 심각도 %, 분석·모델 용어, 원인 목록은 쓰지 않는다.
+- 법 조항이나 책임을 따지는 표현, 기한을 강요하는 표현 없이 정중하게 요청만 한다.
+- 이름·주소·연락처·날짜는 만들지 않고 '○○호', '○월 ○일'처럼 빈칸으로 둔다.
+- 문자 본문만 출력한다.
+"""
+
+
+def build_landlord_prompt(record: dict) -> str:
+    facts = _diagnosis_facts(record["diagnosis"])
+    lines = [
+        "아래 하자 내용으로 집주인에게 보낼 문자를 써 주세요.",
+        *[_redact(line) for line in _record_lines(record)],
+    ]
+    if facts is not None:
+        lines.append(f"- 하자 유형: {', '.join(facts['suspected_types']) or '미확인'}")
+        lines.append(f"- 의심 원인(참고): {'; '.join(facts['causes'][:2]) or '미확인'}")
+    return "\n".join(lines)
+
+
 def build_prompt(kind: DraftKind, record: dict) -> str:
     facts = _diagnosis_facts(record["diagnosis"])
     lines = [
@@ -355,11 +379,13 @@ def create_draft(
                 "진단 결과가 없어 요청문을 생성할 수 없습니다. 먼저 분석을 완료하거나 기본 양식을 사용해 주세요.",
                 input_revision=revision,
             )
-        prompt = build_prompt(kind, record)
+        prompt = build_landlord_prompt(record) if kind == "landlord" else build_prompt(kind, record)
     # No row lock is held during the external call; versions are re-checked below.
 
     try:
-        text = llm.generate_text(prompt)
+        text = llm.generate_text(
+            prompt, system_prompt=LANDLORD_SYSTEM_PROMPT if kind == "landlord" else None
+        )
     except llm.LlmUnavailable:
         raise llm_unavailable() from None
     except llm.LlmQuotaExceeded:

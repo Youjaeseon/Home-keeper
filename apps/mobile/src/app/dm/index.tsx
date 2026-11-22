@@ -22,8 +22,9 @@ const parseWon = (text: string) => {
 /** 채팅 목록 — 상단 탭: 메시지 | 업체 제안서(유저) 또는 견적 요청서(업체) */
 export default function DmListScreen() {
   const params = useLocalSearchParams<{ tab?: string }>();
-  const { user } = useApp();
+  const { user, unreadChats, newQuotes, refreshThreads, refreshQuotes } = useApp();
   const [tab, setTab] = useState<Tab>(params.tab === 'quotes' ? 'quotes' : 'messages');
+  const badgeOf = (key: Tab) => (key === 'messages' ? unreadChats : newQuotes);
   const TABS: { key: Tab; label: string }[] = [
     { key: 'messages', label: '메시지' },
     // 업체 회원에게는 같은 지역 유저들이 보낸 견적 요청서가 오는 칸입니다. (Hyeok 결정)
@@ -35,7 +36,7 @@ export default function DmListScreen() {
   const noHistory = !router.canGoBack();
 
   return (
-    <Screen>
+    <Screen onRefresh={() => Promise.all([refreshThreads(), refreshQuotes()])}>
       {noHistory && (
         <Stack.Screen
           options={{
@@ -66,6 +67,7 @@ export default function DmListScreen() {
               <Txt variant="label" color={on ? C.onPrimary : C.sub} style={{ fontFamily: F.bold, fontSize: 14 }}>
                 {t.label}
               </Txt>
+              {badgeOf(t.key) > 0 && <CountBadge count={badgeOf(t.key)} />}
             </Pressable>
           );
         })}
@@ -77,7 +79,9 @@ export default function DmListScreen() {
 
 /** 메시지 탭: GET /chat/rooms (상대 이름, 최근 메시지, 미읽음 수) */
 function Messages() {
-  const { threads, refreshThreads, user } = useApp();
+  const { threads: allThreads, refreshThreads, user } = useApp();
+  // 메시지가 하나도 없는 방(메시지를 모두 지운 방 등)은 목록에서 숨깁니다. 업체에 다시 문의하면 같은 방이 열려요.
+  const threads = allThreads.filter((t) => !!t.last);
   useEffect(() => {
     void refreshThreads().catch(() => null);
   }, [refreshThreads]);
@@ -114,7 +118,7 @@ function Messages() {
                 </Txt>
               </View>
               {t.unread > 0 ? (
-                <View style={s.unread} />
+                <CountBadge count={t.unread} />
               ) : (
                 <ChevronRight size={18} color={C.faint} strokeWidth={STROKE} />
               )}
@@ -143,7 +147,13 @@ function Quotes() {
     completeDeal,
     openRoom,
     sendMessage,
+    markQuotesSeen,
   } = useApp();
+  // 견적 탭을 보고 있으면 새 요청서·제안서를 읽은 것으로 처리합니다(실시간으로 새로 와도 함께).
+  useEffect(() => {
+    markQuotesSeen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimates.length, proposals.length]);
   // 수락을 연달아 눌러도 수락·자동 메시지가 한 번만 나가게 합니다.
   const accepting = useRef(false);
   useEffect(() => {
@@ -344,6 +354,17 @@ function EstimateSummary({ e, showSender, onDelete }: { e: Estimate; showSender:
           메모: {e.memo}
         </Txt>
       )}
+    </View>
+  );
+}
+
+/** 카톡처럼 빨간 동그라미 숫자 배지 */
+function CountBadge({ count }: { count: number }) {
+  return (
+    <View style={s.badge} accessibilityLabel={`새 항목 ${count}개`}>
+      <Txt variant="caption" color="#fff" style={{ fontFamily: F.bold, fontSize: 11, lineHeight: 14 }}>
+        {count > 99 ? '99+' : count}
+      </Txt>
     </View>
   );
 }
@@ -564,7 +585,7 @@ function ProposalForm({ estimateId }: { estimateId: string }) {
 const s = StyleSheet.create({
   back: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 8, paddingVertical: 6 },
   tabs: { flexDirection: 'row', backgroundColor: C.card, borderRadius: 999, padding: 5, gap: 4 },
-  tab: { flex: 1, minHeight: 42, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  tab: { flex: 1, flexDirection: 'row', minHeight: 42, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   tabOn: { backgroundColor: C.primary },
   row: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 },
   divider: { borderTopWidth: 1, borderTopColor: C.border },
@@ -576,7 +597,16 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  unread: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary },
+  badge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+    backgroundColor: C.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 6,
+  },
   quote: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   quotePhoto: { width: 76, height: 76, borderRadius: 20, backgroundColor: C.accent },
   proposal: { backgroundColor: C.accentSoft, borderRadius: 22, padding: 16, gap: 10 },

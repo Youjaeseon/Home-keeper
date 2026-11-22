@@ -6,6 +6,7 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 import { DEMO_MESSAGES, DEMO_VENDORS, demoAutoReply, demoRoomId, isDemo } from '@/data/demo';
@@ -103,6 +104,12 @@ type Store = {
   sendProposal: (estimateId: string, minPrice: number, maxPrice: number, memo: string) => Promise<string | null>;
   /** 내 화면에서만 숨긴 항목 id (서버 삭제 API가 없는 항목) */
   hidden: string[];
+  /** 안 읽은 채팅 메시지 수 합계 (서버 unread_count) */
+  unreadChats: number;
+  /** 마지막으로 견적 탭을 본 뒤 새로 온 견적 요청서(업체) 또는 업체 제안서(유저) 수 */
+  newQuotes: number;
+  /** 견적 탭을 봤다고 기록합니다(계정별로 기기에 저장). */
+  markQuotesSeen: () => void;
   removeAnalysis: (id: string) => Promise<string | null>;
   editMessage: (roomId: string, messageId: string, text: string) => Promise<string | null>;
   deleteMessage: (roomId: string, messageId: string) => Promise<string | null>;
@@ -144,6 +151,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [hiddenKeys, setHiddenKeys] = useState<string[]>([]);
   // 시연용 가상 데이터(data/demo.ts). 서버에 저장하지 않고 앱 안에서만 바뀝니다.
   const [demoMessages, setDemoMessages] = useState<Message[]>(DEMO_MESSAGES);
+  // 견적 탭을 마지막으로 본 시각(ms). 계정별로 AsyncStorage에 저장합니다. null = 아직 불러오는 중
+  const [quotesSeenAt, setQuotesSeenAt] = useState<number | null>(null);
   const loadedFor = useRef<string | null>(null);
 
   /** 세션이 생기면 지역 목록과 프로필을 불러옵니다. 프로필 404 → 등록 화면. */
@@ -236,6 +245,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       at: Date.parse(m.created_at),
       edited: !!(m.payload as { edited?: boolean } | null)?.edited,
       editable: m.sender_id === me && m.message_type === 'text',
+      deletable: m.sender_id === me,
     }),
     [me],
   );
@@ -371,10 +381,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [user, refreshAnalyses, refreshThreads, refreshQuotes]);
 
   // 실시간 채팅 WebSocket: 끊기면 재연결하고, 재연결 뒤에는 REST로 이력을 다시 맞춥니다.
-  const roomsRef = useRef({ loadMessages, refreshThreads, toMessage, mergeMessages, threads });
+  const roomsRef = useRef({ loadMessages, refreshThreads, refreshQuotes, toMessage, mergeMessages, threads });
   useEffect(() => {
-    roomsRef.current = { loadMessages, refreshThreads, toMessage, mergeMessages, threads };
-  }, [loadMessages, refreshThreads, toMessage, mergeMessages, threads]);
+    roomsRef.current = { loadMessages, refreshThreads, refreshQuotes, toMessage, mergeMessages, threads };
+  }, [loadMessages, refreshThreads, refreshQuotes, toMessage, mergeMessages, threads]);
+
+  // 견적 탭을 본 시각을 계정별로 불러옵니다. 처음이면 지금을 기준으로 삼아 예전 항목은 새 것으로 세지 않습니다.
+  useEffect(() => {
+    if (!me) return;
+    const key = `quotesSeenAt:${me}`;
+    let alive = true;
+    AsyncStorage.getItem(key)
+      .then(async (v) => {
+        const t = v ? Number(v) : Date.now();
+        if (!v) await AsyncStorage.setItem(key, String(t)).catch(() => null);
+        if (alive) setQuotesSeenAt(t);
+      })
+      .catch(() => alive && setQuotesSeenAt(Date.now()));
+    return () => {
+      alive = false;
+    };
+  }, [me]);
   useEffect(() => {
     if (!user || !session) return;
     let ws: WebSocket | null = null;
@@ -415,6 +442,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const room = r.threads.find((t) => t.roomId === event.room_id);
           r.mergeMessages([r.toMessage(event.message, room?.vendorId ?? '')]);
         }
+        // 견적 요청서·제안서가 새로 오거나 상태가 바뀌면 목록을 다시 불러옵니다.
+        if (event.type === 'quotes_changed') void r.refreshQuotes().catch(() => null);
         if (event.type === 'message_deleted' && event.message_id) {
           const gone = event.message_id;
           setMessages((prev) => prev.filter((m) => m.id !== gone));
@@ -462,6 +491,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     estimates,
     proposals,
     hidden: hiddenKeys.filter((k) => k.startsWith(`${me}:`)).map((k) => k.slice(me.length + 1)),
+    unreadChats: threads.reduce((sum, t) => sum + (t.unread || 0), 0),
+    newQuotes:
+      quotesSeenAt === null
+        ? 0
+        : user?.role === '업체'
+          ? estimates.filter((e) => e.userId !== me && e.status === 'open' && e.createdAt > quotesSeenAt).length
+          : proposals.filter(
+              (p) => p.createdAt > quotesSeenAt && estimates.some((e) => e.id === p.estimateId && e.userId === me),
+            ).length,
+    markQuotesSeen() {
+      if (!me) return;
+      const t = Date.now();
+      setQuotesSeenAt(t);
+      void AsyncStorage.setItem(`quotesSeenAt:${me}`, String(t)).catch(() => null);
+    },
     async signup(account) {
       const { data, error } = await supabase.auth.signUp({ email: account.loginId, password: account.password });
       if (error) return authError(error.message);

@@ -1,8 +1,9 @@
 import { Trash2 } from 'lucide-react-native';
-import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import { type ComponentRef, type ComponentType, type ReactNode, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -51,10 +52,55 @@ export function Txt({
 /* ───────── 화면 틀 ───────── */
 
 /** safeTop: 헤더 없는 탭 화면에서 상태바 영역만큼 띄웁니다. */
-export function Screen({ children, safeTop }: { children: ReactNode; safeTop?: boolean }) {
+/**
+ * scrollKey가 바뀌면(예: 다른 분석 기록 열기) 맨 위로 이동합니다.
+ * 입력창을 누르면 키보드에 가리지 않게 화면을 올립니다(iOS automaticallyAdjustKeyboardInsets).
+ */
+export function Screen({
+  children,
+  safeTop,
+  scrollKey,
+  onRefresh,
+}: {
+  children: ReactNode;
+  safeTop?: boolean;
+  scrollKey?: string;
+  /** 있으면 아래로 당겨서 새로고침합니다. 끝날 때까지 로딩 표시가 돕니다. */
+  onRefresh?: () => Promise<unknown>;
+}) {
   const insets = useSafeAreaInsets();
+  const ref = useRef<ComponentRef<typeof ScrollView>>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const pull = onRefresh
+    ? () => {
+        setRefreshing(true);
+        void onRefresh()
+          .catch(() => null)
+          .finally(() => setRefreshing(false));
+      }
+    : undefined;
+  // scrollKey가 바뀌면 맨 위로 갑니다. 내용(사진·업체 목록 등)이 늦게 그려지며 위치가 바뀔 수 있어
+  // 잠깐 동안은 내용 크기가 바뀔 때마다 다시 맨 위로 맞춥니다.
+  const pinTop = useRef(false);
+  useEffect(() => {
+    if (scrollKey === undefined) return;
+    pinTop.current = true;
+    ref.current?.scrollTo({ y: 0, animated: false });
+    const timer = setTimeout(() => {
+      pinTop.current = false;
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [scrollKey]);
   return (
     <ScrollView
+      ref={ref}
+      refreshControl={
+        pull ? <RefreshControl refreshing={refreshing} onRefresh={pull} tintColor={C.primary} colors={[C.primary]} /> : undefined
+      }
+      automaticallyAdjustKeyboardInsets
+      onContentSizeChange={() => {
+        if (pinTop.current) ref.current?.scrollTo({ y: 0, animated: false });
+      }}
       style={s.root}
       contentContainerStyle={{ flexGrow: 1, paddingBottom: 32, paddingTop: safeTop ? insets.top : 0 }}
       keyboardShouldPersistTaps="handled"
