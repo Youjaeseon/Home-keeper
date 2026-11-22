@@ -1,20 +1,23 @@
 import { router } from 'expo-router';
 import { ChevronRight, Clock, LogOut } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { Select } from '@/components/select';
 import { AppBar, Button, Card, CardHeader, Chip, DeleteButton, Field, Screen, Txt } from '@/components/ui';
 import { C, STROKE } from '@/constants/theme';
-import { HOUSINGS, REGIONS } from '@/data/options';
+import { HOUSINGS } from '@/data/options';
 import { useApp } from '@/store/app-store';
-import type { Role } from '@/types';
-
-const ROLES: Role[] = ['유저', '업체'];
 
 /** 스케치 3: 사용자 정보 — 회원 유형(유저/업체), 별명, 거주지역, 거주형태 */
 export default function ProfileScreen() {
-  const { user, updateUser, logout, analyses, removeAnalysis } = useApp();
+  const { user, regions, updateUser, logout, analyses, removeAnalysis } = useApp();
+  const [nickname, setNickname] = useState(user?.nickname ?? '');
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => setNickname(user?.nickname ?? ''), [user?.nickname]);
   if (!user) return null;
+
+  const save = async (patch: Parameters<typeof updateUser>[0]) => setError(await updateUser(patch));
 
   const vendor = user.role === '업체';
 
@@ -33,27 +36,31 @@ export default function ProfileScreen() {
       </View>
 
       <Card>
-        <Select label="회원 유형" value={user.role} options={ROLES} onChange={(role) => updateUser({ role })} />
+        {/* 회원 유형은 서버가 정합니다(가입 시 유저, 업체는 사전 등록). TODO(integration-gap): GAP-003 */}
+        <Field label="회원 유형" value={user.role} editable={false} />
         <Field
           label={vendor ? '업체명' : '별명'}
-          value={user.nickname}
-          onChangeText={(nickname) => updateUser({ nickname })}
+          value={nickname}
+          onChangeText={setNickname}
+          onEndEditing={() => nickname.trim() !== user.nickname && save({ nickname })}
+          onSubmitEditing={() => nickname.trim() !== user.nickname && save({ nickname })}
         />
         <Select
           label={vendor ? '활동지역' : '거주지역'}
           value={user.region}
-          options={REGIONS}
-          onChange={(region) => updateUser({ region })}
+          options={regions.map((r) => r.display_name)}
+          onChange={(region) => save({ region })}
         />
         {vendor ? (
-          <Field
-            label="업체 소개"
-            value={user.intro ?? ''}
-            onChangeText={(intro) => updateUser({ intro })}
-            placeholder="예: 욕실 곰팡이 제거 전문"
-          />
+          // TODO(integration-gap): GAP-010 업체 소개 수정 API가 없어 표시만 합니다.
+          <Field label="업체 소개" value={user.intro ?? ''} editable={false} placeholder="업체 소개는 운영팀이 등록합니다" />
         ) : (
-          <Select label="거주형태" value={user.housing} options={HOUSINGS} onChange={(housing) => updateUser({ housing })} />
+          <Select label="거주형태" value={user.housing} options={HOUSINGS} onChange={(housing) => save({ housing })} />
+        )}
+        {error && (
+          <Txt variant="sub" color={C.danger}>
+            {error}
+          </Txt>
         )}
       </Card>
 
@@ -87,8 +94,8 @@ export default function ProfileScreen() {
         variant="outline"
         icon={LogOut}
         style={{ marginTop: 8 }}
-        onPress={() => {
-          logout();
+        onPress={async () => {
+          await logout();
           router.replace('/');
         }}
       />

@@ -33,6 +33,7 @@ export default function RootLayout() {
       <Stack screenOptions={stackHeader}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="signup" options={{ title: '' }} />
+        <Stack.Screen name="profile-setup" options={{ title: '프로필 등록', headerBackVisible: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="dm/index" options={{ title: '채팅 목록' }} />
         <Stack.Screen name="dm/[vendorId]" options={{ title: '대화' }} />

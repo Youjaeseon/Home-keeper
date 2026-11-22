@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -27,21 +27,36 @@ const LOGIN_DESIGN = {
 
 /** 스케치 1: 로그인 — 크림 단색 배경 + 로고 + 흰 둥근 입력칸 + 글씨 버튼 */
 export default function LoginScreen() {
-  const { login, loginAsGuest } = useApp();
+  const { ready, session, user, needsProfile, login, loginAsGuest } = useApp();
   const { height } = useWindowDimensions();
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const d = LOGIN_DESIGN;
 
-  const onLogin = () => {
+  // 세션 복원 결과에 따라 이동합니다. 프로필이 없으면(GET /me/profile 404) 프로필 등록으로 보냅니다.
+  if (ready && session && user) return <Redirect href="/news" />;
+  if (ready && session && needsProfile) return <Redirect href="/profile-setup" />;
+
+  const onLogin = async () => {
+    if (busy) return;
     if (!loginId.trim() || !password) {
-      setError('ID와 PW를 입력해 주세요.');
+      setError('ID(이메일)와 PW를 입력해 주세요.');
       return;
     }
-    const err = login(loginId.trim(), password);
+    setBusy(true);
+    const err = await login(loginId.trim(), password);
+    setBusy(false);
     setError(err);
-    if (!err) router.replace('/news');
+  };
+
+  const onGuest = async () => {
+    if (busy) return;
+    setBusy(true);
+    const err = await loginAsGuest();
+    setBusy(false);
+    setError(err);
   };
 
   return (
@@ -63,7 +78,14 @@ export default function LoginScreen() {
 
         <View style={s.spacer} />
         <View style={s.form}>
-          <LineField label="ID" value={loginId} onChangeText={setLoginId} autoCapitalize="none" />
+          <LineField
+            label="ID"
+            value={loginId}
+            onChangeText={setLoginId}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            placeholder="이메일"
+          />
           <LineField label="PW" value={password} onChangeText={setPassword} secureTextEntry onSubmitEditing={onLogin} />
           {error && (
             <Txt variant="sub" color={C.danger}>
@@ -83,10 +105,7 @@ export default function LoginScreen() {
             accessibilityRole="button"
             accessibilityLabel="로그인 없이 둘러보기"
             hitSlop={10}
-            onPress={() => {
-              loginAsGuest();
-              router.replace('/news');
-            }}
+            onPress={onGuest}
             style={({ pressed }) => [s.guest, pressed && { opacity: 0.6 }]}>
             <Txt variant="sub" muted style={{ textDecorationLine: 'underline', fontFamily: F.light }}>
               로그인 없이 둘러보기

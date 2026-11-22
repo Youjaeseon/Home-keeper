@@ -1,4 +1,4 @@
-export type Housing = '월세' | '전세' | '자가' | '기타';
+export type Housing = '월세' | '전세' | '반전세' | '자가' | '기타';
 
 /** 회원 유형: 일반 유저 / 견적을 받는 업체 */
 export type Role = '유저' | '업체';
@@ -9,13 +9,29 @@ export type User = {
   role: Role;
   /** 업체 소개 (업체 회원만) */
   intro?: string;
+  /** 로그인 ID. Supabase Auth 이메일입니다. */
   loginId: string;
+  /** 화면 표시용 지역 이름 (GET /regions의 display_name) */
   region: string;
+  /** 백엔드 지역 UUID */
+  regionId: string;
   housing: Housing;
+  /** 업체 계정이면 연결된 업체 UUID */
+  providerId: string | null;
+  address: string | null;
   avatarUri?: string;
 };
 
-export type Account = User & { password: string };
+/** 회원가입 입력값 */
+export type Account = {
+  role: Role;
+  nickname: string;
+  loginId: string;
+  password: string;
+  region: string;
+  housing: Housing;
+  intro?: string;
+};
 
 export type Photo = { id: string; uri: string; createdAt: number };
 

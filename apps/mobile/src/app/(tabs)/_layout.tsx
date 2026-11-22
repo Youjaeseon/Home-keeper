@@ -16,7 +16,9 @@ function tabIcon(IconCmp: Icon) {
 
 /** 하단 탭: 소식 | 분석 | 채팅 | 업체 | 정보 */
 export default function TabsLayout() {
-  const { user } = useApp();
+  const { ready, user, needsProfile } = useApp();
+  if (!ready) return null;
+  if (needsProfile) return <Redirect href="/profile-setup" />;
   if (!user) return <Redirect href="/" />;
 
   return (

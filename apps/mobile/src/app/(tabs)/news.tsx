@@ -7,14 +7,14 @@ import { Select } from '@/components/select';
 import { AppBar, Banner, Button, Card, Hero, Screen, Txt } from '@/components/ui';
 import { C, F, R, STROKE } from '@/constants/theme';
 import { sortNewsFor } from '@/data/news';
-import { HOUSINGS, REGIONS, regionLabel } from '@/data/options';
+import { HOUSINGS, regionLabel } from '@/data/options';
 import { useApp } from '@/store/app-store';
 
 const PAGE_SIZE = 3;
 
 /** 스케치 4: 소식지 — 사용자 정보 맞춤 사업 및 지원 정보 */
 export default function NewsScreen() {
-  const { user, updateUser } = useApp();
+  const { user, regions, updateUser } = useApp();
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -114,9 +114,9 @@ export default function NewsScreen() {
             <Select
               label="거주지역"
               value={user.region}
-              options={REGIONS}
+              options={regions.map((r) => r.display_name)}
               onChange={(region) => {
-                updateUser({ region });
+                void updateUser({ region });
                 setPage(0);
               }}
             />
@@ -125,7 +125,7 @@ export default function NewsScreen() {
               value={user.housing}
               options={HOUSINGS}
               onChange={(housing) => {
-                updateUser({ housing });
+                void updateUser({ housing });
                 setPage(0);
               }}
             />

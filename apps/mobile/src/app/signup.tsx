@@ -29,16 +29,25 @@ export default function SignupScreen() {
   const [housing, setHousing] = useState<Housing>('월세');
   const [error, setError] = useState<string | null>(null);
 
-  const onSubmit = () => {
-    if (!nickname.trim() || !loginId.trim() || password.length < 4) {
-      setError(`${vendor ? '업체명' : '닉네임'}, ID를 입력하고 PW는 4자 이상으로 정해 주세요.`);
+  const [busy, setBusy] = useState(false);
+
+  const onSubmit = async () => {
+    if (busy) return;
+    // Supabase Auth는 이메일을 ID로 쓰고 PW는 기본 6자 이상입니다.
+    if (!nickname.trim() || !loginId.trim() || password.length < 6) {
+      setError(`${vendor ? '업체명' : '닉네임'}, ID(이메일)를 입력하고 PW는 6자 이상으로 정해 주세요.`);
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(loginId.trim())) {
+      setError('ID는 이메일 주소로 입력해 주세요.');
       return;
     }
     if (!agreed) {
       setError('사진 분석 동의에 체크해 주세요.');
       return;
     }
-    const err = signup({
+    setBusy(true);
+    const err = await signup({
       role,
       nickname: nickname.trim(),
       loginId: loginId.trim(),
@@ -47,8 +56,10 @@ export default function SignupScreen() {
       housing: vendor ? '기타' : housing,
       intro: vendor ? intro.trim() : undefined,
     });
+    setBusy(false);
     setError(err);
-    if (!err) router.replace('/news');
+    // 성공하면 로그인 화면의 세션 가드가 소식지 또는 프로필 등록으로 이동시킵니다.
+    if (!err) router.replace('/');
   };
 
   return (
@@ -84,8 +95,15 @@ export default function SignupScreen() {
           onChangeText={setNickname}
           placeholder={vendor ? '예: 집사 곰팡이케어' : '예: 집사'}
         />
-        <Field label="ID" value={loginId} onChangeText={setLoginId} autoCapitalize="none" placeholder="아이디" />
-        <Field label="PW" value={password} onChangeText={setPassword} secureTextEntry placeholder="4자 이상" />
+        <Field
+          label="ID"
+          value={loginId}
+          onChangeText={setLoginId}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          placeholder="이메일"
+        />
+        <Field label="PW" value={password} onChangeText={setPassword} secureTextEntry placeholder="6자 이상" />
       </Card>
 
       <Card>
@@ -116,7 +134,7 @@ export default function SignupScreen() {
           {error}
         </Txt>
       )}
-      <Button title="가입 완료" onPress={onSubmit} />
+      <Button title="가입 완료" onPress={onSubmit} loading={busy} />
     </Screen>
   );
 }

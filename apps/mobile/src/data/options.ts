@@ -1,5 +1,6 @@
 import type { Housing } from '@/types';
 
+// TODO(integration-gap): GAP-004 로그인 전 가입 화면 전용 목록입니다. 로그인 후에는 GET /regions 결과를 씁니다.
 export const REGIONS = [
   '서울',
   '인천',
@@ -13,7 +14,7 @@ export const REGIONS = [
   '기타',
 ];
 
-export const HOUSINGS: Housing[] = ['월세', '전세', '자가', '기타'];
+export const HOUSINGS: Housing[] = ['월세', '전세', '반전세', '자가', '기타'];
 
 export const LOCATIONS = ['안방', '화장실', '주방', '거실', '베란다', '천장', '기타'];
 
