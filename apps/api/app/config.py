@@ -21,6 +21,7 @@ class Settings:
     supabase_storage_bucket: str = "defect-photos"
     supabase_storage_key: str | None = None
     storage_signed_url_ttl_seconds: int = 300
+    cors_origins: tuple[str, ...] = ()
 
 
 def _required(name: str) -> str:
@@ -55,5 +56,10 @@ def get_settings() -> Settings:
         ),
         storage_signed_url_ttl_seconds=int(
             os.environ.get("STORAGE_SIGNED_URL_TTL_SECONDS", "300")
+        ),
+        cors_origins=tuple(
+            origin.strip()
+            for origin in os.environ.get("CORS_ORIGINS", "").split(",")
+            if origin.strip()
         ),
     )

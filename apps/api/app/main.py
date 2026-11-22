@@ -3,11 +3,13 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from scalar_fastapi import add_scalar_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.chat import router as chat_router
+from app.config import get_settings
 from app.diagnosis import router as diagnosis_router
 from app.drafts import router as drafts_router
 from app.docs_auth import router as docs_auth_router
@@ -123,6 +125,13 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
 )
+if cors_origins := get_settings().cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(cors_origins),
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 app.include_router(records_router)
 app.include_router(diagnosis_router)
 app.include_router(profile_router)

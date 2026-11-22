@@ -118,6 +118,7 @@ npm run mobile    # Expo 개발 서버
 | `SUPABASE_STORAGE_BUCKET` | 아니오 | 하자 사진 비공개 버킷 이름. 기본 `defect-photos` |
 | `SUPABASE_STORAGE_KEY` | Storage 사용 시 | 서버 전용 Storage 키. 없으면 `SUPABASE_SERVICE_ROLE_KEY`, 둘 다 없으면 업로드·서명을 생략합니다 |
 | `STORAGE_SIGNED_URL_TTL_SECONDS` | 아니오 | Signed URL 만료 시간(초). 기본 300 |
+| `CORS_ORIGINS` | 웹에서 앱 실행 시 | 쉼표로 구분한 허용 Origin. 예: `http://localhost:8081,http://127.0.0.1:8081`. 비우면 CORS 미들웨어를 붙이지 않습니다 |
 
 `apps/api/.env`는 커밋하지 않습니다.
 
