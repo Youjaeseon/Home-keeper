@@ -112,6 +112,8 @@ export type Vendor = {
   chatAvailable: boolean;
   /** 실제 후보가 없어 서버가 돌려준 시연용 샘플인지 */
   isSample: boolean;
+  /** 공개 페이지에서 확인한 실제 업체(앱 계정 없음, 전화 문의만) */
+  realListing?: { sourceUrl: string; checkedAt: string };
 };
 
 export type Message = {

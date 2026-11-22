@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   Wrench,
 } from 'lucide-react-native';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { DefectPhoto } from '@/components/defect-photo';
 import { RiskLegend, RiskPhotoRing } from '@/components/risk-gauge';
@@ -59,10 +59,10 @@ export default function AnalyzeResultScreen() {
 
   useEffect(() => {
     if (!user?.regionId || loading) return;
-    fetchVendors(user.regionId, workTypeId)
+    fetchVendors(user.regionId, workTypeId, user.region)
       .then(setVendorList)
       .catch(() => setVendorList({ vendors: [], isSample: false }));
-  }, [user?.regionId, workTypeId, loading]);
+  }, [user?.regionId, user?.region, workTypeId, loading]);
 
   if (!r || (loading && !r.cause)) {
     if (loading) {
@@ -310,7 +310,9 @@ export default function AnalyzeResultScreen() {
               accessibilityRole="button"
               accessibilityLabel={`${v.name}에 문의하기`}
               onPress={() =>
-                v.chatAvailable
+                v.realListing
+                  ? void Linking.openURL(`tel:${v.phone.replace(/[^0-9+]/g, '')}`)
+                  : v.chatAvailable
                   ? router.push({ pathname: '/dm/[vendorId]', params: { vendorId: v.id, analysisId: r.id, name: v.name } })
                   : showAlert('앱 채팅을 지원하지 않는 업체예요', v.isSample ? '시연용 샘플 업체입니다.' : `전화(${v.phone})로 문의해 주세요.`)
               }
@@ -349,9 +351,11 @@ export default function AnalyzeResultScreen() {
           );
         })}
         <Notice icon={MessageCircle}>
-          {vendorList.isSample
-            ? '이 지역에 등록된 업체가 없어 시연용 샘플 업체를 보여 드려요. 샘플 업체와는 채팅할 수 없어요.'
-            : '업체를 누르면 분석 결과를 첨부해 견적을 문의할 수 있어요.'}
+          {vendors.some((v) => v.realListing)
+            ? '실제 업체예요. 누르면 전화로 연결돼요. (앱 채팅·견적 요청서는 지원하지 않아요)'
+            : vendorList.isSample
+              ? '이 지역에 등록된 업체가 없어 시연용 샘플 업체를 보여 드려요. 샘플 업체와는 채팅할 수 없어요.'
+              : '업체를 누르면 분석 결과를 첨부해 견적을 문의할 수 있어요.'}
         </Notice>
       </View>
     </Screen>
