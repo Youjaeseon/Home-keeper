@@ -1,6 +1,6 @@
 import { Redirect, router } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
-import { MessageCircle, Newspaper, ScanSearch, User } from 'lucide-react-native';
+import { MessageCircle, Newspaper, ScanSearch, User, Wrench } from 'lucide-react-native';
 import type { ColorValue } from 'react-native';
 
 import type { Icon } from '@/components/ui';
@@ -14,7 +14,7 @@ function tabIcon(IconCmp: Icon) {
   return TabIcon;
 }
 
-/** 하단 탭: 소식 | 분석 | 채팅 | 내 정보 (PROJECT_PLAN.md 4탭, GAP-020). 업체 목록(/vendors)은 내 정보에서 스택 화면으로 엽니다. */
+/** 하단 탭: 소식 | 분석 | 채팅 | 업체 | 정보 (팀원 원본 5탭 유지, GAP-020 Hyeok 결정) */
 export default function TabsLayout() {
   const { ready, user, needsProfile } = useApp();
   if (!ready) return null;
@@ -53,7 +53,8 @@ export default function TabsLayout() {
           },
         }}
       />
-      <Tabs.Screen name="profile" options={{ title: '내 정보', tabBarIcon: tabIcon(User) }} />
+      <Tabs.Screen name="vendors" options={{ title: '업체', tabBarIcon: tabIcon(Wrench) }} />
+      <Tabs.Screen name="profile" options={{ title: '정보', tabBarIcon: tabIcon(User) }} />
     </Tabs>
   );
 }
