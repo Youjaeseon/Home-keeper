@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronRight, Send } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Chip, DeleteButton, Field, Hero, Screen, Txt } from '@/components/ui';
@@ -119,7 +119,11 @@ function Quotes() {
     accepted,
     acceptProposal,
     cancelAccept,
+    openRoom,
+    sendMessage,
   } = useApp();
+  // 수락을 연달아 눌러도 수락·자동 메시지가 한 번만 나가게 합니다.
+  const accepting = useRef(false);
   useEffect(() => {
     void refreshQuotes().catch(() => null);
   }, [refreshQuotes]);
@@ -130,6 +134,44 @@ function Quotes() {
   const list = own.filter((e) => !hidden.includes(e.id) && e.status !== 'cancelled');
   const all = proposals.filter((p) => !hidden.includes(p.id));
   const alertIf = (err: string | null) => err && showAlert('처리하지 못했습니다', err);
+
+  /**
+   * 업체 제안서 수락 → 그 업체와의 채팅방을 열고(분석 기록 요약을 함께 공유)
+   * 수락 안내와 견적서 요약을 바로 보낸 뒤 채팅 화면으로 이동합니다.
+   * 자동 메시지가 실패해도 수락은 그대로 두고 채팅 화면만 엽니다.
+   */
+  const acceptAndChat = async (e: Estimate, p: Proposal) => {
+    if (accepting.current) return;
+    accepting.current = true;
+    try {
+      const err = await acceptProposal(e.id, p.id);
+      if (err) {
+        alertIf(err);
+        return;
+      }
+      const price = p.priceMax && p.priceMax !== p.price ? `${won(p.price)}~${won(p.priceMax)}` : won(p.price);
+      const text = [
+        `[업체 제안서 수락] ${p.vendorName}님의 제안서를 수락했어요.`,
+        '',
+        '[견적서]',
+        `하자: ${e.defect}`,
+        `장소·위치: ${[e.location, e.position].filter(Boolean).join(' · ')}`,
+        `AI 심각도: ${e.risk}%`,
+        `제안 금액: ${price}`,
+        ...(e.memo ? [`요청 메모: ${e.memo}`] : []),
+        '',
+        '방문 일정 조율 부탁드립니다.',
+      ].join('\n');
+      const room = await openRoom({ vendorId: p.vendorId, analysisId: e.analysisId || undefined });
+      if (room.roomId) await sendMessage(room.roomId, p.vendorId, text);
+      router.push({
+        pathname: '/dm/[vendorId]',
+        params: { vendorId: p.vendorId, name: p.vendorName, ...(room.roomId ? { roomId: room.roomId } : {}) },
+      });
+    } finally {
+      accepting.current = false;
+    }
+  };
 
   return (
     <>
@@ -175,7 +217,7 @@ function Quotes() {
                     chat
                     onDelete={() => removeProposal(p.id)}
                     accept={!accepted[e.id] ? 'open' : accepted[e.id] === p.id ? 'accepted' : 'closed'}
-                    onAccept={() => void acceptProposal(e.id, p.id).then(alertIf)}
+                    onAccept={() => void acceptAndChat(e, p)}
                     onCancelAccept={() => void cancelAccept(e.id).then(alertIf)}
                   />
                 ))}
