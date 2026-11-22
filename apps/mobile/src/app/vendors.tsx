@@ -3,7 +3,7 @@ import { ChevronRight, Info, Phone, Star } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { AppBar, Card, Chip, Hero, Notice, Screen, Txt } from '@/components/ui';
+import { Card, Chip, Hero, Notice, Screen, Txt } from '@/components/ui';
 import { C, STROKE } from '@/constants/theme';
 import { messageOf } from '@/lib/api';
 import { fetchVendors } from '@/services/vendors';
@@ -11,7 +11,7 @@ import { useApp } from '@/store/app-store';
 import type { Vendor } from '@/types';
 import { showAlert } from '@/lib/alert';
 
-/** 스케치 8: 업체 모음 — 업체명, 설명, 연락처 (GET /providers, 내 지역 기준 별점순) */
+/** 스케치 8: 업체 모음 — 업체명, 설명, 연락처 (GET /providers, 내 지역 기준 별점순). 내 정보에서 여는 스택 화면이라 헤더에 뒤로 버튼이 있습니다. */
 export default function VendorsScreen() {
   const { user } = useApp();
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -29,8 +29,7 @@ export default function VendorsScreen() {
   }, [user?.regionId]);
 
   return (
-    <Screen safeTop>
-      <AppBar title="업체 목록" />
+    <Screen>
       <Hero title="업체 모음" subtitle={`${user?.region ?? ''} 업체 중 직접 해결이 어려울 때 견적을 문의해 보세요.`} />
       {isSample && <Notice icon={Info}>이 지역에 등록된 업체가 없어 시연용 샘플 업체를 보여 드려요. 실제 업체가 아닙니다.</Notice>}
       {error && <Notice icon={Info}>{error}</Notice>}

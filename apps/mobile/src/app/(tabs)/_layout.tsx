@@ -14,7 +14,7 @@ function tabIcon(IconCmp: Icon) {
   return TabIcon;
 }
 
-/** 하단 탭: 소식 | 분석 | 채팅 | 내 정보 (PROJECT_PLAN.md 4탭, GAP-020). 업체 목록은 내 정보에서 엽니다. */
+/** 하단 탭: 소식 | 분석 | 채팅 | 내 정보 (PROJECT_PLAN.md 4탭, GAP-020). 업체 목록(/vendors)은 내 정보에서 스택 화면으로 엽니다. */
 export default function TabsLayout() {
   const { ready, user, needsProfile } = useApp();
   if (!ready) return null;
@@ -53,8 +53,6 @@ export default function TabsLayout() {
           },
         }}
       />
-      {/* 탭 버튼은 숨기고 화면(/vendors)은 유지합니다. */}
-      <Tabs.Screen name="vendors" options={{ title: '업체', href: null }} />
       <Tabs.Screen name="profile" options={{ title: '내 정보', tabBarIcon: tabIcon(User) }} />
     </Tabs>
   );
