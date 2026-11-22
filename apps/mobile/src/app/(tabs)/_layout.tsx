@@ -16,7 +16,9 @@ function tabIcon(IconCmp: Icon) {
 
 /** 하단 탭: 소식 | 분석 | 채팅 | 업체 | 정보 (팀원 원본 5탭 유지, GAP-020 Hyeok 결정) */
 export default function TabsLayout() {
-  const { ready, user, needsProfile } = useApp();
+  const { ready, user, needsProfile, unreadChats, newQuotes } = useApp();
+  // 채팅 탭 배지: 안 읽은 메시지 + 새 견적 요청서·제안서
+  const chatBadge = unreadChats + newQuotes;
   if (!ready) return null;
   if (needsProfile) return <Redirect href="/profile-setup" />;
   if (!user) return <Redirect href="/" />;
@@ -44,7 +46,12 @@ export default function TabsLayout() {
       <Tabs.Screen name="analyze" options={{ title: '분석', tabBarIcon: tabIcon(ScanSearch) }} />
       <Tabs.Screen
         name="chat"
-        options={{ title: '채팅', tabBarIcon: tabIcon(MessageCircle) }}
+        options={{
+          title: '채팅',
+          tabBarIcon: tabIcon(MessageCircle),
+          tabBarBadge: chatBadge > 0 ? (chatBadge > 99 ? '99+' : chatBadge) : undefined,
+          tabBarBadgeStyle: { backgroundColor: C.danger, color: '#fff', fontSize: 11 },
+        }}
         listeners={{
           // 채팅 탭은 탭 화면 대신 채팅 목록(스택 화면)을 엽니다.
           tabPress: (e) => {
