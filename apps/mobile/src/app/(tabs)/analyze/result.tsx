@@ -18,7 +18,7 @@ import {
   ShieldCheck,
   Wrench,
 } from 'lucide-react-native';
-import { ActivityIndicator, Alert, Platform, Pressable, Share, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, Share, StyleSheet, View } from 'react-native';
 
 import { DefectPhoto } from '@/components/defect-photo';
 import { RiskLegend, RiskPhotoRing } from '@/components/risk-gauge';
@@ -28,6 +28,7 @@ import { ApiError, createDraft, getDraftTemplate, messageOf, regenerateDiagnosis
 import { fetchVendors } from '@/services/vendors';
 import type { Vendor } from '@/types';
 import { useApp } from '@/store/app-store';
+import { showAlert } from '@/lib/alert';
 
 const ACTION_LABEL = {
   self_care: '직접 관리',
@@ -89,9 +90,9 @@ export default function AnalyzeResultScreen() {
     try {
       await regenerateDiagnosis(r.id, true);
       const err = await loadAnalysis(r.id);
-      if (err) Alert.alert('새 진단을 불러오지 못했습니다', err);
+      if (err) showAlert('새 진단을 불러오지 못했습니다', err);
     } catch (e) {
-      Alert.alert('진단을 다시 만들지 못했습니다', messageOf(e));
+      showAlert('진단을 다시 만들지 못했습니다', messageOf(e));
     } finally {
       setRegenerating(false);
     }
@@ -105,9 +106,9 @@ export default function AnalyzeResultScreen() {
       if (e instanceof ApiError && [502, 503, 504].includes(e.status)) {
         const t = await getDraftTemplate(r.id, 'provider').catch(() => null);
         if (t) setProviderDraft(t.text);
-        else Alert.alert('견적 요청문을 만들지 못했습니다', messageOf(e));
+        else showAlert('견적 요청문을 만들지 못했습니다', messageOf(e));
       } else {
-        Alert.alert('견적 요청문을 만들지 못했습니다', messageOf(e));
+        showAlert('견적 요청문을 만들지 못했습니다', messageOf(e));
       }
     } finally {
       setDrafting(false);
@@ -117,8 +118,7 @@ export default function AnalyzeResultScreen() {
     if (!providerDraft) return;
     if (Platform.OS === 'web') {
       await navigator.clipboard?.writeText(providerDraft).catch(() => null);
-      // react-native-web의 Alert는 아무것도 띄우지 않아 브라우저 alert를 씁니다.
-      window.alert('복사했어요. 업체에 보낼 문자나 채팅에 붙여 넣으세요.');
+      showAlert('복사했어요', '업체에 보낼 문자나 채팅에 붙여 넣으세요.');
       return;
     }
     await Share.share({ message: providerDraft }).catch(() => null);
@@ -159,7 +159,7 @@ export default function AnalyzeResultScreen() {
     setSending(true);
     const err = await sendEstimate(r, memo.trim());
     setSending(false);
-    if (err) Alert.alert('견적서를 보내지 못했습니다', err);
+    if (err) showAlert('견적서를 보내지 못했습니다', err);
   };
 
   return (
@@ -338,7 +338,7 @@ export default function AnalyzeResultScreen() {
               onPress={() =>
                 v.chatAvailable
                   ? router.push({ pathname: '/dm/[vendorId]', params: { vendorId: v.id, analysisId: r.id, name: v.name } })
-                  : Alert.alert('앱 채팅을 지원하지 않는 업체예요', v.isSample ? '시연용 샘플 업체입니다.' : `전화(${v.phone})로 문의해 주세요.`)
+                  : showAlert('앱 채팅을 지원하지 않는 업체예요', v.isSample ? '시연용 샘플 업체입니다.' : `전화(${v.phone})로 문의해 주세요.`)
               }
               style={({ pressed }) => pressed && { opacity: 0.85 }}>
               <Card style={[s.vendor, fit && s.vendorFit]}>

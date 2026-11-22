@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { ChevronRight, Info, Phone, Star } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppBar, Card, Chip, Hero, Notice, Screen, Txt } from '@/components/ui';
 import { C, STROKE } from '@/constants/theme';
@@ -9,6 +9,7 @@ import { messageOf } from '@/lib/api';
 import { fetchVendors } from '@/services/vendors';
 import { useApp } from '@/store/app-store';
 import type { Vendor } from '@/types';
+import { showAlert } from '@/lib/alert';
 
 /** 스케치 8: 업체 모음 — 업체명, 설명, 연락처 (GET /providers, 내 지역 기준 별점순) */
 export default function VendorsScreen() {
@@ -42,7 +43,7 @@ export default function VendorsScreen() {
           onPress={() =>
             v.chatAvailable
               ? router.push({ pathname: '/dm/[vendorId]', params: { vendorId: v.id, name: v.name } })
-              : Alert.alert('앱 채팅을 지원하지 않는 업체예요', v.isSample ? '시연용 샘플 업체입니다.' : `전화(${v.phone})로 문의해 주세요.`)
+              : showAlert('앱 채팅을 지원하지 않는 업체예요', v.isSample ? '시연용 샘플 업체입니다.' : `전화(${v.phone})로 문의해 주세요.`)
           }
           style={({ pressed }) => pressed && { opacity: 0.85 }}>
           <Card style={s.row}>

@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Check, ImagePlus, Sparkles, X } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { DefectPhoto } from '@/components/defect-photo';
 import { Select } from '@/components/select';
@@ -14,6 +14,7 @@ import { messageOf } from '@/lib/api';
 import { ANALYSIS_STEPS, analyzeDefect } from '@/services/analyze';
 import { useApp } from '@/store/app-store';
 import { today } from '@/utils';
+import { showAlert } from '@/lib/alert';
 
 /** 스케치 6: 분석 Page ② — 분석 사진 정보 기입 (장소, 위치, 기타) → 분석 요청 */
 export default function AnalyzeDetailScreen() {
@@ -54,7 +55,7 @@ export default function AnalyzeDetailScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, exif: false });
       if (!result.canceled && result.assets[0]) setCloseupUri(result.assets[0].uri);
     } catch {
-      Alert.alert('사진을 불러오지 못했습니다', '잠시 후 다시 시도해 주세요.');
+      showAlert('사진을 불러오지 못했습니다', '잠시 후 다시 시도해 주세요.');
     }
   };
 

@@ -3,11 +3,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { Camera, CircleCheck, Images } from 'lucide-react-native';
 import { useState } from 'react';
-import { Alert, Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import { AppBar, Button, Card, Hero, Screen, Txt } from '@/components/ui';
 import { C, MAX_W, R, STROKE } from '@/constants/theme';
 import { useApp } from '@/store/app-store';
+import { showAlert } from '@/lib/alert';
 
 const GAP = 10;
 
@@ -28,7 +29,7 @@ export default function AnalyzePickScreen() {
       if (source === 'camera' && Platform.OS !== 'web') {
         const perm = await ImagePicker.requestCameraPermissionsAsync();
         if (!perm.granted) {
-          Alert.alert('카메라 권한 필요', '설정에서 카메라 권한을 허용하거나 앨범에서 선택해 주세요.');
+          showAlert('카메라 권한 필요', '설정에서 카메라 권한을 허용하거나 앨범에서 선택해 주세요.');
           return;
         }
       }
@@ -40,7 +41,7 @@ export default function AnalyzePickScreen() {
       const photo = addPhoto(result.assets[0].uri);
       router.push({ pathname: '/analyze/detail', params: { photoId: photo.id } });
     } catch {
-      Alert.alert('사진을 불러오지 못했습니다', '잠시 후 다시 시도하거나 다른 사진을 선택해 주세요.');
+      showAlert('사진을 불러오지 못했습니다', '잠시 후 다시 시도하거나 다른 사진을 선택해 주세요.');
     }
   };
 

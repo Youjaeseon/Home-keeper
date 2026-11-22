@@ -2,12 +2,13 @@ import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronRight, Send } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Alert, Animated, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Chip, DeleteButton, Field, Hero, Screen, Txt } from '@/components/ui';
 import { C, F, STROKE } from '@/constants/theme';
 import { useApp } from '@/store/app-store';
 import type { Estimate, Proposal } from '@/types';
+import { showAlert } from '@/lib/alert';
 
 type Tab = 'messages' | 'quotes';
 /** 제안 가격 선택지 (만원) */
@@ -120,7 +121,7 @@ function Quotes() {
   const own = vendor ? estimates.filter((e) => e.userId !== me) : estimates.filter((e) => e.userId === me);
   const list = own.filter((e) => !hidden.includes(e.id) && e.status !== 'cancelled');
   const all = proposals.filter((p) => !hidden.includes(p.id));
-  const alertIf = (err: string | null) => err && Alert.alert('처리하지 못했습니다', err);
+  const alertIf = (err: string | null) => err && showAlert('처리하지 못했습니다', err);
 
   return (
     <>
@@ -340,7 +341,7 @@ function ProposalForm({ estimateId }: { estimateId: string }) {
     setBusy(true);
     const err = await sendProposal(estimateId, price, memo.trim());
     setBusy(false);
-    if (err) Alert.alert('제안서를 보내지 못했습니다', err);
+    if (err) showAlert('제안서를 보내지 못했습니다', err);
   };
 
   return (
