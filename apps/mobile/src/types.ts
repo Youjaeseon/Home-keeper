@@ -93,12 +93,6 @@ export type AnalysisResult = {
   estimationNotice?: string;
   /** 서버 진단 출처: llm 또는 sample */
   source?: 'llm' | 'sample';
-  /** AI 관찰 요약과 사진별 비전 관찰 (GAP-025) */
-  observations?: string[];
-  /** 준비물 (GAP-025) */
-  supplies?: string[];
-  /** 확인하지 못한 정보 (GAP-025) */
-  unknowns?: string[];
   /** 권장 대응: 직접 관리 / 점검 / 업체 상담 (GAP-025) */
   recommendedAction?: 'self_care' | 'inspection' | 'provider_consult';
 };

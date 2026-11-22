@@ -5,9 +5,6 @@ import {
   Camera,
   ChevronRight,
   CircleCheck,
-  CircleHelp,
-  Eye,
-  Package,
   FileText,
   House,
   MessageCircle,
@@ -18,13 +15,13 @@ import {
   ShieldCheck,
   Wrench,
 } from 'lucide-react-native';
-import { ActivityIndicator, Platform, Pressable, Share, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { DefectPhoto } from '@/components/defect-photo';
 import { RiskLegend, RiskPhotoRing } from '@/components/risk-gauge';
 import { Banner, Button, Card, CardHeader, Chip, Field, Notice, Screen, Txt } from '@/components/ui';
 import { C, R, riskColor, riskLabel, STROKE } from '@/constants/theme';
-import { ApiError, createDraft, getDraftTemplate, messageOf, regenerateDiagnosis } from '@/lib/api';
+import { messageOf, regenerateDiagnosis } from '@/lib/api';
 import { fetchVendors } from '@/services/vendors';
 import type { Vendor } from '@/types';
 import { useApp } from '@/store/app-store';
@@ -46,8 +43,6 @@ export default function AnalyzeResultScreen() {
   const [vendorList, setVendorList] = useState<{ vendors: Vendor[]; isSample: boolean }>({ vendors: [], isSample: false });
   const [sending, setSending] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
-  const [providerDraft, setProviderDraft] = useState<string | null>(null);
-  const [drafting, setDrafting] = useState(false);
   const r = analyses.find((a) => a.id === analysisId);
   const workTypeId = r?.workTypeId;
 
@@ -97,33 +92,6 @@ export default function AnalyzeResultScreen() {
       setRegenerating(false);
     }
   };
-  // 업체에 보낼 견적 요청문(POST /records/{id}/drafts/provider, 모델 실패 시 기본 양식). (GAP-021)
-  const onProviderDraft = async () => {
-    setDrafting(true);
-    try {
-      setProviderDraft((await createDraft(r.id, 'provider')).text);
-    } catch (e) {
-      if (e instanceof ApiError && [502, 503, 504].includes(e.status)) {
-        const t = await getDraftTemplate(r.id, 'provider').catch(() => null);
-        if (t) setProviderDraft(t.text);
-        else showAlert('견적 요청문을 만들지 못했습니다', messageOf(e));
-      } else {
-        showAlert('견적 요청문을 만들지 못했습니다', messageOf(e));
-      }
-    } finally {
-      setDrafting(false);
-    }
-  };
-  const onShareDraft = async () => {
-    if (!providerDraft) return;
-    if (Platform.OS === 'web') {
-      await navigator.clipboard?.writeText(providerDraft).catch(() => null);
-      showAlert('복사했어요', '업체에 보낼 문자나 채팅에 붙여 넣으세요.');
-      return;
-    }
-    await Share.share({ message: providerDraft }).catch(() => null);
-  };
-
   const regenerateButton = (
     <Button title="진단 다시 만들기" icon={RefreshCcw} variant="soft" onPress={onRegenerate} loading={regenerating} />
   );
@@ -201,32 +169,10 @@ export default function AnalyzeResultScreen() {
         {regenerateButton}
       </Card>
 
-      {!!r.observations?.length && (
-        <Card>
-          <CardHeader icon={Eye} title="AI가 사진에서 본 것" />
-          {r.observations.map((t, i) => (
-            <Txt key={i} variant="body">
-              {t}
-            </Txt>
-          ))}
-        </Card>
-      )}
-
       <Card>
         <CardHeader icon={Search} title="원인" />
         <Txt variant="body">{r.cause}</Txt>
       </Card>
-
-      {!!r.unknowns?.length && (
-        <Card>
-          <CardHeader icon={CircleHelp} title="확인하지 못한 정보" />
-          {r.unknowns.map((t, i) => (
-            <Txt key={i} variant="body">
-              · {t}
-            </Txt>
-          ))}
-        </Card>
-      )}
 
       <Card>
         <CardHeader icon={Wrench} title="해결 방안" />
@@ -243,17 +189,6 @@ export default function AnalyzeResultScreen() {
           </View>
         ))}
       </Card>
-
-      {!!r.supplies?.length && (
-        <Card>
-          <CardHeader icon={Package} title="준비물" />
-          <View style={s.chips}>
-            {r.supplies.map((t) => (
-              <Chip key={t} label={t} />
-            ))}
-          </View>
-        </Card>
-      )}
 
       <Card>
         <CardHeader icon={ShieldCheck} title="재발 방지" />
@@ -315,19 +250,6 @@ export default function AnalyzeResultScreen() {
       {/* 업체는 필요할 때만 */}
       <View style={{ gap: 12, marginTop: 8 }}>
         <Txt variant="title">직접 해결이 어렵다면</Txt>
-        <Card>
-          <CardHeader icon={FileText} title="업체에 보낼 견적 요청문" />
-          {providerDraft ? (
-            <>
-              <Txt variant="body" selectable>
-                {providerDraft}
-              </Txt>
-              <Button title={Platform.OS === 'web' ? '복사하기' : '공유·복사하기'} icon={Send} variant="soft" onPress={onShareDraft} />
-            </>
-          ) : (
-            <Button title="견적 요청문 만들기" icon={FileText} variant="outline" onPress={onProviderDraft} loading={drafting} />
-          )}
-        </Card>
         {vendors.map((v) => {
           const fit = fits(v);
           return (

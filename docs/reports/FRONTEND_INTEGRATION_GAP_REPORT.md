@@ -19,9 +19,9 @@
 | GAP-009 | 근접 사진은 요청하지 않은 기능이라 넣지 않음(사진 1장 `overview`만 전송, Hyeok 결정) | `analyze/detail.tsx`, `services/analyze.ts` |
 | GAP-011 | 분석 요청마다 외부 AI 사진 전송 동의 체크(기본값은 가입 시 동의 여부). 가입 화면의 필수 동의는 유지 | `analyze/detail.tsx` |
 | GAP-014 | 수락 취소 버튼 제거, 수락된 제안서는 `수락됨` 표시만 | `app/dm/index.tsx`, `store/app-store.tsx` |
-| GAP-021 | 분석 결과의 업체 영역에서 견적 요청문 생성(모델 실패 시 기본 양식)·공유/복사 | `analyze/result.tsx` |
+| GAP-021 | 화면에서 제외(Hyeok 결정). 백엔드 `drafts/provider` API는 그대로 | - |
 | GAP-024 | `useRef(...).current`를 `useState` 초기화로 바꿔 린트 오류 0건 | `app/dm/index.tsx` |
-| GAP-025 | AI 관찰 요약·사진별 비전 관찰, 준비물, 확인하지 못한 정보, 권장 대응 표시 | `services/analyze.ts`, `analyze/result.tsx` |
+| GAP-025 | 권장 대응만 표시. AI 관찰·준비물·확인하지 못한 정보는 화면에서 제외(Hyeok 결정) | `analyze/result.tsx` |
 | GAP-029 | `진단 다시 만들기` 버튼(`?regenerate=true`) | `analyze/result.tsx` |
 | GAP-030 | 소식지 공고를 펼치면 상세(지원 대상·내용·선정 기준·신청 방법·마감·출처) 표시 | `app/(tabs)/news.tsx` |
 
