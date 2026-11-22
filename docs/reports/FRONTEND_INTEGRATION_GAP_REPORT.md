@@ -16,7 +16,7 @@
 | GAP-006, GAP-013 | 장소·위치·재질에서 `기타`를 고르면 직접 입력 | `app/(tabs)/analyze/detail.tsx` |
 | GAP-007 | 하자 유형을 `균열`·`벗겨짐`·`곰팡이`·`판단 보류`로 정리, 알 수 없는 유형은 판단 보류 | `types.ts`, `services/analyze.ts` |
 | GAP-008 | `confidence` 필드와 신뢰도 표시 제거 | `types.ts`, `analyze/result.tsx` |
-| GAP-009 | 선택 근접 사진을 `closeup` 역할로 함께 전송 | `analyze/detail.tsx`, `services/analyze.ts` |
+| GAP-009 | 근접 사진은 요청하지 않은 기능이라 넣지 않음(사진 1장 `overview`만 전송, Hyeok 결정) | `analyze/detail.tsx`, `services/analyze.ts` |
 | GAP-011 | 분석 요청마다 외부 AI 사진 전송 동의 체크(기본값은 가입 시 동의 여부). 가입 화면의 필수 동의는 유지 | `analyze/detail.tsx` |
 | GAP-014 | 수락 취소 버튼 제거, 수락된 제안서는 `수락됨` 표시만 | `app/dm/index.tsx`, `store/app-store.tsx` |
 | GAP-021 | 분석 결과의 업체 영역에서 견적 요청문 생성(모델 실패 시 기본 양식)·공유/복사 | `analyze/result.tsx` |
@@ -39,6 +39,8 @@
 | GAP-023 | 제안 금액은 원 단위 최소~최대 직접 입력 | `app/dm/index.tsx`, `store/app-store.tsx` |
 | GAP-031 | 문서 용어(심각도, 견적 요청서, 업체 제안서) | 화면 문구 전체 |
 | 위험도(심각도) 구간 | 서버 기준 40·70 유지 | 현재 동작 유지 |
+
+시연용 가상 데이터: 팀원 로컬 앱의 가상 업체 4곳·예시 견적 요청서 3건·업체 제안서 7건과 예시 대화 2개를 `data/demo.ts`로 옮겼습니다(id는 `demo-`로 시작, 지역 용인·유형 3종·금액 원 단위로 맞춤). 서버 데이터 뒤에 함께 보이고, 가상 업체와의 채팅·수락·제안·삭제는 앱 안에서만 처리하며 서버에는 저장하지 않습니다. 서버가 채팅 불가 샘플 업체만 줄 때는 가상 업체로 대신 보여 줍니다. 소식지는 서버에 실제 공고가 있어 예시 소식을 넣지 않았고, 분석 기록 예시는 팀원 로컬 앱에도 없어 넣지 않았습니다.
 
 웹 알림: `react-native-web`의 `Alert.alert`는 브라우저에서 아무것도 띄우지 않아 `lib/alert.ts` `showAlert`(웹은 `window.alert`)로 바꿨습니다.
 

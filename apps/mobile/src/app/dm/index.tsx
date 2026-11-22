@@ -82,7 +82,8 @@ function Messages() {
               }
               style={({ pressed }) => [s.row, i > 0 && s.divider, pressed && { opacity: 0.7 }]}>
               <View style={s.avatar}>
-                <Txt variant="h2">{t.name.slice(0, 1)}</Txt>
+                {/* '(가상) 클린홈'처럼 앞의 괄호 표시는 빼고 첫 글자를 씁니다. */}
+                <Txt variant="h2">{t.name.replace(/^\(.*?\)\s*/, '').slice(0, 1)}</Txt>
               </View>
               <View style={{ flex: 1, gap: 2 }}>
                 <Txt variant="bodyStrong">{t.name}</Txt>
@@ -123,7 +124,8 @@ function Quotes() {
   if (!user) return null;
   const me = session?.user.id ?? '';
   const vendor = user.role === '업체';
-  const own = vendor ? estimates.filter((e) => e.userId !== me) : estimates.filter((e) => e.userId === me);
+  // 유저도 시연용(sample) 견적 요청서와 그 업체 제안서를 볼 수 있습니다. (data/demo.ts)
+  const own = vendor ? estimates.filter((e) => e.userId !== me) : estimates.filter((e) => e.userId === me || e.sample);
   const list = own.filter((e) => !hidden.includes(e.id) && e.status !== 'cancelled');
   const all = proposals.filter((p) => !hidden.includes(p.id));
   const alertIf = (err: string | null) => err && showAlert('처리하지 못했습니다', err);

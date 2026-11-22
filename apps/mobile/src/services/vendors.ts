@@ -1,5 +1,6 @@
 /** 업체 목록: GET /providers (특화 분야 필터 + 별점순). 실제 후보가 없으면 서버가 is_sample 후보를 돌려줍니다. */
 import { getProviders, type ProviderSummary } from '@/lib/api';
+import { DEMO_VENDORS } from '@/data/demo';
 import type { Vendor } from '@/types';
 
 const LABELS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -21,7 +22,13 @@ export function toVendor(p: ProviderSummary, index: number): Vendor {
   };
 }
 
+/**
+ * 실제 업체 뒤에 시연용 가상 업체(data/demo.ts)를 붙입니다.
+ * 서버가 실제 후보 없이 채팅 불가 샘플만 돌려주면, 채팅까지 해 볼 수 있는 가상 업체로 바꿔 보여 줍니다.
+ */
 export async function fetchVendors(regionId: string, workTypeId?: string | null) {
-  const res = await getProviders({ regionId, workTypeId });
-  return { vendors: res.providers.map(toVendor), isSample: res.is_sample };
+  const res = await getProviders({ regionId, workTypeId }).catch(() => null);
+  const real = res && !res.is_sample ? res.providers.map(toVendor) : [];
+  const demo = DEMO_VENDORS.map((v, i) => ({ ...v, label: LABELS[real.length + i] ?? v.label }));
+  return { vendors: [...real, ...demo], isSample: real.length === 0 };
 }
