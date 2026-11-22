@@ -107,8 +107,9 @@ def test_signed_photos_returns_short_lived_absolute_url(monkeypatch):
     assert photos[0]["role"] == "closeup"
     assert photos[0]["width"] == 10
     assert photos[0]["height"] == 20
+    # Supabase returns a path relative to the Storage API; the URL must keep /storage/v1.
     assert photos[0]["url"].startswith(
-        "https://project.supabase.co/object/sign/defect-photos/a/b.jpg?token="
+        "https://project.supabase.co/storage/v1/object/sign/defect-photos/a/b.jpg?token="
     )
     assert photos[0]["expires_at"].tzinfo is not None
 
