@@ -108,7 +108,7 @@ def test_signed_photos_returns_short_lived_absolute_url(monkeypatch):
     assert photos[0]["width"] == 10
     assert photos[0]["height"] == 20
     assert photos[0]["url"].startswith(
-        "https://project.supabase.co/object/sign/defect-photos/a/b.jpg?token="
+        "https://project.supabase.co/storage/v1/object/sign/defect-photos/a/b.jpg?token="
     )
     assert photos[0]["expires_at"].tzinfo is not None
 
