@@ -15,7 +15,6 @@ import { showAlert } from "@/lib/alert";
 /** 분야 필터: 작업 종류 이름 → 버튼 문구 (화면에 있는 분야만 버튼으로 보여 줍니다) */
 const FIELDS: { key: string; label: string }[] = [
   { key: "곰팡이 제거", label: "곰팡이" },
-  { key: "균열 보수", label: "균열" },
   { key: "벽지·도장 보수", label: "도배·도장" },
   { key: "원인 점검", label: "누수·원인 점검" },
 ];
@@ -72,7 +71,14 @@ export default function VendorsScreen() {
                 onPress={() => setField(f.key)}
                 style={[s.filter, on && s.filterOn]}
               >
-                <Txt variant="label" color={on ? C.onPrimary : C.text}>
+                <Txt
+                  variant="label"
+                  color={on ? C.onPrimary : C.text}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.9}
+                  style={s.filterText}
+                >
                   {f.label} {f.key ? vendors.filter((v) => v.specialties.includes(f.key as string)).length : vendors.length}
                 </Txt>
               </Pressable>
@@ -146,16 +152,20 @@ export default function VendorsScreen() {
 }
 
 const s = StyleSheet.create({
-  filters: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  // 분야 버튼은 한 줄에 모두 들어가도록 폭을 나눠 갖고, 글자는 조금 작게 씁니다.
+  filters: { flexDirection: "row", gap: 6 },
   filter: {
-    paddingHorizontal: 14,
-    minHeight: 36,
+    flexGrow: 1,
+    flexShrink: 1,
+    paddingHorizontal: 8,
+    minHeight: 34,
     borderRadius: 999,
     backgroundColor: C.card,
     alignItems: "center",
     justifyContent: "center",
   },
   filterOn: { backgroundColor: C.primary },
+  filterText: { fontSize: 12, lineHeight: 16 },
   row: { flexDirection: "row", alignItems: "center", gap: 14, padding: 18 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
   phone: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },

@@ -68,6 +68,11 @@ export function toAnalysisResult(
     cause: undetermined
       ? [d.reason, ...d.unknowns].filter(Boolean).join('\n')
       : [...d.causes, d.reason].filter(Boolean).join('\n'),
+    causeItems:
+      !undetermined && d.cause_evidence?.length
+        ? d.causes.map((text, i) => ({ text, evidence: d.cause_evidence?.[i] }))
+        : undefined,
+    riskReasons: d.severity_breakdown?.length ? d.severity_breakdown : undefined,
     solutions: d.care_steps,
     prevention: d.prevention_tips,
     guide: buildGuide(meta.housing, base, location, meta.occurredAt, landlordDraft),

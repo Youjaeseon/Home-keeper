@@ -146,7 +146,7 @@ export type QuoteRequestSummary = {
   severity_score: number | null;
   severity_level: SeverityLevel | null;
   suspected_types: string[];
-  status: 'open' | 'accepted' | 'cancelled';
+  status: 'open' | 'accepted' | 'cancelled' | 'completed';
   accepted_proposal_id: string | null;
   proposal_count: number;
   my_proposal_id: string | null;
@@ -225,6 +225,10 @@ export type DiagnosisResult = {
   work_type_id: string | null;
   work_type_reason: string;
   source: 'llm' | 'sample';
+  /** 서버 기준표로 계산한 심각도 근거 (이전 기록에는 없음) */
+  severity_breakdown?: { label: string; points: number }[];
+  /** causes와 같은 순서의 사진 근거 한 줄 (이전 기록에는 없음) */
+  cause_evidence?: string[];
 };
 
 export type VisionObservation = {
@@ -591,6 +595,11 @@ export function submitQuoteProposal(
 /** 수락 취소: 요청서를 다시 진행 중으로 되돌립니다. (GAP-014) */
 export function cancelQuoteAcceptance(requestId: string): Promise<QuoteRequestDetail> {
   return apiRequest<QuoteRequestDetail>(`/quote-requests/${requestId}/cancel-accept`, { method: 'POST' });
+}
+
+/** 수락한 거래를 완료로 마감합니다. 019 미적용 서버는 503 quote_completion_unavailable. */
+export function completeQuoteRequest(requestId: string): Promise<QuoteRequestDetail> {
+  return apiRequest<QuoteRequestDetail>(`/quote-requests/${requestId}/complete`, { method: 'POST' });
 }
 
 export function acceptQuoteProposal(

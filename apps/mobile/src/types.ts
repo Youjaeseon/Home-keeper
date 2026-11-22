@@ -86,6 +86,10 @@ export type AnalysisResult = {
   risk: number;
   region: DefectRegion | null;
   cause: string;
+  /** 원인별 사진 근거 (새 진단만) */
+  causeItems?: { text: string; evidence?: string }[];
+  /** 심각도 근거 칩 (새 진단만) */
+  riskReasons?: { label: string; points: number }[];
   solutions: string[];
   prevention: string[];
   guide: Guide;
@@ -158,7 +162,7 @@ export type Estimate = {
   position: string;
   memo: string;
   createdAt: number;
-  status?: 'open' | 'accepted' | 'cancelled';
+  status?: 'open' | 'accepted' | 'cancelled' | 'completed';
   acceptedProposalId?: string | null;
 };
 

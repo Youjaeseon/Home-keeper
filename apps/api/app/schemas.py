@@ -403,6 +403,14 @@ class AnalyzeDiagnosisOut(BaseModel):
         description="추천 작업 종류의 UUID. 샘플 모드에서는 작업 목록이 없으면 `null`입니다."
     )
     work_type_reason: str = Field(description="추천 작업과 원인 점검을 권장하는 이유.")
+    severity_breakdown: list[dict] = Field(
+        default_factory=list,
+        description="서버 기준표로 계산한 심각도 근거. 항목별 `label`과 `points`이며, 이전 기록은 빈 목록입니다.",
+    )
+    cause_evidence: list[str] = Field(
+        default_factory=list,
+        description="`causes`와 같은 순서의 사진 근거 한 줄. 이전 기록은 빈 목록입니다.",
+    )
     source: Literal["llm", "sample"] = Field(
         description="진단 출처. 실제 모델 생성이면 `llm`, 샘플 규칙이면 `sample`입니다."
     )
@@ -545,7 +553,7 @@ class QuoteRequestSummary(BaseModel):
         description="AI 심각도 단계. 판단 보류면 `undetermined`입니다."
     )
     suspected_types: list[str] = Field(description="AI가 의심한 하자 유형 목록.")
-    status: Literal["open", "accepted", "cancelled"] = Field(
+    status: Literal["open", "accepted", "cancelled", "completed"] = Field(
         description="요청서 상태. `open`은 진행 중, `accepted`는 수락 완료, `cancelled`는 취소입니다."
     )
     accepted_proposal_id: UUID | None = Field(

@@ -162,6 +162,14 @@ def llm_quota_exceeded() -> ApiError:
     )
 
 
+def quote_completion_unavailable() -> ApiError:
+    return ApiError(
+        503,
+        "quote_completion_unavailable",
+        "거래 완료 처리를 아직 사용할 수 없습니다. 서버에 완료 상태가 적용되지 않았습니다(마이그레이션 019).",
+    )
+
+
 def provider_registration_unavailable() -> ApiError:
     return ApiError(
         503,
