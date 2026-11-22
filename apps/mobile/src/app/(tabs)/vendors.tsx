@@ -15,7 +15,6 @@ import { showAlert } from "@/lib/alert";
 /** 분야 필터: 작업 종류 이름 → 버튼 문구 (화면에 있는 분야만 버튼으로 보여 줍니다) */
 const FIELDS: { key: string; label: string }[] = [
   { key: "곰팡이 제거", label: "곰팡이" },
-  { key: "균열 보수", label: "균열" },
   { key: "벽지·도장 보수", label: "도배·도장" },
   { key: "원인 점검", label: "누수·원인 점검" },
 ];
