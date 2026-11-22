@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Check, Sparkles } from 'lucide-react-native';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Animated, Easing, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { DefectPhoto } from '@/components/defect-photo';
 import { Select } from '@/components/select';
@@ -131,14 +131,17 @@ export default function AnalyzeDetailScreen() {
             const now = i === step;
             return (
               <View key={label} style={s.stepRow}>
-                <View style={[s.stepDot, (done || now) && { backgroundColor: C.primary }]}>
-                  {done ? (
-                    <Check size={14} color={C.onPrimary} strokeWidth={2.4} />
-                  ) : (
-                    <Txt variant="caption" color={now ? C.onPrimary : C.sub}>
-                      {i + 1}
-                    </Txt>
-                  )}
+                <View style={s.stepSlot}>
+                  {now && <SpinRing />}
+                  <View style={[s.stepDot, (done || now) && { backgroundColor: C.primary }]}>
+                    {done ? (
+                      <Check size={14} color={C.onPrimary} strokeWidth={2.4} />
+                    ) : (
+                      <Txt variant="caption" color={now ? C.onPrimary : C.sub}>
+                        {i + 1}
+                      </Txt>
+                    )}
+                  </View>
                 </View>
                 <Txt variant={now ? 'bodyStrong' : 'body'} color={done || now ? C.text : C.sub}>
                   {label}
@@ -154,7 +157,37 @@ export default function AnalyzeDetailScreen() {
   );
 }
 
+/** 진행 중인 단계 번호 주변을 도는 로딩 고리 (iOS·Android·웹 공통, Animated) */
+function SpinRing() {
+  const [spin] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 900,
+        easing: Easing.linear,
+        useNativeDriver: Platform.OS !== 'web',
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [spin]);
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  return <Animated.View pointerEvents="none" style={[s.ring, { transform: [{ rotate }] }]} />;
+}
+
 const s = StyleSheet.create({
+  stepSlot: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  ring: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 3,
+    borderColor: 'transparent',
+    borderTopColor: C.primary,
+    borderRightColor: C.primary,
+  },
   agree: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   box: {
     width: 24,
