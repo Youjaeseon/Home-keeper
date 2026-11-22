@@ -1,7 +1,7 @@
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
 import { ChevronRight, Send } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Chip, DeleteButton, Field, Hero, Screen, Txt } from '@/components/ui';
@@ -226,7 +226,7 @@ function ProposalBox({
   const [asking, setAsking] = useState(false);
   const closed = accept === 'closed';
   // 다른 제안서를 수락하면 서서히 흐려집니다.
-  const fade = useRef(new Animated.Value(closed ? 0.3 : 1)).current;
+  const [fade] = useState(() => new Animated.Value(closed ? 0.3 : 1));
   useEffect(() => {
     Animated.timing(fade, { toValue: closed ? 0.3 : 1, duration: 450, useNativeDriver: true }).start();
   }, [closed, fade]);
