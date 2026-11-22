@@ -7,7 +7,7 @@
  *   - API key는 앱에 넣지 않습니다. 앱은 팀 backend(EXPO_PUBLIC_API_URL)만 호출합니다.
  *   - 업로드 전 EXIF(위치 등)는 받지 않습니다(ImagePicker exif: false).
  */
-import { analyzeRecord, createRecord, getRecord, type DiagnosisResult, type RecordDetail } from '@/lib/api';
+import { analyzeRecord, createRecord, type DiagnosisResult, type RecordDetail } from '@/lib/api';
 import type { AnalysisInput, AnalysisResult, DefectType, Guide, Housing } from '@/types';
 
 /** 화면의 진행 단계 표시. 서버는 한 번의 요청으로 처리하므로 단계는 요청 전후로만 바뀝니다. */
@@ -128,16 +128,37 @@ export async function analyzeDefect(
   const { record_id } = await createRecord();
   onStep?.(1);
   // 사진은 1장(overview)만 보냅니다. 백엔드는 closeup 1장도 받지만 화면에서는 쓰지 않습니다. (GAP-009)
-  await analyzeRecord(record_id, {
+  const location = joinLocation(input.location, input.position);
+  const analyzed = await analyzeRecord(record_id, {
     photos: [{ uri: input.photo.uri, ...guessMime(input.photo.uri), role: 'overview' }],
-    location: joinLocation(input.location, input.position),
+    location,
     material: input.material,
     symptoms: input.memo,
     region_id: input.regionId,
     externalAnalysisConsent: input.consent,
   });
   onStep?.(2);
-  const detail = await getRecord(record_id);
+  // 분석 응답에 진단이 이미 들어 있으므로 GET /records/{id}를 다시 부르지 않고 바로 결과를 만듭니다.
+  // 사진은 앱의 원본을 쓰고, 결과 화면에 들어가면 서버 기록(새 Signed URL)으로 다시 맞춥니다.
+  const detail: RecordDetail = {
+    record_id,
+    location,
+    material: input.material,
+    symptoms: input.memo || null,
+    region_id: analyzed.region_id,
+    region_name: null,
+    photo_observations: analyzed.photo_analysis,
+    photos: [],
+    input_revision: analyzed.input_revision,
+    questions: [],
+    messages: [],
+    diagnosis: {
+      diagnosis: analyzed.diagnosis,
+      input_revision: analyzed.input_revision,
+      generation: analyzed.diagnosis_generation,
+      is_current: true,
+    },
+  };
   const result = toAnalysisResult(detail, {
     housing: input.housing,
     occurredAt: input.occurredAt,
