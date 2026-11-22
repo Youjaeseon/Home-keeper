@@ -1,7 +1,5 @@
-import { Image } from 'expo-image';
-import * as ImagePicker from 'expo-image-picker';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Check, ImagePlus, Sparkles, X } from 'lucide-react-native';
+import { Check, Sparkles } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
@@ -14,7 +12,6 @@ import { messageOf } from '@/lib/api';
 import { ANALYSIS_STEPS, analyzeDefect } from '@/services/analyze';
 import { useApp } from '@/store/app-store';
 import { today } from '@/utils';
-import { showAlert } from '@/lib/alert';
 
 /** 스케치 6: 분석 Page ② — 분석 사진 정보 기입 (장소, 위치, 기타) → 분석 요청 */
 export default function AnalyzeDetailScreen() {
@@ -31,8 +28,6 @@ export default function AnalyzeDetailScreen() {
   const [customPosition, setCustomPosition] = useState('');
   const [customMaterial, setCustomMaterial] = useState('');
   const [memo, setMemo] = useState('');
-  // 근접 사진(선택). 백엔드는 overview 1장 + closeup 1장까지 받습니다. (GAP-009)
-  const [closeupUri, setCloseupUri] = useState<string | null>(null);
   // 분석 요청마다 외부 AI 사진 전송 동의를 받습니다. 기본은 동의하지 않음입니다. (GAP-011)
   const [consent, setConsent] = useState(false);
   const [step, setStep] = useState<number | null>(null);
@@ -50,15 +45,6 @@ export default function AnalyzeDetailScreen() {
   const OTHER = '기타';
   const resolve = (value: string, custom: string) => (value === OTHER ? custom.trim() : value);
 
-  const pickCloseup = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, exif: false });
-      if (!result.canceled && result.assets[0]) setCloseupUri(result.assets[0].uri);
-    } catch {
-      showAlert('사진을 불러오지 못했습니다', '잠시 후 다시 시도해 주세요.');
-    }
-  };
-
   const onAnalyze = async () => {
     setError(null);
     const finalLocation = resolve(location, customLocation);
@@ -72,7 +58,6 @@ export default function AnalyzeDetailScreen() {
       const result = await analyzeDefect(
         {
           photo,
-          closeupUri,
           location: finalLocation,
           position: finalPosition,
           material: finalMaterial,
@@ -120,25 +105,6 @@ export default function AnalyzeDetailScreen() {
           multiline
           style={{ minHeight: 88, paddingTop: 14, textAlignVertical: 'top' }}
         />
-        <View style={{ gap: 8 }}>
-          <Txt variant="label" muted>
-            근접 사진 (선택)
-          </Txt>
-          {closeupUri ? (
-            <View style={s.closeup}>
-              <Image source={{ uri: closeupUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="근접 사진 빼기"
-                onPress={() => setCloseupUri(null)}
-                style={s.closeupRemove}>
-                <X size={14} color={C.onPrimary} strokeWidth={2.6} />
-              </Pressable>
-            </View>
-          ) : (
-            <Button title="근접 사진 추가" icon={ImagePlus} variant="outline" onPress={pickCloseup} />
-          )}
-        </View>
         <Pressable
           accessibilityRole="checkbox"
           accessibilityState={{ checked: consent }}
@@ -189,18 +155,6 @@ export default function AnalyzeDetailScreen() {
 }
 
 const s = StyleSheet.create({
-  closeup: { width: 96, height: 96, borderRadius: 16, overflow: 'hidden', backgroundColor: C.accent },
-  closeupRemove: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   agree: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   box: {
     width: 24,

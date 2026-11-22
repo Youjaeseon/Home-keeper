@@ -1,6 +1,6 @@
 /**
  * AI 하자 분석 서비스 — 팀 백엔드 연동.
- *   POST /records → POST /records/{id}/analyze (multipart: 사진 overview 1장 + 선택 closeup 1장, location, material, symptoms, region_id, external_analysis_consent)
+ *   POST /records → POST /records/{id}/analyze (multipart: 사진 overview 1장, location, material, symptoms, region_id, external_analysis_consent)
  *   → GET /records/{id}로 저장 결과(단기 Signed URL 포함)를 다시 읽어 화면 타입으로 변환합니다.
  *
  * 규칙:
@@ -132,14 +132,9 @@ export async function analyzeDefect(
   onStep?.(0);
   const { record_id } = await createRecord();
   onStep?.(1);
-  const photos: { uri: string; name: string; type: string; role: 'overview' | 'closeup' }[] = [
-    { uri: input.photo.uri, ...guessMime(input.photo.uri), role: 'overview' },
-  ];
-  if (input.closeupUri) {
-    photos.push({ uri: input.closeupUri, ...guessMime(input.closeupUri), role: 'closeup' });
-  }
+  // 사진은 1장(overview)만 보냅니다. 백엔드는 closeup 1장도 받지만 화면에서는 쓰지 않습니다. (GAP-009)
   await analyzeRecord(record_id, {
-    photos,
+    photos: [{ uri: input.photo.uri, ...guessMime(input.photo.uri), role: 'overview' }],
     location: joinLocation(input.location, input.position),
     material: input.material,
     symptoms: input.memo,

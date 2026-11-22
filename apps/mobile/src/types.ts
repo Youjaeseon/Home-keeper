@@ -43,8 +43,6 @@ export type DefectType = '곰팡이' | '균열' | '벗겨짐' | '판단 보류' 
 
 export type AnalysisInput = {
   photo: Photo;
-  /** 근접 사진(선택). 백엔드 photo_roles의 closeup으로 보냅니다. (GAP-009) */
-  closeupUri?: string | null;
   location: string;
   /** 손상 위치 (벽면, 천장 등) */
   position: string;
