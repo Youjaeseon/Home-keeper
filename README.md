@@ -63,8 +63,9 @@
 
 ## Docker 배포
 
-FastAPI 서버의 배포용 이미지와 Compose 구성을 제공합니다. 서버 환경변수·모델 준비,
-마이그레이션·실행·업데이트 방법은 [Docker 배포 가이드](docs/guides/DEPLOYMENT.md)를 참고하세요.
+FastAPI 서버와 Expo 모바일 웹의 배포용 이미지·Compose 구성을 제공합니다.
+환경변수·모델 준비, 웹 빌드, 마이그레이션·실행·업데이트 방법은
+[Docker 배포 가이드](docs/guides/DEPLOYMENT.md)를 참고하세요.
 
 ## 주요 명령어
 

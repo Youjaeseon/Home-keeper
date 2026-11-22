@@ -1,6 +1,6 @@
 # Docker 배포
 
-FastAPI API를 Linux 컨테이너로 실행합니다. Expo 앱은 별도로 빌드·배포하고,
+FastAPI API와 Expo 모바일 웹(Nginx)을 Linux 컨테이너로 실행합니다. 네이티브 앱은 별도로 빌드·배포하고,
 PostgreSQL·Auth·Storage는 기존 Supabase 프로젝트를 사용합니다.
 Python 3.13과 `uv.lock`의 운영·vision 의존성을 설치하며, 개발용 reload는 사용하지 않습니다.
 Docker Engine과 Docker Compose 2.30 이상이 필요합니다(`env_file.format: raw` 사용).
@@ -12,6 +12,9 @@ Docker Engine과 Docker Compose 2.30 이상이 필요합니다(`env_file.format:
 UID 10001 실행, `/health`·`/docs`·`/vision-test`·`/openapi.json` 응답,
 vision 모듈 import와 실제 `best.pt`의 CPU 추론을 확인했습니다.
 amd64·GPU·운영 DB·외부 AI 호출·HTTPS 접속은 이 검증에 포함하지 않았습니다.
+웹은 Linux arm64 이미지 빌드(약 103MB), 비관리자 실행·healthcheck,
+SPA 직접 경로·없는 정적 파일 404, 브라우저 로그인 화면 표시·회원가입 이동·새로고침을 확인했습니다.
+실제 로그인·사진 업로드·채팅과 모바일 실기기는 검증하지 않았습니다.
 
 ## 서버 준비
 
@@ -69,6 +72,76 @@ docker compose logs --tail=100 api
 기록 생성·사진 분석·채팅으로 확인해야 합니다. 모델 로딩은 백그라운드에서 수행되므로
 healthy 상태만으로 YOLO 준비 완료를 판단하지 않습니다.
 
+## 모바일 웹
+
+`web` 서비스가 Expo의 SPA 빌드 결과를 비관리자 Nginx로 제공합니다.
+빌드 context는 npm workspace의 `package-lock.json`을 사용하기 위해 저장소 루트입니다.
+루트 `.dockerignore`는 API·모델·이미지 tar·환경변수 파일을 context에서 제외합니다.
+
+`apps/mobile/.env`가 없으면 예제를 복사한 뒤 아래 3개 공개 값을 설정합니다.
+
+```bash
+cp apps/mobile/.env.example apps/mobile/.env
+```
+
+```dotenv
+EXPO_PUBLIC_API_URL=https://api.example.com
+EXPO_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-or-anon-key
+```
+
+API 주소는 휴대폰 브라우저에서 접근할 수 있는 절대 주소여야 합니다.
+`http://api:8000` 같은 Docker 내부 호스트 이름이나 서버의 `localhost`를 넣지 않습니다.
+Supabase 값은 API와 같은 프로젝트를 사용합니다.
+API의 `apps/api/.env`에는 웹 origin을 허용합니다.
+
+```dotenv
+CORS_ORIGINS=https://app.example.com
+```
+
+저장소 루트에서 빌드·실행합니다. API를 아직 빌드하지 않았다면 먼저 `docker compose build api`를 실행하세요.
+
+```bash
+docker compose --env-file apps/mobile/.env build web
+docker compose up -d --wait api web
+curl --fail http://127.0.0.1:8080/healthz
+```
+
+`--env-file`은 Compose의 빌드 인자를 채웁니다. Dockerfile은 `.env` 파일을 복사하지 않고
+명시한 3개 `EXPO_PUBLIC_` 값만 Expo 빌드에 전달합니다. 이 값들은 브라우저 번들에 공개되므로
+서버 LLM 키·DB 비밀번호·Supabase service_role 키를 넣지 않습니다.
+Expo는 환경변수를 빌드 시 번들에 넣으므로 값을 바꾸면 위의 **웹 빌드와 실행 명령을 모두 다시 실행**합니다.
+([Expo 환경변수 문서](https://docs.expo.dev/guides/environment-variables/))
+
+웹은 기본 `127.0.0.1:8080`에서 열립니다. HTTPS reverse proxy의 웹 도메인은 이 포트로,
+API 도메인은 `127.0.0.1:8000`으로 연결합니다. `/signup`, `/dm/...` 같은 화면 주소를
+직접 열거나 새로고침하면 Nginx가 `index.html`을 반환합니다. 없는 `/_expo/`·`/assets/` 파일은 404를 반환합니다.
+
+### N100·같은 Wi-Fi에서 접속
+
+N100에서 직접 빌드하면 amd64 이미지가 생성됩니다. Mac에서 옮길 이미지를 빌드할 때는
+아래 Buildx 명령을 사용합니다. 셸에 위의 3개 공개 환경변수를 먼저 export해야 합니다.
+
+```bash
+docker buildx build --platform linux/amd64 --load -t home-keeper-web:latest \
+  -f apps/mobile/Dockerfile \
+  --build-arg EXPO_PUBLIC_API_URL \
+  --build-arg EXPO_PUBLIC_SUPABASE_URL \
+  --build-arg EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY .
+```
+
+같은 Wi-Fi의 휴대폰에서 잠깐 확인하려면 예를 들어 N100 IP가 `192.168.0.20`일 때
+웹 빌드의 API URL을 `http://192.168.0.20:8000`으로, API의 CORS를
+`http://192.168.0.20:8080`으로 설정한 뒤 웹을 다시 빌드합니다.
+
+```bash
+WEB_BIND_ADDRESS=0.0.0.0 API_BIND_ADDRESS=0.0.0.0 \
+  docker compose up -d --wait api web
+```
+
+휴대폰에서 `http://192.168.0.20:8080`으로 접속합니다. HTTP LAN 접속에서는
+카메라 등 HTTPS가 필요한 브라우저 기능이 제한될 수 있습니다. 운영 접속은 HTTPS를 사용합니다.
+
 ## 외부 접속
 
 기본 포트는 호스트의 `127.0.0.1:8000`에만 열립니다. 호스트의 HTTPS reverse proxy가
@@ -85,8 +158,9 @@ healthy 상태만으로 YOLO 준비 완료를 판단하지 않습니다.
 ```bash
 git pull --ff-only
 docker compose build api
+docker compose --env-file apps/mobile/.env build web
 # 새 마이그레이션이 있으면 위의 일회성 명령으로 먼저 적용
-docker compose up -d --wait api
+docker compose up -d --wait api web
 ```
 
 재생성 시 기존 WebSocket 연결이 끊기며 앱이 재연결해야 합니다.
