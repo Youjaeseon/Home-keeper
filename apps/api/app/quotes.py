@@ -19,6 +19,7 @@ from app.errors import (
     not_found,
     request_already_open,
     request_not_open,
+    request_not_accepted,
     proposal_already_exists,
     proposal_not_pending,
     diagnosis_required,
@@ -571,6 +572,70 @@ def accept_quote_proposal(
             WHERE id = %s
             """,
             (proposal_id, request_id),
+        )
+
+    with read_transaction() as conn:
+        return _detail(conn, request_id, owner_id)
+
+
+@router.post(
+    "/quote-requests/{request_id}/cancel-accept",
+    response_model=QuoteRequestDetailOut,
+    summary="제안서 수락 취소",
+    description=(
+        "요청인이 수락을 취소하고 요청서를 다시 진행 중으로 되돌립니다. 다른 업체 제안서를 다시 수락할 수 있습니다.\n\n"
+        "- 수락했던 제안서와, 그 수락 때문에 함께 마감된 제안서를 모두 `pending`으로 되돌립니다. 수락 전에 따로 마감된 제안서는 그대로 둡니다.\n"
+        "- 요청서 소유자만 호출할 수 있으며, 수락 상태가 아니면 `409`(`request_not_accepted`)입니다.\n"
+        "- 같은 기록으로 이미 다른 진행 중 요청서가 있으면 되돌릴 수 없어 `409`(`request_already_open`)입니다."
+    ),
+    responses={404: _NOT_FOUND_RESPONSE, 409: _CONFLICT_RESPONSE, 422: _VALIDATION_RESPONSE},
+)
+def cancel_quote_acceptance(
+    request_id: Annotated[UUID, Path(description="수락을 취소할 견적 요청서 UUID.")],
+    owner_id: UUID = Depends(get_current_user),
+):
+    with transaction() as conn:
+        request = conn.execute(
+            "SELECT * FROM quote_requests WHERE id = %s AND requester_id = %s FOR UPDATE",
+            (request_id, owner_id),
+        ).fetchone()
+        if request is None:
+            raise not_found("견적 요청서를 찾을 수 없습니다.")
+        if request["status"] != "accepted":
+            raise request_not_accepted()
+
+        other_open = conn.execute(
+            """
+            SELECT 1 FROM quote_requests
+            WHERE record_id = %s AND status = 'open' AND id <> %s
+            """,
+            (request["record_id"], request_id),
+        ).fetchone()
+        if other_open is not None:
+            raise request_already_open()
+
+        # The accept transaction stamped the auto-rejected proposals with the same now()
+        # as accepted_at, so only those are reopened.
+        conn.execute(
+            """
+            UPDATE quote_proposals
+            SET status = 'pending', updated_at = now()
+            WHERE request_id = %s
+              AND (
+                id = %s
+                OR (status = 'rejected' AND updated_at = %s)
+              )
+            """,
+            (request_id, request["accepted_proposal_id"], request["accepted_at"]),
+        )
+        conn.execute(
+            """
+            UPDATE quote_requests
+            SET status = 'open', accepted_proposal_id = NULL,
+                accepted_at = NULL, updated_at = now()
+            WHERE id = %s
+            """,
+            (request_id,),
         )
 
     with read_transaction() as conn:

@@ -144,3 +144,11 @@ def proposal_not_pending() -> ApiError:
         "proposal_not_pending",
         "이미 처리된 제안서입니다.",
     )
+
+
+def request_not_accepted() -> ApiError:
+    return ApiError(
+        409,
+        "request_not_accepted",
+        "수락된 견적 요청서가 아닙니다.",
+    )

@@ -151,6 +151,13 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
             "409",
             "422",
         },
+        ("/quote-requests/{request_id}/cancel-accept", "post"): {
+            "200",
+            "401",
+            "404",
+            "409",
+            "422",
+        },
         ("/chat/rooms", "get"): {"200", "401"},
         ("/chat/rooms", "post"): {"200", "401", "404", "422"},
         ("/chat/rooms/{room_id}/read", "post"): {"200", "401", "404", "422"},
