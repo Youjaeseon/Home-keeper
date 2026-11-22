@@ -329,22 +329,20 @@ export default function AnalyzeResultScreen() {
         )}
         {vendors.map((v) => {
           const fit = fits(v);
+          const digits = v.phone.replace(/[^0-9+]/g, '');
+          // > 는 그 업체와의 채팅(분석 결과 첨부), 전화번호는 바로 전화 걸기입니다.
+          const openChat = () =>
+            v.chatAvailable
+              ? router.push({ pathname: '/dm/[vendorId]', params: { vendorId: v.id, analysisId: r.id, name: v.name } })
+              : showAlert(
+                  '앱 채팅을 지원하지 않는 업체예요',
+                  v.isSample ? '시연용 샘플 업체입니다.' : '전화번호를 눌러 전화로 문의해 주세요.',
+                );
           return (
-            <Pressable
-              key={v.id}
-              accessibilityRole="button"
-              accessibilityLabel={`${v.name}에 문의하기`}
-              onPress={() =>
-                v.realListing
-                  ? void Linking.openURL(`tel:${v.phone.replace(/[^0-9+]/g, '')}`)
-                  : v.chatAvailable
-                  ? router.push({ pathname: '/dm/[vendorId]', params: { vendorId: v.id, analysisId: r.id, name: v.name } })
-                  : showAlert('앱 채팅을 지원하지 않는 업체예요', v.isSample ? '시연용 샘플 업체입니다.' : `전화(${v.phone})로 문의해 주세요.`)
-              }
-              style={({ pressed }) => pressed && { opacity: 0.85 }}>
-              <Card style={[s.vendor, fit && s.vendorFit]}>
-                <VendorBadge vendor={v} />
-                <View style={{ flex: 1, gap: 4 }}>
+            <Card key={v.id} style={[s.vendor, fit && s.vendorFit]}>
+              <VendorBadge vendor={v} />
+              <View style={{ flex: 1, gap: 4 }}>
+                <View style={s.nameRow}>
                   {fit && (
                     <View style={s.rank}>
                       <Txt variant="caption" color={C.onPrimary}>
@@ -352,33 +350,56 @@ export default function AnalyzeResultScreen() {
                       </Txt>
                     </View>
                   )}
-                  <Txt variant="h2">{v.name}</Txt>
-                  <Txt variant="sub" muted>
-                    {v.description}
+                  <Txt variant="h2" style={{ flexShrink: 1 }}>
+                    {v.name}
                   </Txt>
-                  <View style={s.chips}>
-                    {v.specialties.map((sp, i) => (
-                      <Chip key={sp} label={sp} active={v.specialtyIds[i] === r.workTypeId} />
-                    ))}
-                  </View>
-                  <View style={s.phone}>
-                    <Phone size={13} color={C.sub} strokeWidth={STROKE} />
-                    <Txt variant="caption" muted>
-                      {v.phone}
-                    </Txt>
-                  </View>
                 </View>
-                <ChevronRight size={20} color={C.faint} strokeWidth={STROKE} />
-              </Card>
-            </Pressable>
+                <Txt variant="sub" muted>
+                  {v.description}
+                </Txt>
+                <View style={s.chips}>
+                  {v.specialties.map((sp, i) => (
+                    <Chip key={sp} label={sp} active={v.specialtyIds[i] === r.workTypeId} />
+                  ))}
+                  {digits.length >= 7 ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${v.name}에 전화 걸기 ${v.phone}`}
+                      hitSlop={6}
+                      onPress={() => void Linking.openURL(`tel:${digits}`)}
+                      style={({ pressed }) => [s.phone, pressed && { opacity: 0.6 }]}>
+                      <Phone size={13} color={C.primary} strokeWidth={STROKE} />
+                      <Txt variant="caption" color={C.primary}>
+                        {v.phone}
+                      </Txt>
+                    </Pressable>
+                  ) : (
+                    <View style={s.phone}>
+                      <Phone size={13} color={C.sub} strokeWidth={STROKE} />
+                      <Txt variant="caption" muted>
+                        {v.phone}
+                      </Txt>
+                    </View>
+                  )}
+                </View>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${v.name}에 메시지 보내기`}
+                hitSlop={10}
+                onPress={openChat}
+                style={({ pressed }) => [s.chevron, pressed && { opacity: 0.6 }]}>
+                <ChevronRight size={22} color={C.primary} strokeWidth={STROKE} />
+              </Pressable>
+            </Card>
           );
         })}
         <Notice icon={MessageCircle}>
           {vendors.some((v) => v.realListing)
-            ? '실제 업체예요. 누르면 전화로 연결돼요. (앱 채팅·견적 요청서는 지원하지 않아요)'
+            ? '실제 업체예요. 전화번호를 누르면 전화로 연결돼요. (앱 채팅은 앱에 가입한 업체만 지원해요)'
             : vendorList.isSample
               ? '이 지역에 등록된 업체가 없어 시연용 샘플 업체를 보여 드려요. 샘플 업체와는 채팅할 수 없어요.'
-              : '업체를 누르면 분석 결과를 첨부해 견적을 문의할 수 있어요.'}
+              : '> 를 누르면 분석 결과를 첨부해 메시지로 문의하고, 전화번호를 누르면 전화로 연결돼요.'}
         </Notice>
       </View>
     </Screen>
@@ -434,5 +455,7 @@ const s = StyleSheet.create({
     paddingVertical: 3,
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 },
-  phone: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  phone: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chevron: { padding: 6, alignSelf: 'stretch', justifyContent: 'center' },
 });
