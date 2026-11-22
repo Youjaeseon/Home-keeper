@@ -299,6 +299,7 @@ def test_quote_request_role_lists_and_detail_isolation(
     assert [item["request_id"] for item in matched_list] == [request_id]
     assert matched_list[0]["proposal_count"] == 0
     assert matched_list[0]["my_proposal_id"] is None
+    assert matched_list[0]["requester_nickname"] == "견적 요청인"
 
     assert (
         client.get(
@@ -423,6 +424,7 @@ def test_proposals_are_isolated_and_accept_rejects_the_rest(
         f"/quote-requests/{request_id}", headers=auth_headers(requester_token)
     ).json()
     assert len(owner_detail["proposals"]) == 2
+    assert all(item["provider"]["region_names"] for item in owner_detail["proposals"])
     assert owner_detail["proposal_count"] == 2
     assert {item["status"] for item in owner_detail["proposals"]} == {"pending"}
 

@@ -60,12 +60,14 @@ _REQUEST_BASE = """
     SELECT
         request.*,
         region.display_name AS region_name,
-        work_type.name AS work_type_name
+        work_type.name AS work_type_name,
+        requester_profile.nickname AS requester_nickname
 """
 _REQUEST_FROM = """
     FROM quote_requests AS request
     JOIN regions AS region ON region.id = request.region_id
     JOIN work_types AS work_type ON work_type.id = request.work_type_id
+    LEFT JOIN profiles AS requester_profile ON requester_profile.user_id = request.requester_id
 """
 
 _PROPOSAL_SELECT = """
@@ -84,6 +86,15 @@ _PROPOSAL_SELECT = """
         provider.review_count,
         provider.description,
         (provider.account_user_id IS NOT NULL) AS chat_available,
+        COALESCE(
+            (
+                SELECT jsonb_agg(service_region.display_name ORDER BY service_region.display_name)
+                FROM provider_regions AS provider_region
+                JOIN regions AS service_region ON service_region.id = provider_region.region_id
+                WHERE provider_region.provider_id = provider.id
+            ),
+            '[]'::jsonb
+        ) AS region_names,
         COALESCE(
             (
                 SELECT jsonb_agg(
@@ -124,6 +135,7 @@ def _summary(row: dict, **overrides) -> dict:
         "region_name": row["region_name"],
         "work_type_id": row["work_type_id"],
         "work_type_name": row["work_type_name"],
+        "requester_nickname": row.get("requester_nickname"),
         "address": row["address"],
         "location": row["location"],
         "material": row["material"],
@@ -154,6 +166,7 @@ def _proposal_out(row: dict) -> dict:
             "review_count": row["review_count"],
             "description": row["description"],
             "specialty_work_types": row["specialty_work_types"],
+            "region_names": row["region_names"],
             "chat_available": row["chat_available"],
             "is_sample": False,
         },

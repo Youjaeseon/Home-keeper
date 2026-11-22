@@ -521,6 +521,9 @@ class QuoteRequestSummary(BaseModel):
     region_name: str = Field(description="요청 지역 표시명.")
     work_type_id: UUID = Field(description="희망 특화 분야 UUID.")
     work_type_name: str = Field(description="희망 특화 분야 이름.")
+    requester_nickname: str | None = Field(
+        default=None, description="요청인 프로필 닉네임. 업체가 누구의 요청서인지 알아볼 수 있도록 표시합니다. 프로필이 없으면 `null`입니다."
+    )
     address: str | None = Field(description="선택 장소·주소 메모. 없으면 `null`입니다.")
     location: str = Field(description="집 안 하자 위치.")
     material: str | None = Field(description="표면 재질. 없으면 `null`입니다.")
@@ -812,6 +815,10 @@ class ProviderOut(BaseModel):
     )
     specialty_work_types: list[WorkTypeOut] = Field(
         description="업체의 전체 특화 분야 목록. 없으면 빈 배열입니다."
+    )
+    region_names: list[str] = Field(
+        default_factory=list,
+        description="업체 출장 지역 표시명 목록. 업체 제안서에서 채우며, 없으면 빈 배열입니다.",
     )
     chat_available: bool = Field(
         description="사전 등록된 업체 계정이 연결되어 앱 내 채팅이 가능한지 여부. 샘플은 항상 `false`입니다."
