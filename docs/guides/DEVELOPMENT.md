@@ -244,7 +244,7 @@ Expo Router 타입 생성 후 통과했습니다. 모바일은 `profile.role`에
 - 2단계: 분석 지역 스냅샷·소식지 페이지네이션 — 구현 완료
 - 3단계: 업체 상세·평점·별점순 추천·Role 분기 — 구현 완료
 - 4단계: 비공개 Storage 사진·견적 요청서·제안서·1건 수락 — 구현 완료
-- 남은 운영 항목: Home Keeper DB에 `011`–`015` 적용, Storage 비공개 버킷·서버 키 설정, 소식지 보조금24 주기 동기화
+- 남은 운영 항목: Home Keeper DB에 `011`–`016` 적용, Storage 비공개 버킷·서버 키 설정, 소식지 보조금24 주기 동기화
 
 ## 소식지 시드·보조금24 동기화
 
@@ -280,3 +280,9 @@ DATABASE_URL='postgresql://career_pair_runtime:...@localhost:5432/career_pair' \
   - [용인청년포털 부동산 중개보수 감면](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026021000000000000055001)
   - [용인청년포털 청년월세 지원](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026032300000000000061001)
 - 실제 `GOV24_API_KEY`로 `serviceList` **10,891건**을 조회하고, 주거 제목 필터·지역 확정 후 **41건을 로컬 개발 DB에 upsert**하는 것까지 확인했습니다. Home Keeper에도 `support_programs` 마이그레이션과 시드 4건을 적용했으며, 실제 Supabase 대상 보조금24 동기화는 아직 실행하지 않았습니다. 운영 응답의 주거 키워드·지역·기한 해석은 첫 실동기화 결과를 계속 점검해야 합니다.
+
+### 지역 데이터 시드
+
+`016_regions_seoul_metro.sql`이 수도권 3 시·도와 하위 67개 시·군·구(서울 25구, 경기 31 시·군, 인천 9구 2군)를 넣습니다. `name`은 SQL·테스트용 슬러그이고 화면에는 `display_name`만 쓰므로, 지역을 추가할 때는 같은 `WITH seed ... ON CONFLICT (name) DO NOTHING` 패턴으로 `016` 뒤에 새 마이그레이션을 붙입니다.
+
+`display_name`은 `시·도 + 공백 + 시·군·구`(`경기도 용인시`) 꼴을 지켜야 합니다. `app/support_sync.py`의 `_resolve_region`이 `소관기관명`을 `display_name` 전체, 마지막 토큰, `...청`과 정확히 비교하기 때문에 형식이 달라지면 보조금24 지자체 공고가 매칭되지 않고 조용히 스킵됩니다. 시·도 행은 `parent_id`가 `NULL`, 하위 행은 시·도 행을 가리키며, 지원사업 조회는 이 부모 관계로 상위 지역 공고까지 노출합니다.
