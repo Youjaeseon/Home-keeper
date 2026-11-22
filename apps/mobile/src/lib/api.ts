@@ -1,3 +1,6 @@
+import { File } from 'expo-file-system';
+import { Platform } from 'react-native';
+
 import { apiBaseUrl } from './env';
 import { supabase } from './supabase';
 
@@ -412,20 +415,20 @@ export function getRecord(recordId: string): Promise<RecordDetail> {
   return apiRequest<RecordDetail>(`/records/${recordId}`);
 }
 
-export function analyzeRecord(
+export async function analyzeRecord(
   recordId: string,
   input: AnalyzeInput,
 ): Promise<AnalyzeResponse> {
   const form = new FormData();
   for (const photo of input.photos) {
-    form.append(
-      'photos',
-      {
-        uri: photo.uri,
-        name: photo.name,
-        type: photo.type,
-      } as unknown as Blob,
-    );
+    if (Platform.OS === 'web') {
+      const blob = await (await fetch(photo.uri)).blob();
+      form.append('photos', blob, photo.name);
+    } else {
+      // Expo SDK 58's global fetch (expo/fetch) only accepts Blob or File parts,
+      // not React Native's legacy { uri, name, type } objects.
+      form.append('photos', new File(photo.uri) as unknown as Blob);
+    }
   }
   for (const photo of input.photos) {
     form.append('photo_roles', photo.role);
