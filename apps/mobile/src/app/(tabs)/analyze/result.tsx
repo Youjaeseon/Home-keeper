@@ -119,10 +119,14 @@ export default function AnalyzeResultScreen() {
   }
 
   const color = riskColor(r.risk);
-  // 이 하자가 전문 분야인 업체를 '추천'으로 표시하고 위에 둡니다.
-  // 진단이 추천한 작업 종류가 특화 분야인 업체를 '추천'으로 표시합니다. (서버가 이미 별점순 정렬)
-  const fits = (v: Vendor) => !!r.workTypeId && v.specialtyIds.includes(r.workTypeId);
-  const vendors = [...vendorList.vendors].sort((a, b) => Number(fits(b)) - Number(fits(a)));
+  // 진단에 맞는 분야의 업체만 보여 줍니다(Hyeok 결정). 진단이 고른 작업 종류이거나, 하자 유형에 대응하는 분야면 맞는 업체입니다.
+  // 맞는 업체가 하나도 없으면(판단 보류 등) 지역 업체를 모두 보여 줍니다.
+  const DEFECT_FIELD: Record<string, string> = { 곰팡이: '곰팡이 제거', 균열: '균열 보수', 벗겨짐: '벽지·도장 보수' };
+  const field = DEFECT_FIELD[r.defect];
+  const fits = (v: Vendor) =>
+    (!!r.workTypeId && v.specialtyIds.includes(r.workTypeId)) || (!!field && v.specialties.includes(field));
+  const matched = vendorList.vendors.filter(fits);
+  const vendors = matched.length > 0 ? matched : vendorList.vendors;
   const sent = estimates.some((e) => e.analysisId === r.id && e.status !== 'cancelled' && user?.role !== '업체');
 
   const onSendEstimate = async () => {
