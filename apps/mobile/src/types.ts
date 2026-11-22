@@ -35,8 +35,11 @@ export type Account = {
 
 export type Photo = { id: string; uri: string; createdAt: number };
 
-/** 백엔드 진단 유형(`diagnosis.py`)과 같은 3종 + 판단 보류입니다. (GAP-007) */
-export type DefectType = '곰팡이' | '균열' | '벗겨짐' | '판단 보류';
+/**
+ * 백엔드 진단 유형(`diagnosis.py`) 3종 + 판단 보류입니다. (GAP-007)
+ * 샘플·LLM 진단이 다른 이름(예: '표면 이상')을 주면 서버 값을 그대로 보여 줍니다.
+ */
+export type DefectType = '곰팡이' | '균열' | '벗겨짐' | '판단 보류' | (string & {});
 
 export type AnalysisInput = {
   photo: Photo;

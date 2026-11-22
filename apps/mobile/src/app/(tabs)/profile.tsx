@@ -73,23 +73,26 @@ export default function ProfileScreen() {
         <Card style={{ gap: 4 }}>
           <CardHeader icon={Clock} title="내 분석 기록" />
           {analyses.map((a) => (
-            <Pressable
-              key={a.id}
-              accessibilityRole="button"
-              onPress={() => router.push({ pathname: '/analyze/result', params: { analysisId: a.id } })}
-              style={({ pressed }) => [s.historyRow, pressed && { opacity: 0.7 }]}>
-              <View style={{ flex: 1 }}>
-                <Txt variant="bodyStrong">
-                  {a.location} · {a.defect}
-                </Txt>
-                <Txt variant="caption" muted>
-                  {a.occurredAt}
-                  {a.needsRetake ? ' · 재촬영 필요' : ` · 심각도 ${a.risk}%`}
-                </Txt>
-              </View>
+            // 웹에서 <button> 안에 <button>이 들어가지 않도록 삭제 버튼은 행 버튼 밖에 둡니다.
+            <View key={a.id} style={s.historyRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${a.location} 분석 결과 보기`}
+                onPress={() => router.push({ pathname: '/analyze/result', params: { analysisId: a.id } })}
+                style={({ pressed }) => [s.historyMain, pressed && { opacity: 0.7 }]}>
+                <View style={{ flex: 1 }}>
+                  <Txt variant="bodyStrong">
+                    {a.location} · {a.defect}
+                  </Txt>
+                  <Txt variant="caption" muted>
+                    {a.occurredAt}
+                    {a.needsRetake ? ' · 재촬영 필요' : ` · 심각도 ${a.risk}%`}
+                  </Txt>
+                </View>
+              </Pressable>
               <DeleteButton label="분석 기록" onDelete={() => removeAnalysis(a.id)} />
               <ChevronRight size={18} color={C.faint} strokeWidth={STROKE} />
-            </Pressable>
+            </View>
           ))}
         </Card>
       )}
@@ -118,4 +121,5 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: C.border,
   },
+  historyMain: { flex: 1, flexDirection: 'row', alignItems: 'center', alignSelf: 'stretch' },
 });

@@ -243,9 +243,9 @@ function ProposalBox({
   };
   return (
     <Animated.View style={{ opacity: fade }} pointerEvents={closed ? 'none' : 'auto'}>
+      {/* 카드 안에 삭제·수락 버튼이 있어 카드 자체는 button 역할을 주지 않습니다(웹 중첩 <button> 방지).
+          화면 읽기 사용자는 아래 '채팅으로 문의하기' 버튼을 씁니다. */}
       <Pressable
-        accessibilityRole={chat ? 'button' : undefined}
-        accessibilityLabel={chat ? `${p.vendorName}와 채팅하기` : undefined}
         disabled={!chat || closed}
         onPress={openChat}
         style={({ pressed }) => [s.proposal, accept === 'accepted' && s.proposalAccepted, pressed && { opacity: 0.75 }]}>
@@ -321,12 +321,17 @@ function ProposalBox({
               <View />
             )}
             {chat && (
-              <View style={s.chatHint}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${p.vendorName}와 채팅하기`}
+                hitSlop={6}
+                onPress={openChat}
+                style={s.chatHint}>
                 <Txt variant="caption" color={C.primary}>
                   채팅으로 문의하기
                 </Txt>
                 <ChevronRight size={14} color={C.primary} strokeWidth={STROKE} />
-              </View>
+              </Pressable>
             )}
           </View>
         )}
