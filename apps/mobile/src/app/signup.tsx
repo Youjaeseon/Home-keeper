@@ -14,12 +14,12 @@ import type { Housing, Role } from '@/types';
 
 const ROLES: { role: Role; desc: string }[] = [
   { role: '유저', desc: '하자를 진단하고 견적을 요청해요' },
-  { role: '업체', desc: '지역의 견적서를 받고 제안서를 보내요' },
+  { role: '업체', desc: '지역의 견적 요청서를 받고 제안서를 보내요' },
 ];
 
 /**
  * 스케치 2: 회원가입 (회원 유형, 닉네임/업체명, ID, PW, 지역, 거주형태 또는 업체 연락처·소개)
- * - 업체로 가입하면 업체 정보와 활동 지역이 등록되고, 그 지역의 견적서를 모두 받습니다. (GAP-003, Hyeok 결정)
+ * - 업체로 가입하면 업체 정보와 활동 지역이 등록되고, 그 지역의 견적 요청서를 모두 받습니다. (GAP-003, Hyeok 결정)
  * - 외부 AI 사진 전송 동의는 가입 때가 아니라 분석 요청마다 받습니다. (GAP-011)
  */
 export default function SignupScreen() {
@@ -141,7 +141,7 @@ export default function SignupScreen() {
             />
             <Field label="업체 소개" value={intro} onChangeText={setIntro} placeholder="예: 욕실 곰팡이 제거 전문" />
             <Txt variant="caption" muted>
-              활동지역의 견적서를 모두 받아 볼 수 있어요.
+              활동지역의 견적 요청서를 모두 받아 볼 수 있어요.
             </Txt>
           </>
         ) : (
