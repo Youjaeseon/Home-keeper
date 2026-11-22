@@ -168,9 +168,9 @@ export type Proposal = {
   vendorName: string;
   vendorIntro: string;
   vendorRegion: string;
-  /** 만원 단위 (최소 금액) */
+  /** 최소 금액(원) */
   price: number;
-  /** 만원 단위 최대 금액. 최소와 같으면 단일 가격입니다. */
+  /** 최대 금액(원). 최소와 같으면 단일 가격입니다. */
   priceMax?: number;
   memo: string;
   createdAt: number;

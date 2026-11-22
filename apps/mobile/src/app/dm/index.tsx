@@ -11,8 +11,13 @@ import type { Estimate, Proposal } from '@/types';
 import { showAlert } from '@/lib/alert';
 
 type Tab = 'messages' | 'quotes';
-/** 제안 가격 선택지 (만원) */
-const PRICES = [5, 6, 7, 8, 9, 10];
+/** 제안 금액 표시·입력 (원 단위) */
+const won = (n: number) => `${n.toLocaleString('ko-KR')}원`;
+/** 숫자만 남겨 원 단위 정수로 읽습니다. 비어 있으면 null. */
+const parseWon = (text: string) => {
+  const digits = text.replace(/[^0-9]/g, '');
+  return digits ? Number(digits) : null;
+};
 
 /** 채팅 목록 — 상단 탭: 메시지 | 업체 제안서(유저) 또는 견적 요청서(업체) */
 export default function DmListScreen() {
@@ -257,7 +262,7 @@ function ProposalBox({
             </Txt>
           </View>
           <Txt variant="title" color={C.primary}>
-            {p.priceMax && p.priceMax !== p.price ? `${p.price}~${p.priceMax}만원` : `${p.price}만원`}
+            {p.priceMax && p.priceMax !== p.price ? `${won(p.price)}~${won(p.priceMax)}` : won(p.price)}
           </Txt>
           <DeleteButton label="업체 제안서" onDelete={onDelete} />
         </View>
@@ -330,16 +335,28 @@ function ProposalBox({
   );
 }
 
-/** 업체용: 업체 제안서 작성 (업체 정보는 MY에서 자동으로, 가격 5~10만원, 추가 메모) */
+/** 업체용: 업체 제안서 작성 (업체 정보는 MY에서 자동으로, 원 단위 최소~최대 금액, 추가 메모) (GAP-023) */
 function ProposalForm({ estimateId }: { estimateId: string }) {
   const { user, sendProposal } = useApp();
-  const [price, setPrice] = useState(PRICES[0]);
+  const [minText, setMinText] = useState('');
+  const [maxText, setMaxText] = useState('');
   const [memo, setMemo] = useState('');
   const [busy, setBusy] = useState(false);
   if (!user) return null;
   const onSend = async () => {
+    const min = parseWon(minText);
+    // 최대 금액을 비우면 단일 가격(최소 = 최대)으로 보냅니다.
+    const max = parseWon(maxText) ?? min;
+    if (min === null || max === null) {
+      showAlert('금액을 입력해 주세요', '최소 금액은 꼭 입력해 주세요. 단일 가격이면 최대 금액은 비워 두세요.');
+      return;
+    }
+    if (max < min) {
+      showAlert('금액을 확인해 주세요', '최대 금액은 최소 금액보다 크거나 같아야 해요.');
+      return;
+    }
     setBusy(true);
-    const err = await sendProposal(estimateId, price, memo.trim());
+    const err = await sendProposal(estimateId, min, max, memo.trim());
     setBusy(false);
     if (err) showAlert('업체 제안서를 보내지 못했습니다', err);
   };
@@ -355,26 +372,13 @@ function ProposalForm({ estimateId }: { estimateId: string }) {
           {[user.region, user.intro].filter(Boolean).join(' · ')}
         </Txt>
       </View>
-      <Txt variant="label" muted>
-        가격
-      </Txt>
       <View style={s.prices}>
-        {PRICES.map((n) => {
-          const on = n === price;
-          return (
-            <Pressable
-              key={n}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: on }}
-              accessibilityLabel={`${n}만원`}
-              onPress={() => setPrice(n)}
-              style={[s.price, on && s.priceOn]}>
-              <Txt variant="label" color={on ? C.onPrimary : C.text} style={{ fontFamily: F.bold }}>
-                {n}만원
-              </Txt>
-            </Pressable>
-          );
-        })}
+        <View style={{ flex: 1 }}>
+          <Field label="최소 금액(원)" value={minText} onChangeText={setMinText} keyboardType="number-pad" placeholder="예: 50000" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Field label="최대 금액(원)" value={maxText} onChangeText={setMaxText} keyboardType="number-pad" placeholder="비우면 단일 가격" />
+        </View>
       </View>
       <Field
         label="추가 메모"
@@ -414,14 +418,5 @@ const s = StyleSheet.create({
   pill: { minHeight: 34, paddingHorizontal: 16, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
   pillGreen: { backgroundColor: C.primary },
   pillGhost: { backgroundColor: C.accentSoft },
-  prices: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  price: {
-    paddingHorizontal: 14,
-    minHeight: 38,
-    borderRadius: 999,
-    backgroundColor: C.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  priceOn: { backgroundColor: C.primary },
+  prices: { flexDirection: 'row', gap: 8 },
 });

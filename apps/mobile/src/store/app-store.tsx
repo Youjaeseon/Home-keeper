@@ -90,7 +90,8 @@ type Store = {
   /** 유저 → 주변 업체: 견적 요청서 전송 (POST /quote-requests) */
   sendEstimate: (analysis: AnalysisResult, memo: string) => Promise<string | null>;
   /** 업체 → 유저: 업체 제안서 전송 (POST /quote-requests/{id}/proposals) */
-  sendProposal: (estimateId: string, price: number, memo: string) => Promise<string | null>;
+  /** 금액은 원 단위 최소~최대 범위입니다. (GAP-023) */
+  sendProposal: (estimateId: string, minPrice: number, maxPrice: number, memo: string) => Promise<string | null>;
   /** 내 화면에서만 숨긴 항목 id (서버 삭제 API가 없는 항목) */
   hidden: string[];
   removeAnalysis: (id: string) => void;
@@ -333,8 +334,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           vendorIntro: p.provider.description ?? '',
           // TODO(integration-gap): GAP-017 업체 제안서 응답에 업체 지역이 없습니다.
           vendorRegion: '',
-          price: Math.round(p.min_price / 10000),
-          priceMax: Math.round(p.max_price / 10000),
+          price: p.min_price,
+          priceMax: p.max_price,
           memo: p.memo,
           createdAt: Date.parse(p.created_at),
         })),
@@ -594,10 +595,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return messageOf(e);
       }
     },
-    async sendProposal(estimateId, price, memo) {
+    async sendProposal(estimateId, minPrice, maxPrice, memo) {
       if (!memo.trim()) return '제안 메모를 입력해 주세요. (작업 범위·방문 가능 일정 등)';
       try {
-        await submitQuoteProposal(estimateId, { min_price: price * 10000, max_price: price * 10000, memo: memo.trim() });
+        await submitQuoteProposal(estimateId, { min_price: minPrice, max_price: maxPrice, memo: memo.trim() });
         await refreshQuotes();
         return null;
       } catch (e) {
