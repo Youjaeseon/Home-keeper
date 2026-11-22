@@ -283,6 +283,11 @@ export type RecordDetail = {
     generation: number;
     is_current: boolean;
   } | null;
+  /** 저장된 요청문. is_current면 다시 생성하지 않고 그대로 씁니다. */
+  drafts?: {
+    landlord: { text: string; is_current: boolean } | null;
+    provider: { text: string; is_current: boolean } | null;
+  };
 };
 
 export type AnalyzePhotoInput = {

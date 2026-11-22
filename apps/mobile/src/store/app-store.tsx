@@ -83,6 +83,8 @@ type Store = {
   refreshAnalyses: () => Promise<void>;
   /** 결과 화면 진입 시 최신 상세(새 Signed URL)를 다시 받습니다. */
   loadAnalysis: (id: string) => Promise<string | null>;
+  /** 결과 화면에서 누를 때만 집주인 문자(임대인 요청문)를 만듭니다. 모델 실패 시 기본 양식. */
+  makeLandlordDraft: (id: string) => Promise<string | null>;
   refreshThreads: () => Promise<void>;
   /** 업체와의 채팅방을 열거나 만듭니다(POST /chat/rooms). 분석 기록을 함께 공유할 수 있습니다. */
   openRoom: (input: { vendorId: string; roomId?: string; analysisId?: string }) => Promise<{ roomId?: string; error?: string }>;
@@ -555,6 +557,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setAnalyses((prev) => [result, ...prev.filter((a) => a.id !== result.id)]);
     },
     refreshAnalyses,
+    async makeLandlordDraft(id) {
+      const text = await landlordDraft(id);
+      if (!text) return '집주인 문자를 만들지 못했어요. 잠시 후 다시 시도해 주세요.';
+      setAnalyses((prev) => prev.map((a) => (a.id === id ? { ...a, guide: { ...a.guide, message: text } } : a)));
+      return null;
+    },
     async loadAnalysis(id) {
       try {
         const detail = await getRecord(id);
@@ -569,17 +577,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setAnalyses((prev) => (prev.some((a) => a.id === id) ? prev.map((a) => (a.id === id ? next : a)) : [next, ...prev]));
         const result = toAnalysisResult(detail, meta);
         if (!result) return '아직 진단 결과가 없는 기록입니다.';
-        // 결과를 먼저 보여 주고, 임대인 요청문(모델 호출이라 느릴 수 있음)은 받은 뒤에 채웁니다.
+        // 임대인 요청문은 자동으로 만들지 않습니다. 저장된 최신 요청문이 있으면 그대로 보이고,
+        // 없으면 결과 화면의 '문자 만들기' 버튼으로 만듭니다(모델 호출 시간·사용량 절약).
         put(result);
-        // 자가 거주자는 임대인 요청문을 만들지 않습니다.
-        const tenant = housing !== '자가' && housing !== '기타' && !isProvider;
-        if (tenant) {
-          void landlordDraft(id).then((draft) => {
-            if (!draft) return;
-            const withDraft = toAnalysisResult(detail, { ...meta, landlordDraft: draft });
-            if (withDraft) put(withDraft);
-          });
-        }
         return null;
       } catch (e) {
         return messageOf(e);

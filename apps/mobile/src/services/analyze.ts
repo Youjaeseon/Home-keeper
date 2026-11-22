@@ -9,7 +9,6 @@
  */
 import { analyzeRecord, createRecord, getRecord, type DiagnosisResult, type RecordDetail } from '@/lib/api';
 import type { AnalysisInput, AnalysisResult, DefectType, Guide, Housing } from '@/types';
-import { josa } from '@/utils';
 
 /** 화면의 진행 단계 표시. 서버는 한 번의 요청으로 처리하므로 단계는 요청 전후로만 바뀝니다. */
 export const ANALYSIS_STEPS = ['사진 업로드', 'AI 하자 탐지·진단', '결과 저장'];
@@ -50,6 +49,9 @@ export function toAnalysisResult(
   const defect = toDefect(d.suspected_types, undetermined);
   const risk = d.severity_score ?? 0;
   const photo = detail.photos.find((p) => p.role === 'overview') ?? detail.photos[0];
+  // 서버에 저장된 최신 임대인 요청문이 있으면 모델을 다시 부르지 않고 씁니다.
+  const savedDraft = detail.drafts?.landlord?.is_current ? detail.drafts.landlord.text : null;
+  const landlordDraft = meta.landlordDraft ?? savedDraft;
   const base = { defect, risk, needsRetake: undetermined };
   return {
     id: detail.record_id,
@@ -68,7 +70,7 @@ export function toAnalysisResult(
       : [...d.causes, d.reason].filter(Boolean).join('\n'),
     solutions: d.care_steps,
     prevention: d.prevention_tips,
-    guide: buildGuide(meta.housing, base, location, meta.occurredAt, meta.landlordDraft),
+    guide: buildGuide(meta.housing, base, location, meta.occurredAt, landlordDraft),
     needsRetake: undetermined,
     createdAt: meta.createdAt,
     workTypeId: d.work_type_id,
@@ -97,10 +99,8 @@ export function buildGuide(
       title: `${housing} 세입자 대응 가이드`,
       // 법률 검토 전이라 하드코딩 대응 순서(책임 부담 안내 포함)는 넣지 않습니다. (GAP-012)
       body: '사진과 날짜를 남겨 두고, 아래 문자로 집주인에게 먼저 알려 보세요.',
-      // 집주인 문자는 백엔드 임대인 요청문(POST /records/{id}/drafts/landlord 또는 template)을 씁니다.
-      message:
-        landlordDraft ??
-        `안녕하세요, ○○호 세입자입니다. ${occurredAt}에 ${location}에서 ${josa(p.defect, '이', '가')} 발견되어 사진과 함께 알려 드립니다. 확인 후 수리 일정을 안내해 주시면 감사하겠습니다.`,
+      // 집주인 문자는 사용자가 '만들기'를 누를 때만 임대인 요청문 API(또는 기본 양식)로 받습니다.
+      message: landlordDraft ?? undefined,
     };
   }
 

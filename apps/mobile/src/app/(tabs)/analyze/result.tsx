@@ -36,13 +36,14 @@ const ACTION_LABEL = {
 /** 스케치 7: 분석 결과 — 손상 위치 원, 심각도, 원인, 해결방안, 재발방지, 업체 A~D */
 export default function AnalyzeResultScreen() {
   const { analysisId } = useLocalSearchParams<{ analysisId: string }>();
-  const { analyses, user, estimates, sendEstimate, loadAnalysis } = useApp();
+  const { analyses, user, estimates, sendEstimate, loadAnalysis, makeLandlordDraft } = useApp();
   const [memo, setMemo] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [vendorList, setVendorList] = useState<{ vendors: Vendor[]; isSample: boolean }>({ vendors: [], isSample: false });
   const [sending, setSending] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
+  const [drafting, setDrafting] = useState(false);
   const r = analyses.find((a) => a.id === analysisId);
   const workTypeId = r?.workTypeId;
 
@@ -232,10 +233,25 @@ export default function AnalyzeResultScreen() {
             </View>
           </View>
         ))}
+        {/* 세입자에게만 집주인 문자를 만들 수 있게 합니다. 누를 때만 모델을 부릅니다. */}
+        {!r.guide.message && ['월세', '전세', '반전세'].includes(r.housing) && user?.role !== '업체' && (
+          <Button
+            title="집주인에게 보낼 문자 만들기"
+            icon={MessageCircle}
+            variant="soft"
+            loading={drafting}
+            onPress={async () => {
+              setDrafting(true);
+              const err = await makeLandlordDraft(r.id);
+              setDrafting(false);
+              if (err) showAlert('문자를 만들지 못했습니다', err);
+            }}
+          />
+        )}
         {r.guide.message && (
           <View style={s.message}>
             <Txt variant="label" color={C.primary}>
-              집주인에게 보낼 문자 예시
+              집주인에게 보낼 문자
             </Txt>
             <Txt variant="body" selectable>
               {r.guide.message}
