@@ -67,6 +67,8 @@ export type Region = {
   region_id: string;
   name: string;
   display_name: string;
+  /** 상위 시·도 UUID. 시·도 자체면 null (2단계 지역 선택) */
+  parent_id?: string | null;
 };
 
 export type WorkType = {

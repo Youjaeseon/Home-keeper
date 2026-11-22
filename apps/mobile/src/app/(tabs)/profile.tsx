@@ -3,6 +3,7 @@ import { ChevronRight, Clock, LogOut } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
+import { RegionSelect } from '@/components/region-select';
 import { Select } from '@/components/select';
 import { AppBar, Button, Card, CardHeader, Chip, DeleteButton, Field, Screen, Txt } from '@/components/ui';
 import { C, STROKE } from '@/constants/theme';
@@ -50,10 +51,10 @@ export default function ProfileScreen() {
           onEndEditing={() => nickname.trim() !== user.nickname && save({ nickname })}
           onSubmitEditing={() => nickname.trim() !== user.nickname && save({ nickname })}
         />
-        <Select
+        <RegionSelect
           label={vendor ? '활동지역' : '거주지역'}
+          regions={regions}
           value={user.region}
-          options={regions.map((r) => r.display_name)}
           onChange={(region) => save({ region })}
         />
         {vendor ? (

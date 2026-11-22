@@ -1,6 +1,7 @@
 import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 
+import { RegionSelect } from '@/components/region-select';
 import { Select } from '@/components/select';
 import { Button, Card, Field, Hero, Notice, Screen, Txt } from '@/components/ui';
 import { C } from '@/constants/theme';
@@ -20,7 +21,9 @@ export default function ProfileSetupScreen() {
   const names = regions.map((r) => r.display_name);
   const preset = pendingProfile ? matchRegion(pendingProfile.region, regions) : null;
   const [nickname, setNickname] = useState(pendingProfile?.nickname ?? '');
-  const [region, setRegion] = useState(preset?.display_name ?? names[0] ?? '');
+  const [region, setRegion] = useState(
+    preset?.display_name ?? names.find((n) => n.includes('용인')) ?? names[0] ?? '',
+  );
   const [housing, setHousing] = useState<Housing>(pendingProfile?.housing ?? '월세');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -48,7 +51,7 @@ export default function ProfileSetupScreen() {
       <Card>
         <Field label="닉네임" value={nickname} onChangeText={setNickname} placeholder="예: 집사" />
         {names.length > 0 ? (
-          <Select label="거주지역" value={region} options={names} onChange={setRegion} />
+          <RegionSelect regions={regions} value={region} onChange={setRegion} />
         ) : (
           <Txt variant="sub" color={C.danger}>
             서버에서 지역 목록을 불러오지 못했습니다.

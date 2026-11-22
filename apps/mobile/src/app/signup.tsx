@@ -1,12 +1,13 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 
+import { RegionSelect } from '@/components/region-select';
 import { Select } from '@/components/select';
 import { Button, Card, Field, Hero, Screen, Txt } from '@/components/ui';
 import { C } from '@/constants/theme';
 import { HOUSINGS, REGIONS } from '@/data/options';
 import { regionName } from '@/lib/adapters';
-import { getPublicRegions } from '@/lib/api';
+import { getPublicRegions, type Region } from '@/lib/api';
 import { useApp } from '@/store/app-store';
 import type { Housing } from '@/types';
 
@@ -21,14 +22,14 @@ export default function SignupScreen() {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   // 지역 목록은 공개 API(GET /regions)에서 받습니다. 실패하면 기본 시연 지역을 씁니다. (GAP-004)
-  const [regionOptions, setRegionOptions] = useState<string[]>(REGIONS);
+  const [regionList, setRegionList] = useState<Region[]>([]);
   const [region, setRegion] = useState(REGIONS[0]);
   useEffect(() => {
     getPublicRegions()
       .then((list) => {
+        if (list.length === 0) return;
+        setRegionList(list);
         const names = list.map(regionName);
-        if (names.length === 0) return;
-        setRegionOptions(names);
         setRegion((prev) => (names.includes(prev) ? prev : (names.find((n) => n.includes('용인')) ?? names[0])));
       })
       .catch(() => null);
@@ -81,7 +82,11 @@ export default function SignupScreen() {
       </Card>
 
       <Card>
-        <Select label="거주지역" value={region} options={regionOptions} onChange={setRegion} />
+        {regionList.length > 0 ? (
+          <RegionSelect regions={regionList} value={region} onChange={setRegion} />
+        ) : (
+          <Select label="거주지역" value={region} options={REGIONS} onChange={setRegion} />
+        )}
         <Select label="거주형태" value={housing} options={HOUSINGS} onChange={setHousing} />
         <Txt variant="caption" muted>
           업체 회원은 운영팀이 미리 등록한 계정으로 로그인해 주세요.

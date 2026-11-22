@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, Pencil, ScanSearch } from 'lucide-react-native'
 import { useEffect, useState } from 'react';
 import { Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
 
+import { RegionSelect } from '@/components/region-select';
 import { Select } from '@/components/select';
 import { AppBar, Banner, Button, Card, Hero, Screen, Txt } from '@/components/ui';
 import { C, F, R, STROKE } from '@/constants/theme';
@@ -147,10 +148,9 @@ export default function NewsScreen() {
         <Pressable style={s.backdrop} onPress={() => setEditing(false)}>
           <Pressable style={s.sheet} onPress={() => {}}>
             <Txt variant="h2">내 조건 수정</Txt>
-            <Select
-              label="거주지역"
+            <RegionSelect
+              regions={regions}
               value={user.region}
-              options={regions.map((r) => r.display_name)}
               onChange={(region) => {
                 void updateUser({ region });
                 setPage(0);
