@@ -26,8 +26,8 @@ export default function DmListScreen() {
   const [tab, setTab] = useState<Tab>(params.tab === 'quotes' ? 'quotes' : 'messages');
   const TABS: { key: Tab; label: string }[] = [
     { key: 'messages', label: '메시지' },
-    // 업체 회원에게는 같은 지역 유저들이 보낸 견적서가 오는 칸입니다. (Hyeok 결정)
-    { key: 'quotes', label: user?.role === '업체' ? '견적서' : '업체 제안서' },
+    // 업체 회원에게는 같은 지역 유저들이 보낸 견적 요청서가 오는 칸입니다. (Hyeok 결정)
+    { key: 'quotes', label: user?.role === '업체' ? '견적 요청서' : '업체 제안서' },
   ];
 
   return (
@@ -134,12 +134,12 @@ function Quotes() {
   return (
     <>
       <Hero
-        title={vendor ? '받은 견적서' : '받은 업체 제안서'}
-        subtitle={vendor ? '활동지역 유저들이 보낸 견적서예요. 확인하고 업체 제안서를 보내 보세요.' : '받은 업체 제안서를 비교해 보세요.'}
+        title={vendor ? '받은 견적 요청서' : '받은 업체 제안서'}
+        subtitle={vendor ? '활동지역 유저들이 보낸 견적 요청서예요. 확인하고 업체 제안서를 보내 보세요.' : '받은 업체 제안서를 비교해 보세요.'}
       />
       {vendor && list.length === 0 && (
         <Txt variant="sub" muted>
-          아직 받은 견적서가 없어요. 활동지역의 유저가 분석 결과에서 견적서를 보내면 여기에 도착해요.
+          아직 받은 견적 요청서가 없어요. 활동지역의 유저가 분석 결과에서 견적 요청서를 보내면 여기에 도착해요.
         </Txt>
       )}
       {!vendor && own.length === 0 && (
