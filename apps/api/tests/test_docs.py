@@ -68,6 +68,7 @@ def test_openapi_endpoints_have_descriptions_responses_and_params():
         ("/records", "get"): {"200", "401"},
         ("/me/profile", "get"): {"200", "401", "404"},
         ("/me/profile", "put"): {"200", "401", "422"},
+        ("/me/provider", "post"): {"200", "401", "422", "503"},
         ("/regions", "get"): {"200", "401"},
         ("/support-programs", "get"): {"200", "401", "404", "422"},
         ("/support-programs/{program_id}", "get"): {"200", "401", "404", "422"},

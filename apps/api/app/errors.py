@@ -160,3 +160,11 @@ def llm_quota_exceeded() -> ApiError:
         "llm_quota_exceeded",
         "AI 모델 사용 한도를 넘었습니다. 잠시 후 다시 시도하거나 운영자에게 모델·키 설정을 확인해 달라고 요청해 주세요.",
     )
+
+
+def provider_registration_unavailable() -> ApiError:
+    return ApiError(
+        503,
+        "provider_registration_unavailable",
+        "업체 가입을 아직 사용할 수 없습니다. 서버에 업체 등록 권한이 적용되지 않았습니다(마이그레이션 016).",
+    )

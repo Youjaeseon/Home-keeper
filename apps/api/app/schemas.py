@@ -575,6 +575,20 @@ class ProfileOut(BaseModel):
     )
 
 
+class ProviderRegistrationRequest(BaseModel):
+    """업체 회원 가입(업체 정보 등록) 요청."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80, description="업체명. 프로필 닉네임으로도 씁니다.")
+    phone: str = Field(min_length=7, max_length=30, description="업체 연락처.")
+    description: str | None = Field(default=None, max_length=500, description="업체 소개(선택).")
+    region_id: UUID = Field(description="활동(출장) 지역 UUID. 이 지역의 견적 요청서를 모두 받습니다.")
+    work_type_ids: list[UUID] = Field(
+        default_factory=list, max_length=10, description="가능한 작업 종류 UUID 목록(선택, 표시용)."
+    )
+
+
 class ProfileUpsertRequest(BaseModel):
     """프로필 최초 등록·수정 요청."""
 
