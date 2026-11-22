@@ -981,6 +981,26 @@ class ChatMessageCreateRequest(BaseModel):
         return value
 
 
+class ChatMessageUpdateRequest(BaseModel):
+    """채팅 메시지 수정 요청."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="수정할 메시지 본문. 공백만 입력할 수 없으며 최대 2000자입니다.",
+    )
+
+    @field_validator("content")
+    @classmethod
+    def content_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("메시지는 공백일 수 없어요.")
+        return value
+
+
 class ChatMessageOut(BaseModel):
     """저장된 채팅 메시지."""
 
