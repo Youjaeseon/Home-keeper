@@ -225,6 +225,10 @@ export type DiagnosisResult = {
   work_type_id: string | null;
   work_type_reason: string;
   source: 'llm' | 'sample';
+  /** 서버 기준표로 계산한 심각도 근거 (이전 기록에는 없음) */
+  severity_breakdown?: { label: string; points: number }[];
+  /** causes와 같은 순서의 사진 근거 한 줄 (이전 기록에는 없음) */
+  cause_evidence?: string[];
 };
 
 export type VisionObservation = {

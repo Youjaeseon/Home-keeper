@@ -161,6 +161,13 @@ export default function AnalyzeResultScreen() {
             </Txt>
           </View>
         </View>
+        {!!r.riskReasons?.length && (
+          <View style={s.reasons}>
+            {r.riskReasons.map((f) => (
+              <Chip key={f.label} label={f.points ? `${f.label} +${f.points}` : f.label} />
+            ))}
+          </View>
+        )}
         <RiskLegend />
         {!!r.recommendedAction && (
           <Txt variant="sub" color={C.text}>
@@ -177,7 +184,20 @@ export default function AnalyzeResultScreen() {
 
       <Card>
         <CardHeader icon={Search} title="원인" />
-        <Txt variant="body">{r.cause}</Txt>
+        {r.causeItems ? (
+          r.causeItems.map((c, i) => (
+            <View key={i} style={{ gap: 2 }}>
+              <Txt variant="body">{c.text}</Txt>
+              {!!c.evidence && (
+                <Txt variant="caption" muted>
+                  근거: {c.evidence}
+                </Txt>
+              )}
+            </View>
+          ))
+        ) : (
+          <Txt variant="body">{r.cause}</Txt>
+        )}
       </Card>
 
       <Card>
@@ -379,6 +399,7 @@ function QuoteRow({ label, value }: { label: string; value: string }) {
 }
 
 const s = StyleSheet.create({
+  reasons: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
   guide: { backgroundColor: C.accent, borderRadius: R.card, padding: 22, gap: 12 },
   guideIcon: {
     width: 34,
