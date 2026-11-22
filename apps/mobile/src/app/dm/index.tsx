@@ -154,7 +154,7 @@ function Quotes() {
       const text = [
         `[업체 제안서 수락] ${p.vendorName}님의 제안서를 수락했어요.`,
         '',
-        '[견적서]',
+        '[견적 요청서]',
         `하자: ${e.defect}`,
         `장소·위치: ${[e.location, e.position].filter(Boolean).join(' · ')}`,
         `AI 심각도: ${e.risk}%`,
