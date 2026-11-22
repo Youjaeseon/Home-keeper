@@ -82,6 +82,8 @@ export type ProviderSummary = {
   review_count: number;
   description: string | null;
   specialty_work_types: WorkType[];
+  /** 업체 출장 지역 표시명. 업체 제안서에서 채웁니다. (GAP-017) */
+  region_names?: string[];
   chat_available: boolean;
   is_sample: boolean;
 };
@@ -132,6 +134,8 @@ export type QuoteRequestSummary = {
   region_name: string;
   work_type_id: string;
   work_type_name: string;
+  /** 요청인 닉네임 (GAP-016) */
+  requester_nickname?: string | null;
   address: string | null;
   location: string;
   material: string | null;
@@ -409,6 +413,15 @@ export function saveMyProfile(input: ProfileInput): Promise<Profile> {
 
 export function getRegions(): Promise<Region[]> {
   return apiRequest<Region[]>('/regions');
+}
+
+/** 로그인 전(가입 화면)에도 부를 수 있는 공개 지역 목록. (GAP-004) */
+export async function getPublicRegions(): Promise<Region[]> {
+  const response = await fetch(`${apiBaseUrl}/regions`);
+  if (!response.ok) {
+    await parseError(response);
+  }
+  return (await response.json()) as Region[];
 }
 
 export function getRecord(recordId: string): Promise<RecordDetail> {

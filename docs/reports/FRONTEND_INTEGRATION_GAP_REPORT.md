@@ -59,7 +59,20 @@
 | 업체·채팅 | 정상(샘플 업체 안내창 표시) | - |
 | 내 정보 | `/profile` 주소로 바로 새로고침하면 분석 기록이 안 보임(탭 이동 시 정상) | 미해결, 웹 전용 |
 
-남은 항목(백엔드 수정 필요, Hyeok 동의 전 미착수): GAP-002 CORS(웹 데모는 로컬 프록시로 대체), GAP-004 `/regions` 공개·지역 시드, GAP-011 동의 생략 기본값 `false`, GAP-014 수락 취소, GAP-015 삭제 API, GAP-016 요청인 닉네임, GAP-017 업체 지역.
+### 백엔드 항목 반영 (Hyeok 동의, `apps/api` 수정, 스키마 변경 없음)
+
+| GAP | 반영 | 위치 |
+|---|---|---|
+| GAP-002 | `CORSMiddleware` 추가. 허용 주소는 `CORS_ALLOW_ORIGINS`(쉼표 구분), 기본값은 로컬 Expo Web 주소 | `apps/api/app/main.py` |
+| GAP-004 | `GET /regions` 인증 없이 조회, 가입 화면이 서버 지역 목록을 씀 | `profile.py`, `app/signup.tsx`, `lib/api.ts` `getPublicRegions` |
+| GAP-011 | `external_analysis_consent` 생략 시 `false` | `records.py`, `docs/design/API_DESIGN.md`, `docs/guides/API_USAGE.md` |
+| GAP-016 | 견적 요청서에 `requester_nickname` | `quotes.py`, `schemas.py`, `store/app-store.tsx` |
+| GAP-017 | 업체 제안서의 업체 정보에 `region_names` | `quotes.py`, `schemas.py`, `store/app-store.tsx` |
+| GAP-014 | 보류: 팀 결정 필요. 수락 취소는 `docs/adr/0003`(수락 1건 확정, 나머지 자동 종료)과 충돌 | 앱은 `수락됨` 표시만 |
+| GAP-015 | 보류: 팀 결정 필요. 기록 삭제는 런타임 역할에 `records` DELETE 권한이 없어 공유 DB 마이그레이션이 필요 | 앱은 화면에서만 숨김 |
+
+백엔드 테스트는 단언을 추가·수정했지만 테스트 DB가 없어 실행하지 않았습니다(`test_auth.py`, `test_profile.py`, `test_analyze.py`, `test_quotes.py`, 신규 `test_cors.py`).
+
 
 ## 1. 연동 현황 대시보드
 

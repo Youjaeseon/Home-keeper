@@ -314,8 +314,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         id: q.request_id,
         // 요청인 목록은 모두 내 요청서, 업체 목록은 모두 다른 사람 요청서입니다.
         userId: isProvider ? `requester:${q.request_id}` : me,
-        // TODO(integration-gap): GAP-016 업체에게 요청인 닉네임을 주지 않아 지역만 표시합니다.
-        userNickname: isProvider ? '요청인' : (user?.nickname ?? ''),
+        userNickname: isProvider ? (q.requester_nickname ?? '요청인') : (user?.nickname ?? ''),
         region: q.region_name,
         analysisId: q.record_id,
         photoUri: q.photos[0]?.url ?? '',
@@ -337,8 +336,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           vendorId: isProvider ? me : p.provider.provider_id,
           vendorName: p.provider.name,
           vendorIntro: p.provider.description ?? '',
-          // TODO(integration-gap): GAP-017 업체 제안서 응답에 업체 지역이 없습니다.
-          vendorRegion: '',
+          vendorRegion: (p.provider.region_names ?? []).join(', '),
           price: p.min_price,
           priceMax: p.max_price,
           memo: p.memo,

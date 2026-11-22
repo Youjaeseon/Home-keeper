@@ -41,7 +41,7 @@ function normalizeRegion(label: string) {
     .join('');
 }
 
-// TODO(integration-gap): GAP-004 가입 화면은 로그인 전이라 GET /regions(인증 필요)를 부를 수 없어 팀원 하드코딩 지역 목록을 씁니다.
+// 가입 화면의 지역 라벨과 서버 지역(GET /regions, 공개)을 맞춰 region_id를 찾습니다. (GAP-004)
 export function matchRegion(label: string, regions: Region[]): Region | null {
   const key = normalizeRegion(label);
   return regions.find((r) => normalizeRegion(r.display_name) === key) ?? null;

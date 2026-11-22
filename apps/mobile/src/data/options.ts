@@ -1,7 +1,6 @@
 import type { Housing } from '@/types';
 
-// 로그인 전 가입 화면 전용 목록입니다(GET /regions는 인증 필요). 서버 시드의 시연 지역 용인만 둡니다. (GAP-004)
-// 로그인 후에는 GET /regions 결과를 씁니다. 지역 시드가 늘면 여기에도 추가하세요.
+// 가입 화면은 공개 GET /regions 목록을 쓰고, 이 값은 서버에 닿지 못할 때의 기본값입니다. (GAP-004)
 export const REGIONS = ['경기 용인'];
 
 export const HOUSINGS: Housing[] = ['월세', '전세', '반전세', '자가', '기타'];
