@@ -6,6 +6,29 @@
 - 원칙: `apps/api/` 무수정, 기존 문서 무수정, 백엔드에 없는 값은 지어내지 않고 `TODO(integration-gap): GAP-XXX`로 표시
 - 경로 표기: 앱 코드는 `apps/mobile/src/` 기준 상대 경로, 백엔드는 `apps/api/app/` 기준
 
+## 0. 반영 현황 (`feat/hyeok-mobile-fixes`, 2026-11-22)
+
+프론트만 고치면 되는 항목을 먼저 반영했습니다. `apps/api`는 수정하지 않았습니다.
+
+| GAP | 반영 내용 | 위치 |
+|---|---|---|
+| (신규) 사진 업로드 | Expo SDK 58 `expo/fetch`가 `{ uri, name, type }`를 거부("Unsupported FormDataPart implementation")해 네이티브는 `expo-file-system` `File`, 웹은 `Blob`으로 첨부 | `lib/api.ts` `analyzeRecord` |
+| GAP-006, GAP-013 | 장소·위치·재질에서 `기타`를 고르면 직접 입력 | `app/(tabs)/analyze/detail.tsx` |
+| GAP-007 | 하자 유형을 `균열`·`벗겨짐`·`곰팡이`·`판단 보류`로 정리, 알 수 없는 유형은 판단 보류 | `types.ts`, `services/analyze.ts` |
+| GAP-008 | `confidence` 필드와 신뢰도 표시 제거 | `types.ts`, `analyze/result.tsx` |
+| GAP-009 | 선택 근접 사진을 `closeup` 역할로 함께 전송 | `analyze/detail.tsx`, `services/analyze.ts` |
+| GAP-011 | 분석 요청마다 외부 AI 사진 전송 동의 체크(기본값은 가입 시 동의 여부). 가입 화면의 필수 동의는 유지 | `analyze/detail.tsx` |
+| GAP-014 | 수락 취소 버튼 제거, 수락된 제안서는 `수락됨` 표시만 | `app/dm/index.tsx`, `store/app-store.tsx` |
+| GAP-021 | 분석 결과의 업체 영역에서 견적 요청문 생성(모델 실패 시 기본 양식)·공유/복사 | `analyze/result.tsx` |
+| GAP-024 | `useRef(...).current`를 `useState` 초기화로 바꿔 린트 오류 0건 | `app/dm/index.tsx` |
+| GAP-025 | AI 관찰 요약·사진별 비전 관찰, 준비물, 확인하지 못한 정보, 권장 대응 표시 | `services/analyze.ts`, `analyze/result.tsx` |
+| GAP-029 | `진단 다시 만들기` 버튼(`?regenerate=true`) | `analyze/result.tsx` |
+| GAP-030 | 소식지 공고를 펼치면 상세(지원 대상·내용·선정 기준·신청 방법·마감·출처) 표시 | `app/(tabs)/news.tsx` |
+
+남은 항목: 팀 결정 필요(GAP-001, 003, 004, 012, 016, 019, 020, 023, 031, 위험도 구간), 백엔드 수정 필요(GAP-002, 004, 011 기본값, 014, 015, 016, 017).
+
+참고: `react-native-web`의 `Alert.alert`는 브라우저에서 아무것도 띄우지 않아, 웹에서는 앱의 오류·확인 알림이 보이지 않습니다(신규 관찰).
+
 ## 1. 연동 현황 대시보드
 
 ### 1.1 화면·기능별 연동 상태
@@ -200,5 +223,5 @@
 
 - `git diff 436d690 -- apps/api`: 변경 0줄
 - `npm run typecheck --workspace @career-pair/mobile`: 통과
-- `npx expo lint` (apps/mobile): 오류 4건, 모두 팀원 원본 `app/dm/index.tsx:233` (GAP-024)
+- `npx expo lint` (apps/mobile): 오류 4건, 모두 팀원 원본 `app/dm/index.tsx:233` (GAP-024). `feat/hyeok-mobile-fixes`에서 0건으로 수정
 - 실제 기기·시뮬레이터 실행과 백엔드 연결 테스트는 하지 않았습니다(Supabase·API 환경 없음). 시연 전 실기기 확인이 필요합니다.
