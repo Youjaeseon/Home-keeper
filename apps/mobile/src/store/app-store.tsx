@@ -571,7 +571,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await refreshThreads().catch(() => null);
         return { roomId: room.room_id };
       } catch (e) {
-        if (e instanceof ApiError && e.status === 409) return { error: '이 업체는 아직 앱 채팅을 지원하지 않아요. 전화로 문의해 주세요.' };
+        // 샘플 업체는 404, 계정이 연결되지 않은 업체는 422입니다.
+        if (e instanceof ApiError && (e.status === 404 || e.status === 422))
+          return { error: '이 업체는 아직 앱 채팅을 지원하지 않아요. 전화로 문의해 주세요.' };
         return { error: messageOf(e) };
       }
     },
