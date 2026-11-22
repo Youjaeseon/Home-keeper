@@ -72,6 +72,13 @@ export function toAnalysisResult(
     workTypeId: d.work_type_id,
     estimationNotice: d.estimation_notice,
     source: d.source,
+    observations: [
+      d.observations,
+      ...(detail.photo_observations?.photos ?? []).map((p) => p.vision_observation?.summary ?? ''),
+    ].filter(Boolean),
+    supplies: d.supplies,
+    unknowns: d.unknowns,
+    recommendedAction: d.recommended_action,
   };
 }
 

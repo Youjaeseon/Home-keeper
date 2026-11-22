@@ -5,6 +5,9 @@ import {
   Camera,
   ChevronRight,
   CircleCheck,
+  CircleHelp,
+  Eye,
+  Package,
   FileText,
   House,
   MessageCircle,
@@ -21,9 +24,16 @@ import { DefectPhoto } from '@/components/defect-photo';
 import { RiskLegend, RiskPhotoRing } from '@/components/risk-gauge';
 import { Banner, Button, Card, CardHeader, Chip, Field, Notice, Screen, Txt } from '@/components/ui';
 import { C, R, riskColor, riskLabel, STROKE } from '@/constants/theme';
+import { messageOf, regenerateDiagnosis } from '@/lib/api';
 import { fetchVendors } from '@/services/vendors';
 import type { Vendor } from '@/types';
 import { useApp } from '@/store/app-store';
+
+const ACTION_LABEL = {
+  self_care: '직접 관리',
+  inspection: '점검 받기',
+  provider_consult: '업체 상담',
+} as const;
 
 /** 스케치 7: 분석 결과 — 손상 위치 원, 위험도, 원인, 해결방안, 재발방지, 업체 A~D */
 export default function AnalyzeResultScreen() {
@@ -34,6 +44,7 @@ export default function AnalyzeResultScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [vendorList, setVendorList] = useState<{ vendors: Vendor[]; isSample: boolean }>({ vendors: [], isSample: false });
   const [sending, setSending] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const r = analyses.find((a) => a.id === analysisId);
   const workTypeId = r?.workTypeId;
 
@@ -70,6 +81,23 @@ export default function AnalyzeResultScreen() {
     );
   }
 
+  // 같은 입력으로 진단을 다시 만듭니다(POST /records/{id}/diagnosis?regenerate=true). (GAP-029)
+  const onRegenerate = async () => {
+    setRegenerating(true);
+    try {
+      await regenerateDiagnosis(r.id, true);
+      const err = await loadAnalysis(r.id);
+      if (err) Alert.alert('새 진단을 불러오지 못했습니다', err);
+    } catch (e) {
+      Alert.alert('진단을 다시 만들지 못했습니다', messageOf(e));
+    } finally {
+      setRegenerating(false);
+    }
+  };
+  const regenerateButton = (
+    <Button title="진단 다시 만들기" icon={RefreshCcw} variant="soft" onPress={onRegenerate} loading={regenerating} />
+  );
+
   if (r.needsRetake) {
     return (
       <Screen>
@@ -85,6 +113,7 @@ export default function AnalyzeResultScreen() {
           <Txt variant="body">{r.guide.body}</Txt>
         </Card>
         <Button title="다시 촬영하기" icon={Camera} onPress={() => router.replace('/analyze')} />
+        {regenerateButton}
       </Screen>
     );
   }
@@ -129,17 +158,45 @@ export default function AnalyzeResultScreen() {
           </View>
         </View>
         <RiskLegend />
+        {!!r.recommendedAction && (
+          <Txt variant="sub" color={C.text}>
+            권장 대응: {ACTION_LABEL[r.recommendedAction]}
+          </Txt>
+        )}
         {!!r.estimationNotice && (
           <Txt variant="caption" muted style={{ textAlign: 'center' }}>
             {r.estimationNotice}
           </Txt>
         )}
+        {regenerateButton}
       </Card>
+
+      {!!r.observations?.length && (
+        <Card>
+          <CardHeader icon={Eye} title="AI가 사진에서 본 것" />
+          {r.observations.map((t, i) => (
+            <Txt key={i} variant="body">
+              {t}
+            </Txt>
+          ))}
+        </Card>
+      )}
 
       <Card>
         <CardHeader icon={Search} title="원인" />
         <Txt variant="body">{r.cause}</Txt>
       </Card>
+
+      {!!r.unknowns?.length && (
+        <Card>
+          <CardHeader icon={CircleHelp} title="확인하지 못한 정보" />
+          {r.unknowns.map((t, i) => (
+            <Txt key={i} variant="body">
+              · {t}
+            </Txt>
+          ))}
+        </Card>
+      )}
 
       <Card>
         <CardHeader icon={Wrench} title="해결 방안" />
@@ -156,6 +213,17 @@ export default function AnalyzeResultScreen() {
           </View>
         ))}
       </Card>
+
+      {!!r.supplies?.length && (
+        <Card>
+          <CardHeader icon={Package} title="준비물" />
+          <View style={s.chips}>
+            {r.supplies.map((t) => (
+              <Chip key={t} label={t} />
+            ))}
+          </View>
+        </Card>
+      )}
 
       <Card>
         <CardHeader icon={ShieldCheck} title="재발 방지" />
