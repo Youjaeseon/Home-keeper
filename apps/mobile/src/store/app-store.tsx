@@ -12,6 +12,7 @@ import { DEMO_ESTIMATES, DEMO_MESSAGES, DEMO_PROPOSALS, DEMO_VENDORS, demoAutoRe
 import { matchRegion, toApiHousing, toUser } from '@/lib/adapters';
 import {
   acceptQuoteProposal,
+  registerProvider,
   cancelQuoteAcceptance,
   ApiError,
   cancelQuoteRequest,
@@ -455,10 +456,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ],
     hidden: hiddenKeys.filter((k) => k.startsWith(`${me}:`)).map((k) => k.slice(me.length + 1)),
     async signup(account) {
-      if (account.role === '업체') {
-        // TODO(integration-gap): GAP-003 백엔드는 가입 시 역할을 항상 requester로 정하므로 앱에서 업체 계정을 만들 수 없습니다.
-        return '업체 계정은 운영팀이 사전 등록한 계정으로만 로그인할 수 있어요. 유저로 가입해 주세요.';
-      }
       const { data, error } = await supabase.auth.signUp({ email: account.loginId, password: account.password });
       if (error) return authError(error.message);
       if (!data.session) return '가입 확인 메일을 보냈어요. 이메일 인증을 마친 뒤 로그인해 주세요.';
@@ -466,6 +463,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (err) return err;
       const regionList = await getRegions().catch(() => [] as Region[]);
       const region = matchRegion(account.region, regionList);
+      // 업체 가입: 업체 정보와 활동 지역을 등록하고 업체 회원으로 시작합니다. (GAP-003, Hyeok 결정)
+      if (account.role === '업체') {
+        if (!region) return '활동 지역을 다시 골라 주세요.';
+        try {
+          const profile = await registerProvider({
+            name: account.nickname,
+            phone: account.phone ?? '',
+            description: account.intro || null,
+            region_id: region.region_id,
+          });
+          const nextUser = toUser(profile, data.session.user.email ?? account.loginId, regionList);
+          nextUser.intro = account.intro;
+          setUser(nextUser);
+          setNeedsProfile(false);
+          return null;
+        } catch (e) {
+          // 업체 등록에 실패하면 일반 회원으로 바뀌지 않도록 로그아웃하고 이유를 보여 줍니다.
+          await supabase.auth.signOut();
+          return `업체 등록에 실패했어요: ${messageOf(e)}`;
+        }
+      }
       if (!region) {
         setPendingProfile({
           nickname: account.nickname,

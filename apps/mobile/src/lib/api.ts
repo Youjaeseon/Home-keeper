@@ -422,6 +422,17 @@ export function getRegions(): Promise<Region[]> {
   return apiRequest<Region[]>('/regions');
 }
 
+/** 업체 회원 등록: 업체 정보·활동 지역을 만들고 역할을 provider로 정합니다. (GAP-003, Hyeok 결정) */
+export function registerProvider(input: {
+  name: string;
+  phone: string;
+  description?: string | null;
+  region_id: string;
+  work_type_ids?: string[];
+}): Promise<Profile> {
+  return apiRequest<Profile>('/me/provider', { method: 'POST', body: JSON.stringify(input) });
+}
+
 /** 로그인 전(가입 화면)에도 부를 수 있는 공개 지역 목록. (GAP-004) */
 export async function getPublicRegions(): Promise<Region[]> {
   const response = await fetch(`${apiBaseUrl}/regions`);

@@ -49,7 +49,13 @@
 ### 견적 요청서 전달 규칙 변경 (Hyeok 요청)
 
 - 같은 지역(출장 지역)의 업체 계정이면 특화 분야와 관계없이 모든 진행 중 견적 요청서를 받습니다. 목록·상세·제안서 제출 조건에서 작업 종류 일치를 뺐습니다(`apps/api/app/quotes.py`). `docs/adr/0003`의 "지역·특화 분야 기반 1:N" 규칙과 달라져 팀 공유가 필요합니다.
-- 새 한국 DB에는 업체 계정이 0개라 실제로 받을 업체가 없습니다. 업체 계정 방식은 결정 대기: (A) 가입 화면에서 업체 선택(공유 DB 권한 변경 필요, `docs/drafts/provider-accounts-A-signup-grants.sql`), (B) 시연용 업체 로그인을 미리 만들고 연결(`docs/drafts/provider-accounts-B-link-demo-vendors.sql`). 두 파일 모두 초안이며 실행하지 않았습니다.
+- 새 한국 DB에는 업체 계정이 0개라 실제로 받을 업체가 없습니다. 업체 계정은 가입 화면의 업체 선택(A)으로 결정했습니다(아래 '업체 회원 가입' 참고). 시연용 계정 연결 초안 `docs/drafts/provider-accounts-B-link-demo-vendors.sql`도 남겨 두었습니다(미실행).
+
+### 업체 회원 가입 (GAP-003 결정 변경, Hyeok)
+
+- 가입 화면에 회원 유형(유저/업체)을 되살렸습니다. 업체는 업체명·연락처·소개·활동지역을 입력하고 `POST /me/provider`로 업체 정보(providers)와 활동 지역이 등록되며 프로필 역할이 `provider`가 됩니다.
+- 업체 회원의 채팅 두 번째 칸 이름은 `견적서`이며, 활동지역 유저들이 보낸 견적 요청서를 모두 받아 업체 제안서를 보냅니다(일반 유저는 `업체 제안서`).
+- 공유 DB에 `apps/api/migrations/016_provider_self_registration.sql`(런타임 역할에 providers INSERT/UPDATE, provider_regions·provider_work_types INSERT/DELETE 권한)을 관리자 연결로 적용해야 동작합니다. 적용 전에는 업체 가입 시 `503 provider_registration_unavailable` 안내가 나옵니다. 팀 동의가 필요합니다.
 
 ### 웹 데모 실화면 점검 (2026-11-22, 390×844)
 

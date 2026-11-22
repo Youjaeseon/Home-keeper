@@ -31,6 +31,8 @@ export type Account = {
   region: string;
   housing: Housing;
   intro?: string;
+  /** 업체 가입 시 연락처 */
+  phone?: string;
 };
 
 export type Photo = { id: string; uri: string; createdAt: number };
