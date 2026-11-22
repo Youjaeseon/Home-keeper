@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import jwt
+import pytest
 
 from conftest import auth_headers
 
@@ -30,12 +31,24 @@ def test_unsigned_token_is_rejected(client, user_factory):
     assert response.status_code == 401
 
 
-def test_expired_token_is_rejected(client, user_factory, token_for):
+@pytest.mark.parametrize("expires_in", [-31, -60])
+def test_expired_token_is_rejected(client, user_factory, token_for, expires_in):
     user_id = user_factory()
     response = client.post(
-        "/records", headers=auth_headers(token_for(user_id, expires_in=-60))
+        "/records", headers=auth_headers(token_for(user_id, expires_in=expires_in))
     )
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize("issued_in, status", [(4, 200), (29, 200), (60, 401)])
+def test_token_issue_time_allows_small_clock_skew(
+    client, user_factory, token_for, issued_in, status
+):
+    user_id = user_factory()
+    response = client.get(
+        "/regions", headers=auth_headers(token_for(user_id, issued_in=issued_in))
+    )
+    assert response.status_code == status
 
 
 def test_wrong_signature_is_rejected(client, user_factory, token_for):
