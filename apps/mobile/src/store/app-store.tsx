@@ -101,8 +101,6 @@ type Store = {
   /** 수락한 제안서: 견적서 id → 제안서 id (서버 accepted_proposal_id) */
   accepted: Record<string, string>;
   acceptProposal: (estimateId: string, proposalId: string) => Promise<string | null>;
-  /** 수락 취소: 백엔드 미지원 */
-  cancelAccept: (estimateId: string) => string;
 };
 
 const AppContext = createContext<Store | null>(null);
@@ -623,10 +621,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (e instanceof ApiError && e.code === 'request_not_open') return '이미 마감되었거나 취소된 견적서예요.';
         return messageOf(e);
       }
-    },
-    cancelAccept() {
-      // TODO(integration-gap): GAP-014 백엔드에 수락 취소 API가 없습니다. 수락은 되돌릴 수 없습니다.
-      return '수락 취소는 아직 지원되지 않아요. 업체와 채팅으로 조율해 주세요.';
     },
     removeAnalysis(id) {
       // TODO(integration-gap): GAP-015 기록 삭제 API가 없어 내 화면에서만 숨깁니다.

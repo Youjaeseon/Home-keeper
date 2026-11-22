@@ -110,7 +110,6 @@ function Quotes() {
     removeProposal,
     accepted,
     acceptProposal,
-    cancelAccept,
   } = useApp();
   useEffect(() => {
     void refreshQuotes().catch(() => null);
@@ -163,7 +162,6 @@ function Quotes() {
                     onDelete={() => removeProposal(p.id)}
                     accept={!accepted[e.id] ? 'open' : accepted[e.id] === p.id ? 'accepted' : 'closed'}
                     onAccept={() => void acceptProposal(e.id, p.id).then(alertIf)}
-                    onCancelAccept={() => alertIf(cancelAccept(e.id))}
                   />
                 ))}
               </>
@@ -216,7 +214,6 @@ function ProposalBox({
   onDelete,
   accept,
   onAccept,
-  onCancelAccept,
 }: {
   p: Proposal;
   title?: string;
@@ -225,7 +222,6 @@ function ProposalBox({
   /** 유저가 받은 제안서일 때: 수락 전 / 이 제안서를 수락함 / 다른 제안서를 수락해서 마감됨 */
   accept?: AcceptState;
   onAccept?: () => void;
-  onCancelAccept?: () => void;
 }) {
   const [asking, setAsking] = useState(false);
   const closed = accept === 'closed';
@@ -309,16 +305,12 @@ function ProposalBox({
                 </Txt>
               </Pressable>
             ) : accept === 'accepted' ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${p.vendorName} 수락 취소`}
-                hitSlop={6}
-                onPress={onCancelAccept}
-                style={[s.pill, { backgroundColor: C.danger }]}>
+              // 수락은 최종이라 취소할 수 없습니다(adr/0003, GAP-014). 상태만 표시합니다.
+              <View accessibilityLabel={`${p.vendorName} 제안 수락됨`} style={[s.pill, s.pillGreen]}>
                 <Txt variant="label" color={C.onPrimary} style={{ fontFamily: F.bold }}>
-                  수락 취소
+                  수락됨
                 </Txt>
-              </Pressable>
+              </View>
             ) : (
               <View />
             )}
