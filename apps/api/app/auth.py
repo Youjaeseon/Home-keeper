@@ -61,6 +61,8 @@ class TokenVerifier:
                 algorithms=[algorithm],
                 audience=self._audience,
                 issuer=self._issuer,
+                # Allow small clock differences between Supabase and the API server.
+                leeway=30,
                 options={"require": ["exp", "iat", "sub", "aud", "iss"]},
             )
             return UUID(str(claims["sub"]))

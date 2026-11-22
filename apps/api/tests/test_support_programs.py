@@ -49,6 +49,7 @@ def _insert_program(
     deadline_date=None,
     deadline_text=None,
     housing_types=(),
+    categories=("other",),
     region_scope="local",
     external_id=None,
     source="gov24_api",
@@ -59,12 +60,13 @@ def _insert_program(
         """
         INSERT INTO support_programs (
             external_id, source, title, summary, organization_name,
-            region_scope, region_id, target_housing_types, support_target,
-            support_content, selection_criteria, apply_method, deadline_text,
-            deadline_date, deadline_kind, detail_url, source_attribution
+            region_scope, region_id, target_housing_types, categories,
+            support_target, support_content, selection_criteria, apply_method,
+            deadline_text, deadline_date, deadline_kind, detail_url,
+            source_attribution
         )
         VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s,
             'https://example.com/support-program', '검증용 출처'
         )
         RETURNING id
@@ -78,6 +80,7 @@ def _insert_program(
             region_scope,
             region_id,
             list(housing_types),
+            list(categories),
             "테스트 지원 대상",
             "테스트 지원 내용",
             deadline_text,
@@ -199,6 +202,15 @@ def test_support_programs_list_local_parent_national_and_excludes_other_regions(
         by_id[seed_ids["seed:gov24-youth-monthly-rent-2026"]]["region_name"]
         == "전국"
     )
+    assert by_id[seed_ids["seed:gov24-youth-monthly-rent-2026"]]["categories"] == [
+        "monthly_rent_support"
+    ]
+    assert by_id[seed_ids["seed:gyeonggi-independent-youth-housing-2026"]][
+        "categories"
+    ] == ["deposit_loan"]
+    assert by_id[seed_ids["seed:yongin-youth-brokerage-fee-2026"]]["categories"] == [
+        "brokerage_fee"
+    ]
 
     duplicate_api_id = str(
         _insert_program(
@@ -469,3 +481,128 @@ def test_support_programs_active_filter_total_counts_only_visible(
     ).json()
     assert all_items["total"] == 2
     assert [item["id"] for item in all_items["items"]] == [active, closed]
+
+
+def test_support_programs_category_filter_counts_only_matching(
+    client, admin, user_factory, token_for, empty_support_programs
+):
+    region_id = _create_region(
+        admin, f"category-{uuid4().hex[:8]}", f"분류지역-{uuid4().hex[:6]}"
+    )
+    token = token_for(user_factory())
+    _profile(client, token, region_id)
+    monthly = str(
+        _insert_program(
+            admin,
+            region_id=region_id,
+            title="월세 지원",
+            deadline_kind="unknown",
+            categories=("monthly_rent_support", "housing_cost"),
+        )
+    )
+    _insert_program(
+        admin,
+        region_id=region_id,
+        title="보증금 지원",
+        deadline_kind="unknown",
+        categories=("deposit_loan",),
+    )
+
+    body = client.get(
+        "/support-programs?category=monthly_rent_support",
+        headers=auth_headers(token),
+    ).json()
+    assert body["total"] == 1
+    assert body["has_more"] is False
+    assert [item["id"] for item in body["items"]] == [monthly]
+    assert body["items"][0]["categories"] == [
+        "monthly_rent_support",
+        "housing_cost",
+    ]
+
+    empty = client.get(
+        "/support-programs?category=supply", headers=auth_headers(token)
+    ).json()
+    assert empty["total"] == 0
+    assert empty["items"] == []
+
+    assert (
+        client.get(
+            "/support-programs?category=unknown", headers=auth_headers(token)
+        ).status_code
+        == 422
+    )
+
+
+def test_support_programs_region_filters(
+    client, admin, user_factory, token_for, empty_support_programs
+):
+    province = _create_region(
+        admin, f"province-{uuid4().hex[:8]}", f"시험도-{uuid4().hex[:6]}"
+    )
+    city = _create_region(
+        admin,
+        f"city-{uuid4().hex[:8]}",
+        f"시험도 시험시-{uuid4().hex[:6]}",
+        parent_id=province,
+    )
+    other = _create_region(
+        admin, f"other-{uuid4().hex[:8]}", f"다른도-{uuid4().hex[:6]}"
+    )
+    token = token_for(user_factory())
+    _profile(client, token, city)
+
+    national = str(
+        _insert_program(
+            admin,
+            region_id=None,
+            region_scope="national",
+            title="A 전국 공고",
+            deadline_kind="unknown",
+        )
+    )
+    province_program = str(
+        _insert_program(
+            admin,
+            region_id=province,
+            title="B 광역 공고",
+            deadline_kind="unknown",
+        )
+    )
+    city_program = str(
+        _insert_program(
+            admin,
+            region_id=city,
+            title="C 기초 공고",
+            deadline_kind="unknown",
+        )
+    )
+    other_program = str(
+        _insert_program(
+            admin,
+            region_id=other,
+            title="D 다른 지역 공고",
+            deadline_kind="unknown",
+        )
+    )
+
+    def ids(query: str):
+        body = client.get(
+            f"/support-programs?limit=50&{query}", headers=auth_headers(token)
+        ).json()
+        assert body["has_more"] is False
+        return body["total"], {item["id"] for item in body["items"]}
+
+    assert ids("region_scope=national") == (1, {national})
+    assert ids("region_scope=local") == (2, {province_program, city_program})
+    assert ids(f"region_id={province}") == (1, {province_program})
+    assert ids(f"region_id={city}") == (1, {city_program})
+    assert ids(f"region_id={other}") == (0, set())
+    assert other_program not in ids("")[1]
+
+    assert (
+        client.get(
+            "/support-programs?region_id=not-a-uuid", headers=auth_headers(token)
+        ).status_code
+        == 422
+    )

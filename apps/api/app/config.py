@@ -15,12 +15,14 @@ class Settings:
     llm_model: str
     llm_timeout_seconds: float
     vision_llm_model: str | None = None
+    llm_reasoning_effort: str | None = None
     yolo_model_path: str | None = None
     model_api_key: str | None = None
     sam_timeout_seconds: float = 30
     supabase_storage_bucket: str = "defect-photos"
     supabase_storage_key: str | None = None
     storage_signed_url_ttl_seconds: int = 300
+    cors_origins: tuple[str, ...] = ()
 
 
 def _required(name: str) -> str:
@@ -44,6 +46,8 @@ def get_settings() -> Settings:
         llm_model=os.environ.get("LLM_MODEL", "gpt-4o-mini"),
         llm_timeout_seconds=float(os.environ.get("LLM_TIMEOUT_SECONDS", "20")),
         vision_llm_model=os.environ.get("VISION_LLM_MODEL") or None,
+        # Optional reasoning_effort for "thinking" models (e.g. none/low). Unset keeps the provider default.
+        llm_reasoning_effort=os.environ.get("LLM_REASONING_EFFORT") or None,
         yolo_model_path=os.environ.get("YOLO_MODEL_PATH") or None,
         model_api_key=os.environ.get("MODEL_API_KEY") or None,
         sam_timeout_seconds=float(os.environ.get("SAM_TIMEOUT_SECONDS", "30")),
@@ -55,5 +59,10 @@ def get_settings() -> Settings:
         ),
         storage_signed_url_ttl_seconds=int(
             os.environ.get("STORAGE_SIGNED_URL_TTL_SECONDS", "300")
+        ),
+        cors_origins=tuple(
+            origin.strip()
+            for origin in os.environ.get("CORS_ORIGINS", "").split(",")
+            if origin.strip()
         ),
     )

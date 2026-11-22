@@ -85,6 +85,7 @@ def token_for():
         audience="authenticated",
         issuer=ISSUER,
         expires_in=300,
+        issued_in=0,
     ) -> str:
         now = datetime.now(timezone.utc)
         return jwt.encode(
@@ -92,7 +93,7 @@ def token_for():
                 "sub": str(user_id),
                 "aud": audience,
                 "iss": issuer,
-                "iat": now,
+                "iat": now + timedelta(seconds=issued_in),
                 "exp": now + timedelta(seconds=expires_in),
                 "role": "authenticated",
             },

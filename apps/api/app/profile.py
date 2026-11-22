@@ -1,12 +1,13 @@
 from typing import Annotated
 from uuid import UUID
 
+import psycopg
 from fastapi import APIRouter, Body, Depends
 
 from app.auth import get_current_user
 from app.db import read_transaction, transaction
-from app.errors import invalid_request, not_found
-from app.schemas import ErrorResponse, ProfileOut, ProfileUpsertRequest, RegionOut
+from app.errors import invalid_request, not_found, provider_registration_unavailable
+from app.schemas import ErrorResponse, ProfileOut, ProfileUpsertRequest, ProviderRegistrationRequest, RegionOut
 
 
 def _error_response(
@@ -172,18 +173,105 @@ def upsert_my_profile(
     }
 
 
+@router.post(
+    "/me/provider",
+    response_model=ProfileOut,
+    summary="업체 회원 등록",
+    description=(
+        "로그인한 사용자를 업체 회원으로 등록합니다. 업체 정보(providers)와 활동 지역을 만들고 프로필 역할을 `provider`로 정합니다.\n\n"
+        "- 같은 사용자로 다시 호출하면 업체명·연락처·소개·지역을 갱신합니다.\n"
+        "- 업체 회원은 활동 지역의 진행 중 견적 요청서를 모두 받고 업체 제안서를 보낼 수 있습니다.\n"
+        "- 서버에 업체 등록 권한(마이그레이션 016)이 적용되지 않았으면 `503`(`provider_registration_unavailable`)입니다."
+    ),
+    response_description="업체 회원으로 저장된 본인 프로필",
+    responses={422: _VALIDATION_ERROR_RESPONSE, 503: {"model": ErrorResponse, "description": "업체 등록 권한 미적용"}},
+)
+def register_provider(
+    body: ProviderRegistrationRequest,
+    owner_id: UUID = Depends(get_current_user),
+):
+    name = body.name.strip()
+    phone = body.phone.strip()
+    description = (body.description or "").strip() or None
+    if not name or not phone:
+        raise invalid_request("업체명과 연락처를 입력해 주세요.")
+
+    try:
+        with transaction() as conn:
+            if conn.execute("SELECT 1 FROM regions WHERE id = %s", (body.region_id,)).fetchone() is None:
+                raise invalid_request("선택한 지역을 찾을 수 없습니다.")
+            work_type_ids = list(dict.fromkeys(body.work_type_ids))
+            if work_type_ids:
+                found = conn.execute(
+                    "SELECT count(*) AS n FROM work_types WHERE id = ANY(%s)", (work_type_ids,)
+                ).fetchone()["n"]
+                if found != len(work_type_ids):
+                    raise invalid_request("선택한 작업 종류를 찾을 수 없습니다.")
+
+            profile = conn.execute(
+                """
+                INSERT INTO profiles (user_id, nickname, role, region_id, address, housing_type)
+                VALUES (%s, %s, 'provider', %s, NULL, 'other')
+                ON CONFLICT (user_id) DO UPDATE SET
+                    nickname = EXCLUDED.nickname,
+                    role = 'provider',
+                    region_id = EXCLUDED.region_id,
+                    updated_at = now()
+                RETURNING nickname, role, region_id, address, housing_type
+                """,
+                (owner_id, name, body.region_id),
+            ).fetchone()
+
+            provider = conn.execute(
+                "SELECT id FROM providers WHERE account_user_id = %s", (owner_id,)
+            ).fetchone()
+            if provider is None:
+                provider = conn.execute(
+                    """
+                    INSERT INTO providers (name, phone, description, account_user_id)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (name, phone, description, owner_id),
+                ).fetchone()
+            else:
+                conn.execute(
+                    "UPDATE providers SET name = %s, phone = %s, description = %s WHERE id = %s",
+                    (name, phone, description, provider["id"]),
+                )
+                conn.execute("DELETE FROM provider_regions WHERE provider_id = %s", (provider["id"],))
+                conn.execute("DELETE FROM provider_work_types WHERE provider_id = %s", (provider["id"],))
+
+            conn.execute(
+                "INSERT INTO provider_regions (provider_id, region_id) VALUES (%s, %s)",
+                (provider["id"], body.region_id),
+            )
+            for work_type_id in work_type_ids:
+                conn.execute(
+                    "INSERT INTO provider_work_types (provider_id, work_type_id) VALUES (%s, %s)",
+                    (provider["id"], work_type_id),
+                )
+    except psycopg.errors.InsufficientPrivilege:
+        raise provider_registration_unavailable() from None
+
+    return {**profile, "provider_id": provider["id"]}
+
+
 @router.get(
     "/regions",
     response_model=list[RegionOut],
     summary="지역 목록 조회",
-    description="프로필의 거주 지역 선택에 사용할 지역 ID와 화면 표시 이름을 반환합니다.",
+    description=(
+        "프로필의 거주 지역 선택에 사용할 지역 ID와 화면 표시 이름을 반환합니다.\n\n"
+        "- 로그인 전 회원가입 화면에서도 쓰도록 인증 없이 조회합니다. 지역 이름은 공개 정보입니다."
+    ),
     response_description="지역 ID, 이름, 시·군·구가 포함된 표시 이름 목록",
 )
-def list_regions(owner_id: UUID = Depends(get_current_user)):
+def list_regions():
     with read_transaction() as conn:
         return conn.execute(
             """
-            SELECT id AS region_id, name, display_name
+            SELECT id AS region_id, name, display_name, parent_id
             FROM regions
             ORDER BY display_name, id
             """

@@ -7,6 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 HousingType = Literal["monthly_rent", "jeonse", "semi_jeonse", "owned", "other"]
 DeadlineKind = Literal["fixed", "always_open", "unknown"]
 SupportProgramSource = Literal["seed", "gov24_api"]
+SupportCategory = Literal[
+    "monthly_rent_support",
+    "deposit_loan",
+    "housing_cost",
+    "repair",
+    "brokerage_fee",
+    "supply",
+    "other",
+]
 
 
 class HealthResponse(BaseModel):
@@ -521,6 +530,9 @@ class QuoteRequestSummary(BaseModel):
     region_name: str = Field(description="요청 지역 표시명.")
     work_type_id: UUID = Field(description="희망 특화 분야 UUID.")
     work_type_name: str = Field(description="희망 특화 분야 이름.")
+    requester_nickname: str | None = Field(
+        default=None, description="요청인 프로필 닉네임. 업체가 누구의 요청서인지 알아볼 수 있도록 표시합니다. 프로필이 없으면 `null`입니다."
+    )
     address: str | None = Field(description="선택 장소·주소 메모. 없으면 `null`입니다.")
     location: str = Field(description="집 안 하자 위치.")
     material: str | None = Field(description="표면 재질. 없으면 `null`입니다.")
@@ -572,6 +584,20 @@ class ProfileOut(BaseModel):
     )
 
 
+class ProviderRegistrationRequest(BaseModel):
+    """업체 회원 가입(업체 정보 등록) 요청."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80, description="업체명. 프로필 닉네임으로도 씁니다.")
+    phone: str = Field(min_length=7, max_length=30, description="업체 연락처.")
+    description: str | None = Field(default=None, max_length=500, description="업체 소개(선택).")
+    region_id: UUID = Field(description="활동(출장) 지역 UUID. 이 지역의 견적 요청서를 모두 받습니다.")
+    work_type_ids: list[UUID] = Field(
+        default_factory=list, max_length=10, description="가능한 작업 종류 UUID 목록(선택, 표시용)."
+    )
+
+
 class ProfileUpsertRequest(BaseModel):
     """프로필 최초 등록·수정 요청."""
 
@@ -605,6 +631,9 @@ class RegionOut(BaseModel):
     region_id: UUID = Field(description="지역 UUID.")
     name: str = Field(description="지역 식별 이름(예: `yongin`).")
     display_name: str = Field(description="화면에 표시할 지역 이름(시·군·구 포함).")
+    parent_id: UUID | None = Field(
+        default=None, description="상위 지역(시·도) UUID. 시·도 자체면 `null`입니다. 2단계 지역 선택에 씁니다."
+    )
 
 
 class RecordListItem(BaseModel):
@@ -650,6 +679,12 @@ class SupportProgramSummary(BaseModel):
         description=(
             "공고 원문에서 확인된 거주 형태 태그. 신청 자격을 확정하는 값이 아니며, "
             "태그 일치 여부는 참고 정보입니다."
+        )
+    )
+    categories: list[SupportCategory] = Field(
+        description=(
+            "제목·요약 키워드로 분류한 참고 카테고리. 복수일 수 있으며, "
+            "신청 자격이나 지원 내용을 확정하지 않습니다."
         )
     )
     deadline_text: str | None = Field(
@@ -698,7 +733,9 @@ class SupportProgramListResponse(BaseModel):
     """소식지 목록 페이지 응답."""
 
     items: list[SupportProgramListItem] = Field(description="현재 페이지의 지원 사업 목록.")
-    total: int = Field(description="필터(`status`)를 적용한 전체 지원 사업 수.")
+    total: int = Field(
+        description="필터(`status`, `region_scope`, `region_id`, `category`)를 적용한 전체 지원 사업 수."
+    )
     limit: int = Field(description="요청한 페이지 크기.")
     offset: int = Field(description="요청한 페이지 시작 위치.")
     has_more: bool = Field(description="다음 페이지가 남아 있는지 여부.")
@@ -812,6 +849,10 @@ class ProviderOut(BaseModel):
     )
     specialty_work_types: list[WorkTypeOut] = Field(
         description="업체의 전체 특화 분야 목록. 없으면 빈 배열입니다."
+    )
+    region_names: list[str] = Field(
+        default_factory=list,
+        description="업체 출장 지역 표시명 목록. 업체 제안서에서 채우며, 없으면 빈 배열입니다.",
     )
     chat_available: bool = Field(
         description="사전 등록된 업체 계정이 연결되어 앱 내 채팅이 가능한지 여부. 샘플은 항상 `false`입니다."

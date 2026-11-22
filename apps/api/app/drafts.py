@@ -15,6 +15,7 @@ from app import llm
 from app.auth import get_current_user
 from app.db import read_transaction, transaction
 from app.errors import (
+    llm_quota_exceeded,
     ApiError,
     diagnosis_conflict,
     llm_failed,
@@ -361,6 +362,8 @@ def create_draft(
         text = llm.generate_text(prompt)
     except llm.LlmUnavailable:
         raise llm_unavailable() from None
+    except llm.LlmQuotaExceeded:
+        raise llm_quota_exceeded() from None
     except llm.LlmTimeout:
         raise llm_timeout() from None
     except llm.LlmError:

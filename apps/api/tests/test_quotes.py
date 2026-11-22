@@ -299,6 +299,7 @@ def test_quote_request_role_lists_and_detail_isolation(
     assert [item["request_id"] for item in matched_list] == [request_id]
     assert matched_list[0]["proposal_count"] == 0
     assert matched_list[0]["my_proposal_id"] is None
+    assert matched_list[0]["requester_nickname"] == "견적 요청인"
 
     assert (
         client.get(
@@ -313,13 +314,18 @@ def test_quote_request_role_lists_and_detail_isolation(
         ).status_code
         == 404
     )
+    # Same-region providers receive every request regardless of specialty.
     assert (
         client.get(
             f"/quote-requests/{request_id}",
             headers=auth_headers(token_for(wrong_work_user)),
         ).status_code
-        == 404
+        == 200
     )
+    other_work_list = client.get(
+        "/quote-requests", headers=auth_headers(token_for(wrong_work_user))
+    ).json()
+    assert [item["request_id"] for item in other_work_list] == [request_id]
     assert (
         client.get(
             f"/quote-requests/{request_id}",
@@ -423,6 +429,7 @@ def test_proposals_are_isolated_and_accept_rejects_the_rest(
         f"/quote-requests/{request_id}", headers=auth_headers(requester_token)
     ).json()
     assert len(owner_detail["proposals"]) == 2
+    assert all(item["provider"]["region_names"] for item in owner_detail["proposals"])
     assert owner_detail["proposal_count"] == 2
     assert {item["status"] for item in owner_detail["proposals"]} == {"pending"}
 
@@ -513,6 +520,71 @@ def test_cancel_rejects_pending_proposals(client, admin, user_factory, token_for
     )
     assert again.status_code == 409
     assert again.json()["code"] == "request_not_open"
+
+
+def test_cancel_accept_reopens_request_and_proposals(
+    client, admin, user_factory, token_for, record_factory
+):
+    region_id = _region(admin)
+    work_type_id = _work_type(admin, f"수락 취소 작업 {uuid4().hex[:8]}")
+    requester_id = user_factory()
+    requester_token = token_for(requester_id)
+    _profile(client, requester_token, region_id)
+    record_id = _ready_record(
+        client,
+        admin,
+        requester_id,
+        requester_token,
+        record_factory,
+        region_id=region_id,
+        work_type_id=work_type_id,
+    )
+    request_id = _create_request(client, requester_token, record_id).json()["request_id"]
+    proposal_ids = []
+    for index in range(2):
+        provider_user = user_factory()
+        _provider(
+            admin,
+            f"수락 취소 업체 {index}",
+            region_id=region_id,
+            work_types=[work_type_id],
+            account_user_id=provider_user,
+        )
+        response = client.post(
+            f"/quote-requests/{request_id}/proposals",
+            headers=auth_headers(token_for(provider_user)),
+            json={"min_price": 1000, "max_price": 2000, "memo": f"제안 {index}"},
+        )
+        assert response.status_code == 200, response.text
+        proposal_ids.append(response.json()["proposal_id"])
+
+    not_accepted = client.post(
+        f"/quote-requests/{request_id}/cancel-accept", headers=auth_headers(requester_token)
+    )
+    assert not_accepted.status_code == 409
+    assert not_accepted.json()["code"] == "request_not_accepted"
+
+    accepted = client.post(
+        f"/quote-requests/{request_id}/proposals/{proposal_ids[0]}/accept",
+        headers=auth_headers(requester_token),
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    reopened = client.post(
+        f"/quote-requests/{request_id}/cancel-accept", headers=auth_headers(requester_token)
+    )
+    assert reopened.status_code == 200, reopened.text
+    body = reopened.json()
+    assert body["status"] == "open"
+    assert body["accepted_proposal_id"] is None
+    assert {item["status"] for item in body["proposals"]} == {"pending"}
+
+    other = client.post(
+        f"/quote-requests/{request_id}/proposals/{proposal_ids[1]}/accept",
+        headers=auth_headers(requester_token),
+    )
+    assert other.status_code == 200, other.text
+    assert other.json()["accepted_proposal_id"] == proposal_ids[1]
 
 
 def test_concurrent_accept_has_one_winner(

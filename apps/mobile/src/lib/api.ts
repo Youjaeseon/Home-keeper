@@ -1,3 +1,6 @@
+import { File } from 'expo-file-system';
+import { Platform } from 'react-native';
+
 import { apiBaseUrl } from './env';
 import { supabase } from './supabase';
 
@@ -64,6 +67,8 @@ export type Region = {
   region_id: string;
   name: string;
   display_name: string;
+  /** 상위 시·도 UUID. 시·도 자체면 null (2단계 지역 선택) */
+  parent_id?: string | null;
 };
 
 export type WorkType = {
@@ -79,6 +84,8 @@ export type ProviderSummary = {
   review_count: number;
   description: string | null;
   specialty_work_types: WorkType[];
+  /** 업체 출장 지역 표시명. 업체 제안서에서 채웁니다. (GAP-017) */
+  region_names?: string[];
   chat_available: boolean;
   is_sample: boolean;
 };
@@ -129,6 +136,8 @@ export type QuoteRequestSummary = {
   region_name: string;
   work_type_id: string;
   work_type_name: string;
+  /** 요청인 닉네임 (GAP-016) */
+  requester_nickname?: string | null;
   address: string | null;
   location: string;
   material: string | null;
@@ -276,6 +285,11 @@ export type RecordDetail = {
     generation: number;
     is_current: boolean;
   } | null;
+  /** 저장된 요청문. is_current면 다시 생성하지 않고 그대로 씁니다. */
+  drafts?: {
+    landlord: { text: string; is_current: boolean } | null;
+    provider: { text: string; is_current: boolean } | null;
+  };
 };
 
 export type AnalyzePhotoInput = {
@@ -296,6 +310,14 @@ export type AnalyzeInput = {
 
 export type DeadlineKind = 'fixed' | 'always_open' | 'unknown';
 export type SupportProgramSource = 'seed' | 'gov24_api';
+export type SupportCategory =
+  | 'monthly_rent_support'
+  | 'deposit_loan'
+  | 'housing_cost'
+  | 'repair'
+  | 'brokerage_fee'
+  | 'supply'
+  | 'other';
 
 export type SupportProgramListItem = {
   id: string;
@@ -305,6 +327,7 @@ export type SupportProgramListItem = {
   region_scope: 'national' | 'local';
   region_name: string;
   target_housing_types: HousingType[];
+  categories: SupportCategory[];
   deadline_text: string | null;
   deadline_date: string | null;
   deadline_kind: DeadlineKind;
@@ -335,6 +358,7 @@ export type SupportProgramListResponse = {
 
 export type SupportProgramQuery = {
   status?: 'all' | 'active';
+  category?: SupportCategory;
   limit?: number;
   offset?: number;
 };
@@ -408,24 +432,44 @@ export function getRegions(): Promise<Region[]> {
   return apiRequest<Region[]>('/regions');
 }
 
+/** 업체 회원 등록: 업체 정보·활동 지역을 만들고 역할을 provider로 정합니다. (GAP-003, Hyeok 결정) */
+export function registerProvider(input: {
+  name: string;
+  phone: string;
+  description?: string | null;
+  region_id: string;
+  work_type_ids?: string[];
+}): Promise<Profile> {
+  return apiRequest<Profile>('/me/provider', { method: 'POST', body: JSON.stringify(input) });
+}
+
+/** 로그인 전(가입 화면)에도 부를 수 있는 공개 지역 목록. (GAP-004) */
+export async function getPublicRegions(): Promise<Region[]> {
+  const response = await fetch(`${apiBaseUrl}/regions`);
+  if (!response.ok) {
+    await parseError(response);
+  }
+  return (await response.json()) as Region[];
+}
+
 export function getRecord(recordId: string): Promise<RecordDetail> {
   return apiRequest<RecordDetail>(`/records/${recordId}`);
 }
 
-export function analyzeRecord(
+export async function analyzeRecord(
   recordId: string,
   input: AnalyzeInput,
 ): Promise<AnalyzeResponse> {
   const form = new FormData();
   for (const photo of input.photos) {
-    form.append(
-      'photos',
-      {
-        uri: photo.uri,
-        name: photo.name,
-        type: photo.type,
-      } as unknown as Blob,
-    );
+    if (Platform.OS === 'web') {
+      const blob = await (await fetch(photo.uri)).blob();
+      form.append('photos', blob, photo.name);
+    } else {
+      // Expo SDK 58's global fetch (expo/fetch) only accepts Blob or File parts,
+      // not React Native's legacy { uri, name, type } objects.
+      form.append('photos', new File(photo.uri) as unknown as Blob);
+    }
   }
   for (const photo of input.photos) {
     form.append('photo_roles', photo.role);
@@ -461,6 +505,7 @@ export function regenerateDiagnosis(
 
 export function getSupportPrograms({
   status = 'all',
+  category,
   limit = 5,
   offset = 0,
 }: SupportProgramQuery = {}): Promise<SupportProgramListResponse> {
@@ -469,6 +514,7 @@ export function getSupportPrograms({
     limit: String(limit),
     offset: String(offset),
   });
+  if (category) params.set('category', category);
   return apiRequest<SupportProgramListResponse>(`/support-programs?${params}`);
 }
 
@@ -495,8 +541,24 @@ export function getProviderDetail(providerId: string): Promise<ProviderDetail> {
   return apiRequest<ProviderDetail>(`/providers/${providerId}`);
 }
 
-export function getDraftTemplate(recordId: string): Promise<DraftTemplate> {
-  return apiRequest<DraftTemplate>(`/records/${recordId}/drafts/provider/template`);
+export type DraftKind = 'landlord' | 'provider';
+
+export type DraftResponse = {
+  kind: DraftKind;
+  text: string;
+  input_revision: number;
+  diagnosis_generation: number;
+};
+
+export function createDraft(recordId: string, kind: DraftKind): Promise<DraftResponse> {
+  return apiRequest<DraftResponse>(`/records/${recordId}/drafts/${kind}`, { method: 'POST' });
+}
+
+export function getDraftTemplate(
+  recordId: string,
+  kind: DraftKind = 'provider',
+): Promise<DraftTemplate> {
+  return apiRequest<DraftTemplate>(`/records/${recordId}/drafts/${kind}/template`);
 }
 
 export function createQuoteRequest(
@@ -526,6 +588,11 @@ export function submitQuoteProposal(
   });
 }
 
+/** 수락 취소: 요청서를 다시 진행 중으로 되돌립니다. (GAP-014) */
+export function cancelQuoteAcceptance(requestId: string): Promise<QuoteRequestDetail> {
+  return apiRequest<QuoteRequestDetail>(`/quote-requests/${requestId}/cancel-accept`, { method: 'POST' });
+}
+
 export function acceptQuoteProposal(
   requestId: string,
   proposalId: string,
@@ -549,5 +616,78 @@ export function createChatRoom(input: {
   return apiRequest<ChatRoom>('/chat/rooms', {
     method: 'POST',
     body: JSON.stringify(input),
+  });
+}
+
+export type ChatRoomListItem = ChatRoom & {
+  counterpart_name: string;
+  last_message_preview: string | null;
+  unread_count: number;
+};
+
+export type ChatMessage = {
+  message_id: string;
+  room_id: string;
+  sender_id: string;
+  sender_role: 'requester' | 'provider';
+  message_type: 'text' | 'record_summary';
+  record_id: string | null;
+  content: string;
+  payload: unknown;
+  client_message_id: string;
+  created_at: string;
+};
+
+export type ChatMessageListResponse = {
+  messages: ChatMessage[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+};
+
+export type ChatReadReceipt = {
+  room_id: string;
+  last_read_at: string;
+  unread_count: number;
+};
+
+export function getChatRooms(): Promise<ChatRoomListItem[]> {
+  return apiRequest<ChatRoomListItem[]>('/chat/rooms');
+}
+
+export function getChatMessages(
+  roomId: string,
+  { limit = 100, offset = 0 }: { limit?: number; offset?: number } = {},
+): Promise<ChatMessageListResponse> {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return apiRequest<ChatMessageListResponse>(`/chat/rooms/${roomId}/messages?${params}`);
+}
+
+export function sendChatMessage(
+  roomId: string,
+  input: { client_message_id: string; content: string },
+): Promise<ChatMessage> {
+  return apiRequest<ChatMessage>(`/chat/rooms/${roomId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function markChatRoomRead(roomId: string): Promise<ChatReadReceipt> {
+  return apiRequest<ChatReadReceipt>(`/chat/rooms/${roomId}/read`, { method: 'POST' });
+}
+
+/** 실시간 채팅 WebSocket 주소 (http → ws). 토큰은 연결할 때 붙입니다. */
+export function chatSocketUrl(): string {
+  return `${apiBaseUrl.replace(/^http/, 'ws')}/chat/ws`;
+}
+
+/** 클라이언트 메시지 멱등성 UUID (v4 형식) */
+export function newClientMessageId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
   });
 }

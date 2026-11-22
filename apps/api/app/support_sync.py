@@ -18,7 +18,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 GOV24_SERVICE_LIST_URL = "https://api.odcloud.kr/api/gov24/v3/serviceList"
-PER_PAGE = 100
+PER_PAGE = 1000
 MAX_PAGES = 200
 REQUEST_TIMEOUT_SECONDS = 15
 SOURCE_ATTRIBUTION = "행정안전부 대한민국 공공서비스(혜택) 정보 · 공공데이터포털"
@@ -54,6 +54,24 @@ NON_HOUSING_TITLE_KEYWORDS = (
 )
 HOUSING_TYPES = ("monthly_rent", "jeonse", "semi_jeonse", "owned")
 
+SUPPORT_CATEGORIES = (
+    "monthly_rent_support",
+    "deposit_loan",
+    "housing_cost",
+    "repair",
+    "brokerage_fee",
+    "supply",
+    "other",
+)
+CATEGORY_KEYWORDS = {
+    "monthly_rent_support": ("월세", "월 임대료", "임차료"),
+    "deposit_loan": ("보증금", "전세자금", "대출", "융자", "보증"),
+    "housing_cost": ("주거비", "난방비", "관리비", "공과금", "에너지", "연탄"),
+    "repair": ("수리", "개선", "슬레이트", "보일러", "단열", "창호"),
+    "brokerage_fee": ("중개보수", "중개수수료"),
+    "supply": ("임대주택", "입주", "공급", "기숙사", "매입임대", "전세임대"),
+}
+
 PageFetcher = Callable[[int, int, str], dict[str, Any]]
 
 
@@ -86,6 +104,7 @@ class Gov24Program:
     region_scope: str
     region_id: UUID | None
     target_housing_types: tuple[str, ...]
+    categories: tuple[str, ...]
     support_target: str
     support_content: str
     selection_criteria: str | None
@@ -212,8 +231,37 @@ def fetch_gov24_programs(
     return rows
 
 
-def classify_deadline(text: str | None) -> tuple[str, date | None]:
-    """Parse only exact, unambiguous deadlines; everything else is unknown."""
+_PERIOD_DATE_RE = re.compile(
+    r"(?<!\d)(\d{4})\s*[.\-/]\s*(\d{1,2})\s*[.\-/]\s*(\d{1,2})(?!\d)"
+)
+
+
+def _single_period_end(text: str) -> date | None:
+    """Return the end of one explicit YYYY.MM.DD~YYYY.MM.DD range."""
+    normalized = " ".join(text.split())
+    if normalized.count("~") != 1:
+        return None
+    matches = _PERIOD_DATE_RE.findall(normalized)
+    if len(matches) != 2:
+        return None
+    try:
+        dates = [date(int(year), int(month), int(day)) for year, month, day in matches]
+    except ValueError:
+        return None
+    return max(dates)
+
+
+def classify_deadline(
+    text: str | None, deadline_type: str | None = None
+) -> tuple[str, date | None]:
+    """Use Gov24's deadline type first; parse only exact, unambiguous end dates."""
+    if deadline_type == "상시신청":
+        return "always_open", None
+    if deadline_type == "기간설정":
+        end = _single_period_end(text or "")
+        return ("fixed", end) if end is not None else ("unknown", None)
+    if deadline_type == "접수기관별상이":
+        return "unknown", None
     if not text or not text.strip():
         return "unknown", None
 
@@ -234,13 +282,38 @@ def classify_deadline(text: str | None) -> tuple[str, date | None]:
         r"\s*(?:까지)?\s*(?:신청|접수|마감)?",
         normalized,
     )
-    if not match:
-        return "unknown", None
-    try:
-        deadline = date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
-    except ValueError:
-        return "unknown", None
-    return "fixed", deadline
+    if match:
+        try:
+            return "fixed", date(
+                int(match.group(1)), int(match.group(2)), int(match.group(3))
+            )
+        except ValueError:
+            return "unknown", None
+
+    end = _single_period_end(normalized)
+    if end is not None:
+        return "fixed", end
+    return "unknown", None
+
+
+def _categories(record: dict[str, Any]) -> tuple[str, ...]:
+    text = " ".join(
+        filter(
+            None,
+            (
+                _text(record, "서비스명"),
+                _text(record, "서비스목적요약"),
+                _text(record, "서비스목적"),
+            ),
+        )
+    )
+    matches = tuple(
+        category
+        for category in SUPPORT_CATEGORIES
+        if category != "other"
+        and any(keyword in text for keyword in CATEGORY_KEYWORDS[category])
+    )
+    return matches or ("other",)
 
 
 def _load_regions(conn: psycopg.Connection) -> list[RegionRow]:
@@ -261,7 +334,7 @@ def _resolve_region(
     if agency_type == "중앙행정기관":
         return "national", None
 
-    agency_name = _text(record, "소관기관명") or _text(record, "접수기관명")
+    agency_name = _text(record, "소관기관명") or _text(record, "접수기관")
     compact_agency = _compact(agency_name)
     if not compact_agency:
         return None
@@ -361,7 +434,9 @@ def build_gov24_program(
         summary = support_content[:300]
 
     deadline_text = _text(record, "신청기한")
-    deadline_kind, deadline_date = classify_deadline(deadline_text)
+    deadline_kind, deadline_date = classify_deadline(
+        deadline_text, _text(record, "신청기한유형")
+    )
     region_scope, region_id = resolved_region
     return Gov24Program(
         external_id=external_id,
@@ -371,6 +446,7 @@ def build_gov24_program(
         region_scope=region_scope,
         region_id=region_id,
         target_housing_types=_housing_types(record),
+        categories=_categories(record),
         support_target=support_target,
         support_content=support_content,
         selection_criteria=_text(record, "선정기준"),
@@ -394,6 +470,7 @@ def _upsert_program(conn: psycopg.Connection, program: Gov24Program) -> None:
             region_scope,
             region_id,
             target_housing_types,
+            categories,
             support_target,
             support_content,
             selection_criteria,
@@ -409,7 +486,7 @@ def _upsert_program(conn: psycopg.Connection, program: Gov24Program) -> None:
         )
         VALUES (
             %s, 'gov24_api', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, now(), now(), now()
+            %s, %s, %s, %s, now(), now(), now()
         )
         ON CONFLICT (external_id) DO UPDATE SET
             source = EXCLUDED.source,
@@ -419,6 +496,7 @@ def _upsert_program(conn: psycopg.Connection, program: Gov24Program) -> None:
             region_scope = EXCLUDED.region_scope,
             region_id = EXCLUDED.region_id,
             target_housing_types = EXCLUDED.target_housing_types,
+            categories = EXCLUDED.categories,
             support_target = EXCLUDED.support_target,
             support_content = EXCLUDED.support_content,
             selection_criteria = EXCLUDED.selection_criteria,
@@ -441,6 +519,7 @@ def _upsert_program(conn: psycopg.Connection, program: Gov24Program) -> None:
             program.region_scope,
             program.region_id,
             list(program.target_housing_types),
+            list(program.categories),
             program.support_target,
             program.support_content,
             program.selection_criteria,

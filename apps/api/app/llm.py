@@ -6,6 +6,7 @@ Prompts, model responses, and request bodies are never logged.
 """
 
 import json
+import time
 
 import httpx
 
@@ -36,32 +37,60 @@ class LlmTimeout(LlmError):
     """Upstream call exceeded the configured timeout."""
 
 
+class LlmQuotaExceeded(LlmError):
+    """Upstream rejected the call for quota or rate limits (HTTP 429)."""
+
+
+# Gemini's OpenAI-compatible endpoint returns brief 503 "high demand" spikes; one retry usually succeeds.
+_RETRY_STATUSES = {500, 503}
+_RETRY_DELAY_SECONDS = 1.5
+
+
+def _post_chat(payload: dict) -> httpx.Response:
+    settings = get_settings()
+    effort = getattr(settings, "llm_reasoning_effort", None)
+    if effort:
+        payload = {**payload, "reasoning_effort": effort}
+    for attempt in range(2):
+        try:
+            response = httpx.post(
+                f"{settings.llm_base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {settings.llm_api_key}"},
+                json=payload,
+                timeout=settings.llm_timeout_seconds,
+            )
+        except httpx.TimeoutException as exc:
+            raise LlmTimeout from exc
+        except httpx.HTTPError as exc:
+            raise LlmError from exc
+        if response.status_code in _RETRY_STATUSES and attempt == 0:
+            time.sleep(_RETRY_DELAY_SECONDS)
+            continue
+        # Some models reject reasoning_effort; retry once without it instead of failing.
+        if response.status_code == 400 and "reasoning_effort" in payload and attempt == 0:
+            payload = {key: value for key, value in payload.items() if key != "reasoning_effort"}
+            continue
+        break
+    if response.status_code == 429:
+        raise LlmQuotaExceeded
+    if response.status_code >= 400:
+        raise LlmError
+    return response
+
+
 def generate_text(prompt: str) -> str:
     settings = get_settings()
     if not settings.llm_api_key:
         raise LlmUnavailable
 
-    try:
-        response = httpx.post(
-            f"{settings.llm_base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {settings.llm_api_key}"},
-            json={
-                "model": settings.llm_model,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.2,
-            },
-            timeout=settings.llm_timeout_seconds,
-        )
-    except httpx.TimeoutException as exc:
-        raise LlmTimeout from exc
-    except httpx.HTTPError as exc:
-        raise LlmError from exc
-
-    if response.status_code >= 400:
-        raise LlmError
+    response = _post_chat({
+        "model": settings.llm_model,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+    })
 
     try:
         content = response.json()["choices"][0]["message"]["content"]
@@ -100,28 +129,15 @@ def generate_json(
             {"type": "image_url", "image_url": {"url": image_data_url}},
         ]
 
-    try:
-        response = httpx.post(
-            f"{settings.llm_base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {settings.llm_api_key}"},
-            json={
-                "model": model or settings.llm_model,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_content},
-                ],
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-            },
-            timeout=settings.llm_timeout_seconds,
-        )
-    except httpx.TimeoutException as exc:
-        raise LlmTimeout from exc
-    except httpx.HTTPError as exc:
-        raise LlmError from exc
-
-    if response.status_code >= 400:
-        raise LlmError
+    response = _post_chat({
+        "model": model or settings.llm_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"},
+    })
 
     try:
         content = response.json()["choices"][0]["message"]["content"]

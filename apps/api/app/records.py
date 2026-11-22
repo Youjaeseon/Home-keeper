@@ -1,3 +1,5 @@
+import logging
+import time
 from typing import Annotated
 from uuid import UUID
 
@@ -9,6 +11,7 @@ from app.config import get_settings
 from app.db import read_transaction, transaction
 from app import diagnosis, llm, storage
 from app.errors import (
+    llm_quota_exceeded,
     diagnosis_llm_failed,
     diagnosis_llm_timeout,
     diagnosis_llm_unavailable,
@@ -224,6 +227,9 @@ _ANALYZE_CONFLICT_RESPONSE = _error_response(
         }
     },
 )
+
+# Per-stage timing for /analyze (no request content is logged).
+_timing_log = logging.getLogger("uvicorn.error")
 
 router = APIRouter(
     prefix="/records",
@@ -708,10 +714,16 @@ def analyze_record(
     ] = None,
     external_analysis_consent: Annotated[
         bool,
-        Form(description="외부 사진 전송(Meta SAM·비전 LLM) 동의 여부. 생략하면 `true`이며, 명시적 `false`일 때만 외부 전송을 건너뜁니다."),
-    ] = True,
+        Form(description="외부 사진 전송(Meta SAM·비전 LLM) 동의 여부. 생략하면 `false`이며, 명시적 `true`일 때만 사진을 외부 모델로 보냅니다."),
+    ] = False,
     owner_id: UUID = Depends(get_current_user),
 ):
+    started = time.perf_counter()
+    marks: list[tuple[str, float]] = []
+
+    def mark(stage: str) -> None:
+        marks.append((stage, time.perf_counter()))
+
     try:
         with transaction() as conn:
             record = _lock_record(conn, record_id, owner_id)
@@ -727,6 +739,7 @@ def analyze_record(
                         (owner_id,),
                     ).fetchone()
                     selected_region_id = profile["region_id"] if profile else None
+        mark("db_snapshot")
         # The row lock ends before file validation and external calls.
 
         if not 1 <= len(photos) <= 2:
@@ -761,7 +774,9 @@ def analyze_record(
             photo_analysis = analyze_photos(
                 photos, photo_roles, external_analysis_consent
             )
+            mark("photo_analysis")
             work_types = diagnosis.load_work_types()
+            mark("db_work_types")
             try:
                 diagnosis_result = diagnosis.generate_diagnosis(
                     {
@@ -774,10 +789,13 @@ def analyze_record(
                 )
             except llm.LlmUnavailable:
                 raise diagnosis_llm_unavailable() from None
+            except llm.LlmQuotaExceeded:
+                raise llm_quota_exceeded() from None
             except llm.LlmTimeout:
                 raise diagnosis_llm_timeout() from None
             except llm.LlmError:
                 raise diagnosis_llm_failed() from None
+            mark("diagnosis_llm")
 
         uploaded_paths: list[str] = []
         photo_files: list[dict] = []
@@ -839,6 +857,19 @@ def analyze_record(
             for path in uploaded_paths:
                 storage.delete_photo(path)
             raise
+        mark("storage_and_db_save")
+
+        previous = started
+        parts = []
+        for stage, at in marks:
+            parts.append(f"{stage}={(at - previous) * 1000:.0f}ms")
+            previous = at
+        _timing_log.info(
+            "analyze timing total=%.0fms source=%s %s",
+            (time.perf_counter() - started) * 1000,
+            photo_analysis["source"],
+            " ".join(parts),
+        )
 
         return {
             "record_id": record_id,

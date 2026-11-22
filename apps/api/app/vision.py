@@ -86,6 +86,23 @@ def _decode_photo(photo: UploadFile):
         raise invalid_request("사진을 읽을 수 없습니다. 올바른 이미지 파일을 사용해 주세요.") from exc
 
 
+def warm_up_detector() -> None:
+    """Load the YOLO checkpoint and run one tiny inference so the first analysis is not slow.
+
+    Called once in the background at startup. Missing model or vision extras are ignored.
+    """
+    path = get_settings().yolo_model_path
+    if not path:
+        return
+    try:
+        from PIL import Image
+
+        with Image.new("RGB", (64, 64)) as blank, _model_lock:
+            _load_model(path).predict(blank, conf=0.25, max_det=1, verbose=False, save=False)
+    except Exception:  # noqa: BLE001 - warm-up is best effort; the request path reports real errors.
+        return
+
+
 def _detect(image, path: str) -> list[dict]:
     try:
         with _model_lock:

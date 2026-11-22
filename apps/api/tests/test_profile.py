@@ -188,18 +188,56 @@ def test_provider_role_is_not_changed_by_requester_profile_upsert(
     ).fetchone()["role"] == "provider"
 
 
-def test_regions_require_auth_and_include_demo_region(client, admin, user_factory, token_for):
-    assert client.get("/regions").status_code == 401
-
-    response = client.get(
-        "/regions", headers=auth_headers(token_for(user_factory()))
-    )
+def test_regions_are_public_and_include_demo_region(client, admin):
+    # The signup screen loads regions before login.
+    response = client.get("/regions")
     assert response.status_code == 200, response.text
     regions = response.json()
     assert regions
     yongin = next(region for region in regions if region["name"] == "yongin")
+    gyeonggi = next(region for region in regions if region["name"] == "gyeonggi")
+    assert gyeonggi["parent_id"] is None
     assert yongin == {
         "region_id": str(_yongin_id(admin)),
         "name": "yongin",
         "display_name": "경기도 용인시",
+        "parent_id": gyeonggi["region_id"],
     }
+
+
+def test_user_can_register_as_provider(client, admin, user_factory, token_for):
+    user_id = user_factory()
+    token = token_for(user_id)
+    region_id = _yongin_id(admin)
+
+    response = client.post(
+        "/me/provider",
+        headers=auth_headers(token),
+        json={"name": "용인 하자케어", "phone": "031-000-0000", "description": "곰팡이 제거", "region_id": str(region_id)},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["role"] == "provider"
+    assert body["nickname"] == "용인 하자케어"
+    assert body["provider_id"]
+
+    provider = admin.execute(
+        "SELECT name, phone, account_user_id FROM providers WHERE id = %s", (body["provider_id"],)
+    ).fetchone()
+    assert provider["account_user_id"] == user_id
+    assert admin.execute(
+        "SELECT 1 FROM provider_regions WHERE provider_id = %s AND region_id = %s",
+        (body["provider_id"], region_id),
+    ).fetchone()
+
+    again = client.post(
+        "/me/provider",
+        headers=auth_headers(token),
+        json={"name": "용인 하자케어2", "phone": "031-000-0001", "region_id": str(region_id)},
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["provider_id"] == body["provider_id"]
+
+    profile = client.get("/me/profile", headers=auth_headers(token)).json()
+    assert profile["role"] == "provider"
+    assert profile["provider_id"] == body["provider_id"]

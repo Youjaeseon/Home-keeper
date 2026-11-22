@@ -19,6 +19,7 @@ from app.errors import (
     not_found,
     request_already_open,
     request_not_open,
+    request_not_accepted,
     proposal_already_exists,
     proposal_not_pending,
     diagnosis_required,
@@ -60,12 +61,14 @@ _REQUEST_BASE = """
     SELECT
         request.*,
         region.display_name AS region_name,
-        work_type.name AS work_type_name
+        work_type.name AS work_type_name,
+        requester_profile.nickname AS requester_nickname
 """
 _REQUEST_FROM = """
     FROM quote_requests AS request
     JOIN regions AS region ON region.id = request.region_id
     JOIN work_types AS work_type ON work_type.id = request.work_type_id
+    LEFT JOIN profiles AS requester_profile ON requester_profile.user_id = request.requester_id
 """
 
 _PROPOSAL_SELECT = """
@@ -84,6 +87,15 @@ _PROPOSAL_SELECT = """
         provider.review_count,
         provider.description,
         (provider.account_user_id IS NOT NULL) AS chat_available,
+        COALESCE(
+            (
+                SELECT jsonb_agg(service_region.display_name ORDER BY service_region.display_name)
+                FROM provider_regions AS provider_region
+                JOIN regions AS service_region ON service_region.id = provider_region.region_id
+                WHERE provider_region.provider_id = provider.id
+            ),
+            '[]'::jsonb
+        ) AS region_names,
         COALESCE(
             (
                 SELECT jsonb_agg(
@@ -124,6 +136,7 @@ def _summary(row: dict, **overrides) -> dict:
         "region_name": row["region_name"],
         "work_type_id": row["work_type_id"],
         "work_type_name": row["work_type_name"],
+        "requester_nickname": row.get("requester_nickname"),
         "address": row["address"],
         "location": row["location"],
         "material": row["material"],
@@ -154,6 +167,7 @@ def _proposal_out(row: dict) -> dict:
             "review_count": row["review_count"],
             "description": row["description"],
             "specialty_work_types": row["specialty_work_types"],
+            "region_names": row["region_names"],
             "chat_available": row["chat_available"],
             "is_sample": False,
         },
@@ -194,13 +208,10 @@ def _detail(conn, request_id: UUID, user_id: UUID) -> dict:
             """
             SELECT 1
             FROM provider_regions AS provider_region
-            JOIN provider_work_types AS provider_work
-              ON provider_work.provider_id = provider_region.provider_id
             WHERE provider_region.provider_id = %s
               AND provider_region.region_id = %s
-              AND provider_work.work_type_id = %s
             """,
-            (provider["id"], row["region_id"], row["work_type_id"]),
+            (provider["id"], row["region_id"]),
         ).fetchone() is not None
 
     if not owner and not matched and proposal_access is None:
@@ -348,7 +359,7 @@ def create_quote_request(
     description=(
         "역할에 따라 목록이 달라집니다.\n\n"
         "- 요청인: 본인이 보낸 요청서를 최신순으로 반환하며 `proposal_count`와 사진 Signed URL을 포함합니다.\n"
-        "- 업체: 출장 지역과 특화 분야가 모두 맞는 진행 중 요청서와 본인이 이미 제안서를 보낸 요청서만 반환하며 `my_proposal_id`·`my_proposal_status`를 포함합니다.\n"
+        "- 업체: 출장 지역이 같은 진행 중 요청서(특화 분야와 무관하게 전체)와 본인이 이미 제안서를 보낸 요청서만 반환하며 `my_proposal_id`·`my_proposal_status`를 포함합니다.\n"
         "- 업체에게는 경쟁 업체 제안서 수를 노출하지 않습니다."
     ),
 )
@@ -394,16 +405,11 @@ def list_quote_requests(owner_id: UUID = Depends(get_current_user)):
                         WHERE provider_region.provider_id = %s
                           AND provider_region.region_id = request.region_id
                     )
-                    AND EXISTS (
-                        SELECT 1 FROM provider_work_types AS provider_work
-                        WHERE provider_work.provider_id = %s
-                          AND provider_work.work_type_id = request.work_type_id
-                    )
                 )
             )
             ORDER BY request.created_at DESC, request.id DESC
             """,
-            (provider["id"], provider["id"], provider["id"]),
+            (provider["id"], provider["id"]),
         ).fetchall()
         return [
             _summary(
@@ -421,10 +427,10 @@ def list_quote_requests(owner_id: UUID = Depends(get_current_user)):
     response_model=QuoteRequestDetailOut,
     summary="견적 요청서 상세",
     description=(
-        "요청인 본인, 지역·특화 분야가 모두 맞는 업체, 이미 제안서를 보낸 업체만 조회할 수 있습니다.\n\n"
+        "요청인 본인, 같은 지역의 업체, 이미 제안서를 보낸 업체만 조회할 수 있습니다.\n\n"
         "- 요청인에게는 도착한 모든 제안서를, 업체에게는 본인 제안서만 반환합니다.\n"
         "- 사진은 비공개 Storage의 단기 Signed URL로 반환합니다.\n"
-        "- 권한이 없는 사용자·타 지역·타 분야 업체는 `404`입니다."
+        "- 권한이 없는 사용자·타 지역 업체는 `404`입니다."
     ),
     responses={404: _NOT_FOUND_RESPONSE, 422: _VALIDATION_RESPONSE},
 )
@@ -441,7 +447,7 @@ def get_quote_request(
     response_model=QuoteProposalOut,
     summary="업체 제안서 제출",
     description=(
-        "지역과 특화 분야가 모두 맞는 업체가 진행 중 요청서에 제안서를 1건 제출합니다.\n\n"
+        "같은 지역의 업체가 진행 중 요청서에 제안서를 1건 제출합니다.\n\n"
         "- 요청인 계정은 `422`, 비매칭 업체는 `404`입니다.\n"
         "- 마감·취소된 요청서는 `409`(`request_not_open`), 같은 요청서에 이미 제출했으면 `409`(`proposal_already_exists`)입니다.\n"
         "- 최소 금액은 0원 이상, 최대 금액은 최소 금액 이상이어야 하며 메모는 공백 없이 2000자 이하입니다."
@@ -467,13 +473,10 @@ def create_quote_proposal(
             """
             SELECT 1
             FROM provider_regions AS provider_region
-            JOIN provider_work_types AS provider_work
-              ON provider_work.provider_id = provider_region.provider_id
             WHERE provider_region.provider_id = %s
               AND provider_region.region_id = %s
-              AND provider_work.work_type_id = %s
             """,
-            (provider["id"], request["region_id"], request["work_type_id"]),
+            (provider["id"], request["region_id"]),
         ).fetchone()
         if matched is None:
             raise not_found("견적 요청서를 찾을 수 없습니다.")
@@ -558,6 +561,70 @@ def accept_quote_proposal(
             WHERE id = %s
             """,
             (proposal_id, request_id),
+        )
+
+    with read_transaction() as conn:
+        return _detail(conn, request_id, owner_id)
+
+
+@router.post(
+    "/quote-requests/{request_id}/cancel-accept",
+    response_model=QuoteRequestDetailOut,
+    summary="제안서 수락 취소",
+    description=(
+        "요청인이 수락을 취소하고 요청서를 다시 진행 중으로 되돌립니다. 다른 업체 제안서를 다시 수락할 수 있습니다.\n\n"
+        "- 수락했던 제안서와, 그 수락 때문에 함께 마감된 제안서를 모두 `pending`으로 되돌립니다. 수락 전에 따로 마감된 제안서는 그대로 둡니다.\n"
+        "- 요청서 소유자만 호출할 수 있으며, 수락 상태가 아니면 `409`(`request_not_accepted`)입니다.\n"
+        "- 같은 기록으로 이미 다른 진행 중 요청서가 있으면 되돌릴 수 없어 `409`(`request_already_open`)입니다."
+    ),
+    responses={404: _NOT_FOUND_RESPONSE, 409: _CONFLICT_RESPONSE, 422: _VALIDATION_RESPONSE},
+)
+def cancel_quote_acceptance(
+    request_id: Annotated[UUID, Path(description="수락을 취소할 견적 요청서 UUID.")],
+    owner_id: UUID = Depends(get_current_user),
+):
+    with transaction() as conn:
+        request = conn.execute(
+            "SELECT * FROM quote_requests WHERE id = %s AND requester_id = %s FOR UPDATE",
+            (request_id, owner_id),
+        ).fetchone()
+        if request is None:
+            raise not_found("견적 요청서를 찾을 수 없습니다.")
+        if request["status"] != "accepted":
+            raise request_not_accepted()
+
+        other_open = conn.execute(
+            """
+            SELECT 1 FROM quote_requests
+            WHERE record_id = %s AND status = 'open' AND id <> %s
+            """,
+            (request["record_id"], request_id),
+        ).fetchone()
+        if other_open is not None:
+            raise request_already_open()
+
+        # The accept transaction stamped the auto-rejected proposals with the same now()
+        # as accepted_at, so only those are reopened.
+        conn.execute(
+            """
+            UPDATE quote_proposals
+            SET status = 'pending', updated_at = now()
+            WHERE request_id = %s
+              AND (
+                id = %s
+                OR (status = 'rejected' AND updated_at = %s)
+              )
+            """,
+            (request_id, request["accepted_proposal_id"], request["accepted_at"]),
+        )
+        conn.execute(
+            """
+            UPDATE quote_requests
+            SET status = 'open', accepted_proposal_id = NULL,
+                accepted_at = NULL, updated_at = now()
+            WHERE id = %s
+            """,
+            (request_id,),
         )
 
     with read_transaction() as conn:

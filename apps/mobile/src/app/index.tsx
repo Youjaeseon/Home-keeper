@@ -1,597 +1,185 @@
-import type { Session } from '@supabase/supabase-js';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Redirect, router } from 'expo-router';
+import { useState } from 'react';
+import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import {
-  ApiError,
-  type Profile,
-  type ProviderDetail,
-  type QuoteRequestSummary,
-  getMyProfile,
-  getProviderDetail,
-  getQuoteRequests,
-  messageOf,
-} from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { LogoMark } from '@/components/logo';
+import { Txt } from '@/components/ui';
+import { C, F, MAX_W } from '@/constants/theme';
+import { useApp } from '@/store/app-store';
 
-export default function IndexScreen() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+/* ═══════════════════════════════════════════════════════════
+ *  ✏️ 직접 수정하는 곳 — 값을 바꾸고 저장(Cmd+S)하면 화면에 바로 반영됩니다.
+ * ═══════════════════════════════════════════════════════════ */
+const LOGIN_DESIGN = {
+  /** 로고 위치: 화면 높이 비율 (0 = 맨 위, 0.5 = 가운데) */
+  logoTop: 0.07,
+  /** 로고 크기 (px). 화면이 작은 폰에서는 입력칸과 겹치지 않게 자동으로 줄어듭니다. */
+  logoSize: 148,
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      setSession(nextSession);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+  /** 로고 아래 한 줄 문구 ('' 로 두면 표시 안 함) */
+  tagline: '우리집 관리사',
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator />
-      </SafeAreaView>
-    );
-  }
+  /** 입력칸·로그인 버튼 묶음을 화면 아래에서 얼마나 띄울지 (px). 작은 폰에서는 겹치지 않게 자동으로 줄어듭니다. */
+  formBottom: 220,
+};
+/* ═══════════════════════════════════════════════════════════ */
 
-  return session ? <HomeScreen session={session} /> : <LoginScreen />;
-}
-
-function LoginScreen() {
-  const [email, setEmail] = useState('');
+/** 스케치 1: 로그인 — 크림 단색 배경 + 로고 + 흰 둥근 입력칸 + 글씨 버튼 */
+export default function LoginScreen() {
+  const { ready, session, user, needsProfile, login, loginAsGuest } = useApp();
+  const { height } = useWindowDimensions();
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const d = LOGIN_DESIGN;
 
-  async function signIn() {
-    setSubmitting(true);
-    setError(null);
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-    if (signInError) {
-      setError(signInError.message);
+  // 세션 복원 결과에 따라 이동합니다. 프로필이 없으면(GET /me/profile 404) 프로필 등록으로 보냅니다.
+  if (ready && session && user) return <Redirect href="/news" />;
+  if (ready && session && needsProfile) return <Redirect href="/profile-setup" />;
+
+  const onLogin = async () => {
+    if (busy) return;
+    if (!loginId.trim() || !password) {
+      setError('ID(이메일)와 PW를 입력해 주세요.');
+      return;
     }
-    setSubmitting(false);
-  }
+    setBusy(true);
+    const err = await login(loginId.trim(), password);
+    setBusy(false);
+    setError(err);
+  };
+
+  const onGuest = async () => {
+    if (busy) return;
+    setBusy(true);
+    const err = await loginAsGuest();
+    setBusy(false);
+    setError(err);
+  };
 
   return (
-    <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.form}>
-        <Text style={styles.title}>Career Pair</Text>
-        <Text style={styles.subtitle}>준비된 Supabase 계정으로 로그인해요.</Text>
-
-        <Text style={styles.label}>이메일</Text>
-        <TextInput
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          textContentType="emailAddress"
-          style={styles.input}
-          placeholder="you@example.com"
-          placeholderTextColor="#8A8F98"
-        />
-
-        <Text style={styles.label}>비밀번호</Text>
-        <TextInput
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          textContentType="password"
-          style={styles.input}
-          placeholder="비밀번호"
-          placeholderTextColor="#8A8F98"
-        />
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={submitting || !email.trim() || !password}
-          onPress={signIn}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            (submitting || !email.trim() || !password) && styles.disabled,
-            pressed && styles.pressed,
-          ]}
-        >
-          {submitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.primaryButtonText}>로그인</Text>
-          )}
-        </Pressable>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function HomeScreen({ session }: { session: Session }) {
-  const router = useRouter();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [profileStatus, setProfileStatus] = useState<'loading' | 'ready' | 'error'>(
-    'loading',
-  );
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      setProfileStatus('loading');
-      setProfileError(null);
-      getMyProfile()
-        .then((nextProfile) => {
-          if (!active) return;
-          setProfile(nextProfile);
-          setProfileStatus('ready');
-        })
-        .catch((error: unknown) => {
-          if (!active) return;
-          if (error instanceof ApiError && error.status === 404) {
-            router.replace('/profile');
-            return;
-          }
-          setProfileError(messageOf(error));
-          setProfileStatus('error');
-        });
-      return () => {
-        active = false;
-      };
-    }, [reloadKey, router, session.user.id]),
-  );
-
-  function startAnalysis() {
-    if (profileStatus !== 'ready') return;
-    router.push({
-      pathname: '/analyze',
-      params: { session: Date.now().toString() },
-    });
-  }
-
-  function findProviders() {
-    if (profileStatus !== 'ready' || !profile) return;
-    router.push({
-      pathname: '/providers',
-      params: { regionId: profile.region_id },
-    });
-  }
-
-  if (profileStatus === 'ready' && profile?.role === 'provider') {
-    return <ProviderHome session={session} profile={profile} />;
-  }
-
-  return (
-    <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.form}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>하자 분석</Text>
-            <Text style={styles.subtitle}>{session.user.email}</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push('/profile')}
-              style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.textButtonLabel}>내 정보</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => supabase.auth.signOut()}
-              style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.textButtonLabel}>로그아웃</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {profileStatus === 'loading' ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>프로필을 확인하는 중…</Text>
-          </View>
-        ) : null}
-
-        {profileStatus === 'error' ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>프로필을 불러오지 못했어요</Text>
-            <Text style={styles.error}>{profileError}</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setReloadKey((value) => value + 1)}
-              style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.textButtonLabel}>다시 시도</Text>
-            </Pressable>
-          </View>
-        ) : null}
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>사진으로 하자 상태를 확인해요</Text>
-          <Text style={styles.bodyText}>
-            같은 하자의 전체 사진과 근접 사진을 1~2장 선택하고, 발견 위치와 표면
-            재질을 입력해 주세요. 증상 메모는 선택입니다.
-          </Text>
-          <Text style={styles.bodyText}>
-            현재는 실제 사진 분석 모델 없이 입력값으로 만든 샘플 결과를
-            보여드려요. 결과 화면의 샘플 안내를 꼭 확인해 주세요.
-          </Text>
-        </View>
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={profileStatus !== 'ready'}
-          onPress={startAnalysis}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            profileStatus !== 'ready' && styles.disabled,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.primaryButtonText}>
-            {profileStatus === 'loading' ? '프로필 확인 중…' : '새 분석 시작'}
-          </Text>
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="button"
-          disabled={profileStatus !== 'ready'}
-          onPress={findProviders}
-          style={({ pressed }) => [
-            styles.secondaryButton,
-            profileStatus !== 'ready' && styles.disabled,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.secondaryButtonText}>업체 찾기</Text>
-        </Pressable>
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function ProviderHome({
-  session,
-  profile,
-}: {
-  session: Session;
-  profile: Profile;
-}) {
-  const router = useRouter();
-  const [detail, setDetail] = useState<ProviderDetail | null>(null);
-  const [quotes, setQuotes] = useState<QuoteRequestSummary[]>([]);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    if (!profile.provider_id) {
-      setError('연결된 업체 정보가 없어요. 관리자에게 업체 계정 연결을 요청해 주세요.');
-      setStatus('error');
-      return () => {
-        active = false;
-      };
-    }
-    setStatus('loading');
-    setError(null);
-    getProviderDetail(profile.provider_id)
-      .then((nextDetail) => {
-        if (!active) return;
-        setDetail(nextDetail);
-        setStatus('ready');
-      })
-      .catch((loadError) => {
-        if (!active) return;
-        setError(messageOf(loadError));
-        setStatus('error');
-      });
-    return () => {
-      active = false;
-    };
-  }, [profile.provider_id]);
-
-  useEffect(() => {
-    let active = true;
-    getQuoteRequests()
-      .then((nextQuotes) => {
-        if (active) setQuotes(nextQuotes);
-      })
-      .catch(() => {
-        if (active) setQuotes([]);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  return (
-    <SafeAreaView style={styles.screen}>
-      <ScrollView contentContainerStyle={styles.form}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>업체 홈</Text>
-            <Text style={styles.subtitle}>{session.user.email}</Text>
-          </View>
-          <View style={styles.headerActions}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.push('/profile')}
-              style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.textButtonLabel}>내 정보</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => supabase.auth.signOut()}
-              style={({ pressed }) => [styles.textButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.textButtonLabel}>로그아웃</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {status === 'loading' ? (
-          <View style={styles.card}>
-            <ActivityIndicator />
-            <Text style={styles.bodyText}>업체 정보를 불러오는 중…</Text>
-          </View>
-        ) : status === 'error' ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>업체 정보를 불러오지 못했어요</Text>
-            <Text style={styles.error}>{error}</Text>
-          </View>
-        ) : detail ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{detail.name}</Text>
-            <Text style={styles.bodyText}>
-              ★ {detail.rating.toFixed(1)} · 리뷰 {detail.review_count} · 경력{' '}
-              {detail.career_years === null ? '미확인' : `${detail.career_years}년`}
-            </Text>
-            {detail.description ? (
-              <Text style={styles.bodyText}>{detail.description}</Text>
-            ) : null}
-            <Text style={styles.label}>특화 분야</Text>
-            <Text style={styles.bodyText}>
-              {detail.work_types.map((item) => item.name).join(', ') || '미등록'}
-            </Text>
-            <Text style={styles.label}>출장 가능 지역</Text>
-            <Text style={styles.bodyText}>
-              {detail.regions.map((item) => item.display_name).join(', ') || '미등록'}
-            </Text>
-            {detail.address ? (
-              <Text style={styles.bodyText}>주소 {detail.address}</Text>
-            ) : null}
-            {detail.business_hours ? (
-              <Text style={styles.bodyText}>영업시간 {detail.business_hours}</Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>받은 견적 요청서</Text>
-          {quotes.length === 0 ? (
-            <Text style={styles.bodyText}>
-              아직 지역·특화 분야가 맞는 공개 요청서가 없어요.
-            </Text>
-          ) : (
-            quotes.map((quote) => (
-              <Pressable
-                key={quote.request_id}
-                accessibilityRole="button"
-                onPress={() => router.push(`/quote-requests/${quote.request_id}`)}
-                style={({ pressed }) => [styles.quoteCard, pressed && styles.pressed]}
-              >
-                <View style={styles.quoteHeader}>
-                  <Text style={styles.quoteTitle}>{quote.work_type_name}</Text>
-                  <Text style={styles.quoteStatus}>
-                    {quote.my_proposal_status === 'pending'
-                      ? '제안 대기'
-                      : quote.my_proposal_status === 'accepted'
-                        ? '수락됨'
-                        : quote.my_proposal_status === 'rejected'
-                          ? '마감됨'
-                          : '제안 가능'}
-                  </Text>
-                </View>
-                <Text style={styles.bodyText}>
-                  {quote.region_name} · {quote.location}
-                </Text>
-                <Text style={styles.bodyText}>
-                  {quote.severity_score === null
-                    ? 'AI 위험도 판단 보류'
-                    : `AI 위험도 ${quote.severity_score}%`}
-                </Text>
-              </Pressable>
-            ))
+    <View style={s.root}>
+      <SafeAreaView style={s.safe}>
+        <View style={[s.logo, { marginTop: height * d.logoTop }]}>
+          <LogoMark size={Math.min(d.logoSize, height * 0.17)} radius={0.24} />
+          {d.tagline !== '' && (
+            <Txt style={[s.taglineChar, { marginTop: 14 }]}>
+              {/* '집'과 '사'만 로고 캐릭터의 초록색으로 */}
+              {[...d.tagline].map((ch, i) => (
+                <Txt key={i} style={s.taglineChar} color={ch === '집' || ch === '사' ? C.primary : C.text}>
+                  {ch}
+                </Txt>
+              ))}
+            </Txt>
           )}
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>1:1 채팅</Text>
-          <Text style={styles.bodyText}>
-            요청인과의 채팅은 채팅 화면에서 확인할 수 있어요. 새 메시지는 채팅
-            목록에서 알려드려요.
-          </Text>
+        <View style={s.spacer} />
+        <View style={s.form}>
+          <LineField
+            label="ID"
+            value={loginId}
+            onChangeText={setLoginId}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            placeholder="이메일"
+          />
+          <LineField label="PW" value={password} onChangeText={setPassword} secureTextEntry onSubmitEditing={onLogin} />
+          {error && (
+            <Txt variant="sub" color={C.danger}>
+              {error}
+            </Txt>
+          )}
+          <View style={s.actions}>
+            <TextButton title="로그인" onPress={onLogin} color={C.primary} weight={F.bold} />
+            <Txt variant="body" color={C.faint} style={{ fontFamily: F.light }}>
+              /
+            </Txt>
+            <TextButton title="회원가입" onPress={() => router.push('/signup')} color={C.text} weight={F.semibold} />
+          </View>
+
+          {/* 대회 규정: 심사위원이 로그인 없이 체험할 수 있어야 함 */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="로그인 없이 둘러보기"
+            hitSlop={10}
+            onPress={onGuest}
+            style={({ pressed }) => [s.guest, pressed && { opacity: 0.6 }]}>
+            <Txt variant="sub" muted style={{ textDecorationLine: 'underline', fontFamily: F.light }}>
+              로그인 없이 둘러보기
+            </Txt>
+          </Pressable>
         </View>
 
-        <Text style={styles.subtitle}>
-          요청인용 분석 기능은 업체 계정에서 제공하지 않아요.
-        </Text>
-      </ScrollView>
-    </SafeAreaView>
+        <View style={{ height: d.formBottom, flexShrink: 1 }} />
+      </SafeAreaView>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#F7F7F8',
-  },
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  form: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    gap: 12,
-    padding: 24,
-    width: '100%',
-    maxWidth: 560,
-    alignSelf: 'center',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  headerText: {
-    flex: 1,
-    gap: 4,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  retryButton: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#15171A',
-  },
-  subtitle: {
-    fontSize: 15,
-    color: '#60646C',
-  },
-  label: {
-    marginTop: 8,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#15171A',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#D7D9DE',
-    borderRadius: 10,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#15171A',
-  },
-  card: {
-    borderWidth: 1,
-    borderColor: '#E2E4E8',
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    gap: 8,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#15171A',
-  },
-  bodyText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#4E535C',
-  },
-  primaryButton: {
-    marginTop: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-    backgroundColor: '#208AEF',
-    minHeight: 50,
-    paddingHorizontal: 16,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  quoteCard: {
-    borderTopWidth: 1,
-    borderTopColor: '#E2E4E8',
-    paddingTop: 10,
-    gap: 4,
-  },
-  quoteHeader: {
+/** 흰색 둥근 입력칸 (왼쪽에 ID/PW 라벨) */
+function LineField({ label, ...props }: { label: string } & React.ComponentProps<typeof TextInput>) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <View style={[s.line, focused && { borderColor: C.primary }]}>
+      <Txt variant="body" style={s.lineLabel}>
+        {label}
+      </Txt>
+      <TextInput
+        accessibilityLabel={label}
+        style={s.lineInput}
+        placeholderTextColor={C.faint}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        {...props}
+      />
+    </View>
+  );
+}
+
+function TextButton({ title, onPress, color, weight }: { title: string; onPress: () => void; color: string; weight: string }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      hitSlop={12}
+      onPress={onPress}
+      style={({ pressed }) => pressed && { opacity: 0.6 }}>
+      <Txt variant="body" color={color} style={{ fontFamily: weight, fontSize: 16 }}>
+        {title}
+      </Txt>
+    </Pressable>
+  );
+}
+
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: C.bg },
+  safe: { flex: 1, width: '100%', maxWidth: MAX_W, alignSelf: 'center' },
+  logo: { alignItems: 'center' },
+  taglineChar: { fontFamily: F.bold, fontSize: 22, lineHeight: 26 },
+  guest: { alignItems: 'center', marginTop: 10 },
+  spacer: { flex: 1, minHeight: 20 },
+  form: { marginHorizontal: 32, gap: 12 },
+  line: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
+    minHeight: 54,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
-  quoteTitle: {
+  lineLabel: { width: 40, fontFamily: F.bold },
+  lineInput: {
     flex: 1,
     fontSize: 16,
-    fontWeight: '700',
-    color: '#15171A',
-  },
-  quoteStatus: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#208AEF',
-  },
-  secondaryButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 50,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#208AEF',
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 16,
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#208AEF',
-  },
-  textButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-  },
-  textButtonLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#208AEF',
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  pressed: {
-    opacity: 0.75,
-  },
-  error: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#C0392B',
-  },
+    fontFamily: F.regular,
+    color: C.text,
+    paddingVertical: 8,
+    outlineStyle: 'none',
+  } as object,
+  actions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 8 },
 });

@@ -26,7 +26,7 @@
 | --- | --- | --- |
 | `profiles` | 구현됨 (`007`) | `user_id uuid PK/FK auth.users(id)`, `nickname text NOT NULL`, `role text NOT NULL`, `region_id uuid NOT NULL FK regions(id)`, `address text NULL`, `housing_type text NOT NULL`, `created_at timestamptz`, `updated_at timestamptz` |
 | `records` | 구현됨 (`material`, 지역 스냅샷 `012`, 사진 `015`) | `id uuid PK`, `owner_id uuid`, `region_id uuid NULL FK regions(id)`, `photo_files jsonb NOT NULL DEFAULT '[]'`, `location text`, `material text NULL`, `symptoms text`, `photo_observations jsonb`, `input_revision bigint`, `next_question_result jsonb` *(레거시)*, `next_question_revision bigint` *(레거시)*, `diagnosis jsonb`, `diagnosis_revision bigint`, `diagnosis_generation bigint`, `landlord_draft text`, `landlord_draft_revision bigint`, `landlord_draft_diagnosis_generation bigint`, `provider_draft text`, `provider_draft_revision bigint`, `provider_draft_diagnosis_generation bigint`, `conversation_sequence bigint` *(레거시)*, `created_at timestamptz`, `updated_at timestamptz` |
-| `support_programs` | 구현됨 (`008`·`009`) | `id uuid PK`, `external_id text UNIQUE NOT NULL`, `source text`(`seed`/`gov24_api`), `title`, `summary`, `organization_name`, `region_scope`(`national`/`local`), `region_id uuid NULL FK regions(id)`, `target_housing_types text[]`, `support_target`, `support_content`, `selection_criteria`, `apply_method`, `deadline_text`, `deadline_date date NULL`, `deadline_kind`(`fixed`/`always_open`/`unknown`), `detail_url`, `source_attribution`, `source_checked_at`, `synced_at`, `created_at`, `updated_at` |
+| `support_programs` | 구현됨 (`008`·`009`·`017`) | `id uuid PK`, `external_id text UNIQUE NOT NULL`, `source text`(`seed`/`gov24_api`), `title`, `summary`, `organization_name`, `region_scope`(`national`/`local`), `region_id uuid NULL FK regions(id)`, `target_housing_types text[]`, `categories text[]`, `support_target`, `support_content`, `selection_criteria`, `apply_method`, `deadline_text`, `deadline_date date NULL`, `deadline_kind`(`fixed`/`always_open`/`unknown`), `detail_url`, `source_attribution`, `source_checked_at`, `synced_at`, `created_at`, `updated_at` |
 | `providers` | 구현됨 (`010` 계정 연결, `013` 상세·평점) | `id uuid PK`, `name text NOT NULL`, `phone text NOT NULL`, `rating numeric(2,1) NOT NULL DEFAULT 0.0`, `review_count integer NOT NULL DEFAULT 0`, `description text NULL`, `address text NULL`, `business_hours text NULL`, `career_years integer NULL`, `account_user_id uuid NULL FK auth.users(id)` (`010`, NULL 제외 유일 인덱스) |
 | `regions` | 구현됨 (`008`에서 상하 관계 추가) | `id uuid PK`, `name text NOT NULL UNIQUE`, `display_name text NOT NULL`, `parent_id uuid NULL FK regions(id)` |
 | `work_types` | 구현됨 | `id uuid PK`, `name text NOT NULL UNIQUE` |
@@ -69,9 +69,10 @@
 - `region_scope`: `CHECK (region_scope IN ('national', 'local'))`. `national`은 `region_id IS NULL`, `local`은 `region_id IS NOT NULL`이어야 한다.
 - `region_id`: `regions(id)` 참조. `regions.parent_id`로 상위 지역을 표현하며, `008`은 경기도(`gyeonggi`)를 추가하고 용인시(`yongin`)의 상위로 연결한다. 기존 부모 관계가 있으면 덮어쓰지 않는다.
 - `target_housing_types`: `monthly_rent`, `jeonse`, `semi_jeonse`, `owned`, `other`만 허용하는 `text[]`. 공고 원문에 명시된 거주 형태만 태그하며, 태그가 신청 자격을 확정하지 않는다.
+- `categories`: 제목·요약 키워드로 분류한 참고 카테고리 `text[]`. `monthly_rent_support`, `deposit_loan`, `housing_cost`, `repair`, `brokerage_fee`, `supply`, `other`만 허용하며 비어 있을 수 없다. 한 공고가 여러 카테고리에 속할 수 있고, 신청 자격을 확정하지 않는다. `017_support_program_categories.sql`이 컬럼·CHECK·시드 백필을 추가한다.
 - `support_target`·`support_content`: 공식 원문의 지원 대상과 지원 내용. 동기화에서 비어 있으면 해당 행을 저장하지 않는다.
 - `selection_criteria`·`apply_method`: 원문에 있을 때만 저장하며 없으면 `NULL`이다.
-- `deadline_text`: 공식 신청기한 원문(없으면 `NULL`). `deadline_date`: 명확히 해석한 마감일만 저장하고, `deadline_kind`는 `fixed`·`always_open`·`unknown` 중 하나다. `fixed`는 날짜가 필수이고 나머지는 날짜가 `NULL`이어야 한다. 마감일 당일은 마감으로 처리하지 않고 한국 시간 기준 다음 날부터 `is_closed=true`가 된다.
+- `deadline_text`: 공식 신청기한 원문(없으면 `NULL`). `deadline_date`: 명확히 해석한 마감일만 저장하고, `deadline_kind`는 `fixed`·`always_open`·`unknown` 중 하나다. 동기화는 `신청기한유형`을 우선 사용해 `상시신청`을 `always_open`, `기간설정`의 단일 기간을 `fixed`, `접수기관별상이`·모호한 `직접입력`을 `unknown`으로 둔다. `fixed`는 날짜가 필수이고 나머지는 날짜가 `NULL`이어야 한다. 마감일 당일은 마감으로 처리하지 않고 한국 시간 기준 다음 날부터 `is_closed=true`가 된다.
 - `detail_url`: 공식 원문 URL. `http`·`https`만 허용하는 DB CHECK가 있다.
 - `source_attribution`: 화면에 표시할 출처. 보조금24 동기화는 `행정안전부 대한민국 공공서비스(혜택) 정보 · 공공데이터포털`, 시드는 각 공식 원문 기관을 기록한다.
 - `source_checked_at`: 출처를 마지막으로 확인한 시각. `synced_at`: 외부 API에서 마지막으로 갱신한 시각(시드는 `NULL`).
@@ -86,7 +87,7 @@
 | `seed:yongin-youth-brokerage-fee-2026` | 용인시 | [용인청년포털 부동산 중개보수 감면](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026021000000000000055001) |
 | `seed:yongin-youth-monthly-rent-2026` | 용인시 | [용인청년포털 청년월세 지원](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026032300000000000061001) |
 
-보조금24 동기화는 `serviceList`의 공식 필드 중 `서비스ID`, `서비스명`, `서비스목적요약`, `소관기관명`, `소관기관유형`, `지원대상`, `지원내용`, `신청방법`, `신청기한`, `상세조회URL`, `서비스분야`를 사용한다. 서비스명에 주거 관련 키워드가 있는 사업만 반영한다. `소관기관명`이 등록 지역 표시명과 정확히 일치할 때만 `local`로 확정하고, 중앙행정기관은 `national`로만 분류한다. 시·군·구명이 다르거나 모호한 지역은 저장하지 않는다. 거주 형태도 원문에 명시된 경우만 태그한다. 검증 시드와 같은 제목(끝의 `사업` 제외)·기관·지역의 API 행은 목록에서 시드로 대체한다.
+보조금24 동기화는 `serviceList`의 `서비스ID`, `서비스명`, `서비스목적요약`, `소관기관명`, `소관기관유형`, `지원대상`, `지원내용`, `신청방법`, `신청기한`, `신청기한유형`, `상세조회URL`을 사용한다. 서비스명에 주거 관련 키워드가 있는 사업만 반영한다. `소관기관명`이 등록 지역 표시명과 정확히 일치할 때만 `local`로 확정하고, 중앙행정기관은 `national`로만 분류한다. 시·군·구명이 다르거나 모호한 지역은 저장하지 않는다. 거주 형태는 원문에 명시된 경우만 태그하고, 카테고리는 제목·요약 키워드로만 분류한다. 검증 시드와 같은 제목(끝의 `사업` 제외)·기관·지역의 API 행은 목록에서 시드로 대체한다.
 
 ## 업체–요청인 1:1 채팅 (`chat_rooms`, `chat_messages`, 구현 완료)
 
