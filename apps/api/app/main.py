@@ -1,5 +1,6 @@
 import logging
 import os
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -20,6 +21,7 @@ from app.quotes import router as quotes_router
 from app.records import router as records_router
 from app.schemas import HealthResponse
 from app.support_programs import router as support_programs_router
+from app.vision import warm_up_detector
 
 logger = logging.getLogger("career_pair_api")
 
@@ -138,6 +140,14 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.on_event("startup")
+def _warm_up_vision() -> None:
+    # Load YOLO in the background so startup is not blocked; the first analysis then skips ~8s of cold start.
+    threading.Thread(target=warm_up_detector, name="yolo-warm-up", daemon=True).start()
+
+
 app.include_router(records_router)
 app.include_router(diagnosis_router)
 app.include_router(profile_router)
