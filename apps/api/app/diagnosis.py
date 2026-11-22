@@ -330,10 +330,12 @@ def compute_severity(
         add("범위", _SPREAD_POINTS.get(str(checklist.get("spread") or ""), 0))
 
     place = f"{location} {material}"
-    if any(word in place for word in ("천장", "창틀", "외벽", "베란다")):
-        add("위치(누수·결로 경로)", 10)
-    elif any(word in place for word in ("화장실", "욕실", "주방")):
-        add("위치(습한 공간)", 5)
+    # 위치 가점은 습기에 약한 곳이라는 뜻일 뿐 누수·결로를 단정하지 않습니다. 균열에는 주지 않습니다.
+    if main != "균열":
+        if any(word in place for word in ("천장", "창틀", "외벽", "베란다")):
+            add("습기에 약한 위치", 10)
+        elif any(word in place for word in ("화장실", "욕실", "주방")):
+            add("습한 공간", 5)
     if "곰팡이" in suspected_types and re.search(r"안방|침실|(?<!주)방", place):
         add("침실 곰팡이(건강)", 10)
 
