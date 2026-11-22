@@ -20,3 +20,6 @@ build/
 dist/
 *.egg-info/
 .DS_Store
+docs/submission/
+docs/research/
+docs/reports/
