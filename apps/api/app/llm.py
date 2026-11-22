@@ -78,7 +78,7 @@ def _post_chat(payload: dict) -> httpx.Response:
     return response
 
 
-def generate_text(prompt: str) -> str:
+def generate_text(prompt: str, *, system_prompt: str | None = None) -> str:
     settings = get_settings()
     if not settings.llm_api_key:
         raise LlmUnavailable
@@ -86,7 +86,7 @@ def generate_text(prompt: str) -> str:
     response = _post_chat({
         "model": settings.llm_model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,
