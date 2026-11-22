@@ -35,8 +35,8 @@ export type Account = {
 
 export type Photo = { id: string; uri: string; createdAt: number };
 
-/** 백엔드 진단 유형은 '균열' | '벗겨짐' | '곰팡이'뿐입니다. '누수'·'결로'는 팀원 UI 전용 라벨입니다. (GAP-007) */
-export type DefectType = '곰팡이' | '균열' | '벗겨짐' | '누수' | '결로' | '판단 보류';
+/** 백엔드 진단 유형(`diagnosis.py`)과 같은 3종 + 판단 보류입니다. (GAP-007) */
+export type DefectType = '곰팡이' | '균열' | '벗겨짐' | '판단 보류';
 
 export type AnalysisInput = {
   photo: Photo;
@@ -77,8 +77,6 @@ export type AnalysisResult = {
   defect: DefectType;
   /** 위험도 0~100 */
   risk: number;
-  /** 모델 신뢰도 0~1. 백엔드 진단에는 없는 값이라 null입니다. (GAP-008) */
-  confidence: number | null;
   region: DefectRegion | null;
   cause: string;
   solutions: string[];

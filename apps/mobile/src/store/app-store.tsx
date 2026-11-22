@@ -254,7 +254,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             housing,
             defect: toDefect(r.suspected_types, undetermined),
             risk: r.severity_score ?? 0,
-            confidence: null,
             region: null,
             cause: '',
             solutions: [],

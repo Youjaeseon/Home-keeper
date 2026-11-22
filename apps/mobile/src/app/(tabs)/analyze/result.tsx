@@ -129,11 +129,6 @@ export default function AnalyzeResultScreen() {
           </View>
         </View>
         <RiskLegend />
-        {r.confidence !== null && (
-          <Txt variant="caption" muted>
-            AI 신뢰도 {Math.round(r.confidence * 100)}%
-          </Txt>
-        )}
         {!!r.estimationNotice && (
           <Txt variant="caption" muted style={{ textAlign: 'center' }}>
             {r.estimationNotice}

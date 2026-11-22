@@ -23,10 +23,10 @@ export function splitLocation(value: string | null): { location: string; positio
   return { location: location || '위치 미입력', position: rest.join(LOCATION_SEP) };
 }
 
-const KNOWN: DefectType[] = ['곰팡이', '균열', '벗겨짐', '누수', '결로'];
+const KNOWN: DefectType[] = ['곰팡이', '균열', '벗겨짐'];
 export function toDefect(suspected: string[], undetermined: boolean): DefectType {
   if (undetermined) return '판단 보류';
-  return (KNOWN.find((d) => suspected.includes(d)) ?? (suspected[0] as DefectType | undefined)) ?? '판단 보류';
+  return KNOWN.find((d) => suspected.includes(d)) ?? '판단 보류';
 }
 
 function guessMime(uri: string) {
@@ -60,7 +60,6 @@ export function toAnalysisResult(
     housing: meta.housing,
     defect,
     risk,
-    confidence: null,
     region: null,
     cause: undetermined
       ? [d.reason, ...d.unknowns].filter(Boolean).join('\n')
