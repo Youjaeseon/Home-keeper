@@ -317,7 +317,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         userNickname: isProvider ? (q.requester_nickname ?? '요청인') : (user?.nickname ?? ''),
         region: q.region_name,
         analysisId: q.record_id,
-        photoUri: q.photos[0]?.url ?? '',
+        // 서버 Storage가 꺼져 있으면 사진 URL이 없으므로, 같은 기록의 분석 사진(앱에 있는 것)을 씁니다.
+        photoUri: q.photos[0]?.url ?? analysesRef.current.find((a) => a.id === q.record_id)?.photoUri ?? '',
         defect: q.suspected_types[0] ?? q.work_type_name,
         risk: q.severity_score ?? 0,
         location: splitLocation(q.location).location,
@@ -615,8 +616,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshQuotes,
     async sendEstimate(analysis, memo) {
       try {
-        await createQuoteRequest({ record_id: analysis.id, memo: memo || null });
-        await refreshQuotes();
+        const created = await createQuoteRequest({ record_id: analysis.id, memo: memo || null });
+        // 목록·상세를 다시 받는 데 몇 초 걸리므로(서버 왕복 여러 번), 보낸 요청서를 먼저 화면에 넣고 새로고침은 뒤에서 합니다.
+        setEstimates((prev) => [
+          {
+            id: created.request_id,
+            userId: me,
+            userNickname: user?.nickname ?? '',
+            region: created.region_name,
+            analysisId: created.record_id,
+            photoUri: created.photos[0]?.url ?? analysis.photoUri,
+            defect: analysis.defect,
+            risk: analysis.risk,
+            location: analysis.location,
+            position: analysis.position,
+            memo: created.memo ?? '',
+            createdAt: Date.parse(created.created_at),
+            status: created.status,
+            acceptedProposalId: created.accepted_proposal_id,
+          },
+          ...prev.filter((e) => e.id !== created.request_id),
+        ]);
+        void refreshQuotes().catch(() => null);
         return null;
       } catch (e) {
         if (e instanceof ApiError && e.code === 'request_already_open') return '이 분석 결과로 이미 진행 중인 견적 요청서가 있어요.';
