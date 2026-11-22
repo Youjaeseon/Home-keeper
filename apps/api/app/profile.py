@@ -176,10 +176,13 @@ def upsert_my_profile(
     "/regions",
     response_model=list[RegionOut],
     summary="지역 목록 조회",
-    description="프로필의 거주 지역 선택에 사용할 지역 ID와 화면 표시 이름을 반환합니다.",
+    description=(
+        "프로필의 거주 지역 선택에 사용할 지역 ID와 화면 표시 이름을 반환합니다.\n\n"
+        "- 로그인 전 회원가입 화면에서도 쓰도록 인증 없이 조회합니다. 지역 이름은 공개 정보입니다."
+    ),
     response_description="지역 ID, 이름, 시·군·구가 포함된 표시 이름 목록",
 )
-def list_regions(owner_id: UUID = Depends(get_current_user)):
+def list_regions():
     with read_transaction() as conn:
         return conn.execute(
             """

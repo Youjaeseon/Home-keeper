@@ -1,7 +1,9 @@
 import logging
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from scalar_fastapi import add_scalar_reference
@@ -122,6 +124,19 @@ app = FastAPI(
     openapi_tags=_OPENAPI_TAGS,
     docs_url=None,
     redoc_url=None,
+)
+# Browser clients (Expo Web) need CORS. Native apps are unaffected.
+# CORS_ALLOW_ORIGINS is a comma-separated list; defaults to local Expo Web dev origins.
+_DEFAULT_CORS_ORIGINS = "http://localhost:8081,http://localhost:8082,http://localhost:19006"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        origin.strip()
+        for origin in os.environ.get("CORS_ALLOW_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",")
+        if origin.strip()
+    ],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(records_router)
 app.include_router(diagnosis_router)

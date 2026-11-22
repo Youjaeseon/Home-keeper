@@ -188,12 +188,9 @@ def test_provider_role_is_not_changed_by_requester_profile_upsert(
     ).fetchone()["role"] == "provider"
 
 
-def test_regions_require_auth_and_include_demo_region(client, admin, user_factory, token_for):
-    assert client.get("/regions").status_code == 401
-
-    response = client.get(
-        "/regions", headers=auth_headers(token_for(user_factory()))
-    )
+def test_regions_are_public_and_include_demo_region(client, admin):
+    # The signup screen loads regions before login.
+    response = client.get("/regions")
     assert response.status_code == 200, response.text
     regions = response.json()
     assert regions

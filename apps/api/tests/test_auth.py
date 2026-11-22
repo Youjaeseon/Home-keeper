@@ -45,8 +45,9 @@ def test_token_issue_time_allows_small_clock_skew(
     client, user_factory, token_for, issued_in, status
 ):
     user_id = user_factory()
+    # /regions is public, so use an authenticated read endpoint.
     response = client.get(
-        "/regions", headers=auth_headers(token_for(user_id, issued_in=issued_in))
+        "/work-types", headers=auth_headers(token_for(user_id, issued_in=issued_in))
     )
     assert response.status_code == status
 
