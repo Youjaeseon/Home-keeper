@@ -99,14 +99,8 @@ export function buildGuide(
   if (housing === '월세' || housing === '전세' || housing === '반전세') {
     return {
       title: `${housing} 세입자 대응 가이드`,
-      body: '',
-      // TODO(integration-gap): GAP-012 대응 순서(steps)는 팀원 하드코딩 안내입니다. 백엔드에는 대응 순서 API가 없습니다.
-      steps: [
-        { title: '기록하기', desc: '날짜가 보이게 사진을 남기세요.' },
-        { title: '원인 살피기', desc: '건물 문제인지, 환기·관리 같은 생활 습관 때문인지 확인하세요.' },
-        { title: '집주인에게 알리기', desc: '원인이 무엇이든 문자로 먼저 알리세요.' },
-        { title: '수리 협의하기', desc: '건물 문제는 집주인, 사용 중 생긴 문제는 세입자가 부담하는 것이 보통이에요.' },
-      ],
+      // 법률 검토 전이라 하드코딩 대응 순서(책임 부담 안내 포함)는 넣지 않습니다. (GAP-012)
+      body: '사진과 날짜를 남겨 두고, 아래 문자로 집주인에게 먼저 알려 보세요.',
       // 집주인 문자는 백엔드 임대인 요청문(POST /records/{id}/drafts/landlord 또는 template)을 씁니다.
       message:
         landlordDraft ??
