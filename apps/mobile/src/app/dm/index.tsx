@@ -173,6 +173,29 @@ function Quotes() {
     }
   };
 
+  /** 수락 취소 → 그 업체에게 고객이 수락을 취소했다고 알립니다. 알림이 실패해도 취소는 그대로 둡니다. */
+  const cancelAndNotify = async (e: Estimate, p: Proposal) => {
+    if (accepting.current) return;
+    accepting.current = true;
+    try {
+      const err = await cancelAccept(e.id);
+      if (err) {
+        alertIf(err);
+        return;
+      }
+      const room = await openRoom({ vendorId: p.vendorId });
+      if (room.roomId) {
+        await sendMessage(
+          room.roomId,
+          p.vendorId,
+          `[업체 제안서 수락 취소] 고객이 ${e.defect} · ${[e.location, e.position].filter(Boolean).join(' · ')} 견적의 수락을 취소했어요.`,
+        );
+      }
+    } finally {
+      accepting.current = false;
+    }
+  };
+
   return (
     <>
       <Hero
@@ -218,7 +241,7 @@ function Quotes() {
                     onDelete={() => removeProposal(p.id)}
                     accept={!accepted[e.id] ? 'open' : accepted[e.id] === p.id ? 'accepted' : 'closed'}
                     onAccept={() => void acceptAndChat(e, p)}
-                    onCancelAccept={() => void cancelAccept(e.id).then(alertIf)}
+                    onCancelAccept={() => void cancelAndNotify(e, p)}
                   />
                 ))}
               </>
