@@ -10,7 +10,6 @@ import { messageOf } from "@/lib/api";
 import { fetchVendors } from "@/services/vendors";
 import { useApp } from "@/store/app-store";
 import type { Vendor } from "@/types";
-import { showAlert } from "@/lib/alert";
 
 /** 분야 필터: 작업 종류 이름 → 버튼 문구 (화면에 있는 분야만 버튼으로 보여 줍니다) */
 const FIELDS: { key: string; label: string }[] = [
@@ -93,21 +92,14 @@ export default function VendorsScreen() {
           <Pressable
             key={v.id}
             accessibilityRole="button"
-            accessibilityLabel={`${v.name} 문의하기`}
+            accessibilityLabel={`${v.name}에 메시지 보내기`}
+            // 업체를 누르면 메시지 창으로 이동합니다(뒤로 가면 업체 목록). 전화는 전화번호 버튼으로만 겁니다.
+            // 앱에 가입하지 않은 업체는 메시지 창에서 '앱 채팅 미지원' 안내가 나옵니다.
             onPress={() =>
-              v.realListing
-                ? void Linking.openURL(`tel:${v.phone.replace(/[^0-9+]/g, "")}`)
-                : v.chatAvailable
-                  ? router.push({
-                      pathname: "/dm/[vendorId]",
-                      params: { vendorId: v.id, name: v.name },
-                    })
-                  : showAlert(
-                      "앱 채팅을 지원하지 않는 업체예요",
-                      v.isSample
-                        ? "시연용 샘플 업체입니다."
-                        : `전화(${v.phone})로 문의해 주세요.`,
-                    )
+              router.push({
+                pathname: "/dm/[vendorId]",
+                params: { vendorId: v.id, name: v.name },
+              })
             }
             style={({ pressed }) => pressed && { opacity: 0.85 }}
           >
@@ -132,15 +124,31 @@ export default function VendorsScreen() {
                       {v.rating.toFixed(1)} ({v.reviewCount})
                     </Txt>
                   )}
-                  <Phone
-                    size={13}
-                    color={C.sub}
-                    strokeWidth={STROKE}
-                    style={{ marginLeft: 8 }}
-                  />
-                  <Txt variant="caption" muted>
-                    {v.phone}
-                  </Txt>
+                  {v.phone.replace(/[^0-9]/g, "").length >= 7 ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${v.name}에 전화 걸기 ${v.phone}`}
+                      hitSlop={6}
+                      onPress={() =>
+                        void Linking.openURL(
+                          `tel:${v.phone.replace(/[^0-9+]/g, "")}`,
+                        )
+                      }
+                      style={({ pressed }) => [
+                        s.call,
+                        pressed && { opacity: 0.7 },
+                      ]}
+                    >
+                      <Phone size={13} color={C.primary} strokeWidth={STROKE} />
+                      <Txt variant="label" color={C.primary}>
+                        {v.phone}
+                      </Txt>
+                    </Pressable>
+                  ) : (
+                    <Txt variant="caption" muted>
+                      {v.phone}
+                    </Txt>
+                  )}
                 </View>
               </View>
               <ChevronRight size={20} color={C.faint} strokeWidth={STROKE} />
@@ -168,5 +176,20 @@ const s = StyleSheet.create({
   filterText: { fontSize: 12, lineHeight: 16 },
   row: { flexDirection: "row", alignItems: "center", gap: 14, padding: 18 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 2 },
-  phone: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 },
+  phone: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
+  call: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: C.accent,
+  },
 });

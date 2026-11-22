@@ -98,6 +98,38 @@ def diagnosis_llm_timeout() -> ApiError:
     )
 
 
+def chat_message_not_editable() -> ApiError:
+    return ApiError(
+        403,
+        "message_not_editable",
+        "내가 보낸 일반 메시지만 수정하거나 삭제할 수 있어요.",
+    )
+
+
+def chat_message_delete_unavailable() -> ApiError:
+    return ApiError(
+        503,
+        "message_delete_unavailable",
+        "메시지 삭제를 아직 사용할 수 없습니다. 서버에 삭제 권한이 적용되지 않았습니다(마이그레이션 020).",
+    )
+
+
+def record_delete_unavailable() -> ApiError:
+    return ApiError(
+        503,
+        "record_delete_unavailable",
+        "분석 기록 삭제를 아직 사용할 수 없습니다. 서버에 삭제 권한이 적용되지 않았습니다(마이그레이션 020).",
+    )
+
+
+def record_has_active_deal() -> ApiError:
+    return ApiError(
+        409,
+        "record_has_active_deal",
+        "수락했거나 완료한 견적 거래가 있는 분석 기록은 지울 수 없어요.",
+    )
+
+
 def chat_message_conflict() -> ApiError:
     return ApiError(
         409,

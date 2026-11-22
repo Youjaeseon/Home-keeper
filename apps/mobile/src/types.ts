@@ -131,6 +131,10 @@ export type Message = {
   from: 'me' | 'vendor';
   text: string;
   at: number;
+  /** 수정된 메시지 */
+  edited?: boolean;
+  /** 내가 보낸 일반 메시지라 수정·삭제할 수 있음 */
+  editable?: boolean;
 };
 
 export type NewsItem = {

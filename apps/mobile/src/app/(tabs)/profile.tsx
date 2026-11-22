@@ -8,6 +8,7 @@ import { Select } from '@/components/select';
 import { AppBar, Button, Card, CardHeader, Chip, DeleteButton, Field, Screen, Txt } from '@/components/ui';
 import { C, STROKE } from '@/constants/theme';
 import { HOUSINGS } from '@/data/options';
+import { confirmAlert, showAlert } from '@/lib/alert';
 import { useApp } from '@/store/app-store';
 
 /** 스케치 3: 사용자 정보 — 회원 유형(유저/업체), 별명, 거주지역, 거주형태 */
@@ -91,7 +92,20 @@ export default function ProfileScreen() {
                   </Txt>
                 </View>
               </Pressable>
-              <DeleteButton label="분석 기록" onDelete={() => removeAnalysis(a.id)} />
+              <DeleteButton
+                label="분석 기록"
+                onDelete={() =>
+                  void confirmAlert(
+                    '분석 기록을 지울까요?',
+                    '사진과 이 기록으로 보낸 견적 요청서·받은 업체 제안서도 함께 지워지고 되돌릴 수 없어요.',
+                    '삭제',
+                  ).then(async (ok) => {
+                    if (!ok) return;
+                    const err = await removeAnalysis(a.id);
+                    if (err) showAlert('삭제하지 못했어요', err);
+                  })
+                }
+              />
               <ChevronRight size={18} color={C.faint} strokeWidth={STROKE} />
             </View>
           ))}

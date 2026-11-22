@@ -401,6 +401,8 @@ async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!response.ok) {
     await parseError(response);
   }
+  // 삭제 API는 본문 없이 204를 돌려줍니다.
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -670,6 +672,24 @@ export function getChatMessages(
 ): Promise<ChatMessageListResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   return apiRequest<ChatMessageListResponse>(`/chat/rooms/${roomId}/messages?${params}`);
+}
+
+/** 내 하자 기록을 DB에서 지웁니다(사진·진행 중 견적 포함). 020 미적용 서버는 503 record_delete_unavailable. */
+export function deleteRecord(recordId: string): Promise<void> {
+  return apiRequest<void>(`/records/${recordId}`, { method: 'DELETE' });
+}
+
+/** 내가 보낸 일반 메시지 수정 */
+export function updateChatMessage(roomId: string, messageId: string, content: string): Promise<ChatMessage> {
+  return apiRequest<ChatMessage>(`/chat/rooms/${roomId}/messages/${messageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ content }),
+  });
+}
+
+/** 내가 보낸 일반 메시지 삭제. 020 미적용 서버는 503 message_delete_unavailable. */
+export function deleteChatMessage(roomId: string, messageId: string): Promise<void> {
+  return apiRequest<void>(`/chat/rooms/${roomId}/messages/${messageId}`, { method: 'DELETE' });
 }
 
 export function sendChatMessage(

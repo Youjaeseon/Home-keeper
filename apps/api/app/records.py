@@ -1,5 +1,7 @@
 import logging
 import time
+
+import psycopg
 from typing import Annotated
 from uuid import UUID
 
@@ -18,6 +20,8 @@ from app.errors import (
     invalid_request,
     message_conflict,
     not_found,
+    record_delete_unavailable,
+    record_has_active_deal,
     revision_conflict,
 )
 from app.sample_analysis import (
@@ -549,6 +553,57 @@ def get_record(
                 ),
             },
         }
+
+
+def _storage_paths(photo_files) -> list[str]:
+    return [
+        item["storage_path"]
+        for item in (photo_files or [])
+        if isinstance(item, dict) and isinstance(item.get("storage_path"), str)
+    ]
+
+
+@router.delete(
+    "/{record_id}",
+    status_code=204,
+    summary="하자 기록 삭제",
+    description=(
+        "내 하자 기록을 DB에서 지우고 Storage 사진도 지웁니다. 되돌릴 수 없습니다.\n\n"
+        "- 이 기록으로 만든 견적 요청서와 업체 제안서도 함께 지워집니다(진행 중·취소된 건).\n"
+        "- 수락했거나 완료한 견적 거래가 있으면 지우지 않고 `409`(`record_has_active_deal`)입니다.\n"
+        "- 채팅에 공유한 분석 요약 메시지는 남고 기록 연결만 끊깁니다.\n"
+        "- 서버에 삭제 권한(마이그레이션 020)이 없으면 `503`(`record_delete_unavailable`)입니다."
+    ),
+    responses={404: {"model": ErrorResponse, "description": "기록 없음"}},
+)
+def delete_record(
+    record_id: Annotated[UUID, Path(description="삭제할 하자 기록 UUID.")],
+    owner_id: UUID = Depends(get_current_user),
+):
+    try:
+        with transaction() as conn:
+            record = _lock_record(conn, record_id, owner_id)
+            deal = conn.execute(
+                """
+                SELECT 1 FROM quote_requests
+                WHERE record_id = %s AND status IN ('accepted', 'completed')
+                LIMIT 1
+                """,
+                (record_id,),
+            ).fetchone()
+            if deal is not None:
+                raise record_has_active_deal()
+            paths = _storage_paths(record["photo_files"])
+            for row in conn.execute(
+                "SELECT photo_files FROM quote_requests WHERE record_id = %s", (record_id,)
+            ).fetchall():
+                paths += _storage_paths(row["photo_files"])
+            conn.execute("DELETE FROM records WHERE id = %s", (record_id,))
+    except psycopg.errors.InsufficientPrivilege:
+        raise record_delete_unavailable() from None
+
+    for path in dict.fromkeys(paths):
+        storage.delete_photo(path)
 
 
 @router.patch(

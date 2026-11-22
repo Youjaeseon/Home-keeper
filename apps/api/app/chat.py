@@ -11,6 +11,7 @@ import asyncio
 from typing import Annotated
 from uuid import UUID, uuid4
 
+import psycopg
 from fastapi import APIRouter, Body, Depends, Path, Query, WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 from fastapi.encoders import jsonable_encoder
@@ -18,11 +19,18 @@ from psycopg.types.json import Jsonb
 
 from app.auth import get_current_user, verify_access_token
 from app.db import read_transaction, transaction
-from app.errors import chat_message_conflict, invalid_request, not_found
+from app.errors import (
+    chat_message_conflict,
+    chat_message_delete_unavailable,
+    chat_message_not_editable,
+    invalid_request,
+    not_found,
+)
 from app.schemas import (
     ChatMessageCreateRequest,
     ChatMessageListResponse,
     ChatMessageOut,
+    ChatMessageUpdateRequest,
     ChatReadReceipt,
     ChatRoomCreateRequest,
     ChatRoomListItem,
@@ -615,6 +623,100 @@ async def create_message(
     if created:
         await hub.broadcast(participants, _message_event(message))
     return message
+
+
+def _own_text_message(conn, room_id: UUID, message_id: UUID, user_id: UUID) -> dict:
+    message = conn.execute(
+        "SELECT * FROM chat_messages WHERE id = %s AND room_id = %s FOR UPDATE",
+        (message_id, room_id),
+    ).fetchone()
+    if message is None:
+        raise not_found("메시지를 찾을 수 없어요.")
+    if message["sender_id"] != user_id or message["message_type"] != "text":
+        raise chat_message_not_editable()
+    return message
+
+
+def _edit_message(
+    room_id: UUID, message_id: UUID, user_id: UUID, content: str
+) -> tuple[dict, set[UUID]]:
+    with transaction() as conn:
+        room = _room_for_user(conn, room_id, user_id)
+        message = _own_text_message(conn, room_id, message_id, user_id)
+        payload = {**(message["payload"] or {}), "edited": True}
+        updated = conn.execute(
+            f"""
+            UPDATE chat_messages SET content = %s, payload = %s
+            WHERE id = %s
+            RETURNING {_MESSAGE_COLUMNS}
+            """,
+            (content, Jsonb(payload), message_id),
+        ).fetchone()
+    return updated, _participant_ids(room)
+
+
+def _delete_message(room_id: UUID, message_id: UUID, user_id: UUID) -> set[UUID]:
+    try:
+        with transaction() as conn:
+            room = _room_for_user(conn, room_id, user_id)
+            _own_text_message(conn, room_id, message_id, user_id)
+            conn.execute("DELETE FROM chat_messages WHERE id = %s", (message_id,))
+    except psycopg.errors.InsufficientPrivilege:
+        raise chat_message_delete_unavailable() from None
+    return _participant_ids(room)
+
+
+@router.patch(
+    "/rooms/{room_id}/messages/{message_id}",
+    response_model=ChatMessageOut,
+    summary="채팅 메시지 수정",
+    description=(
+        "내가 보낸 일반 텍스트 메시지의 본문을 DB에서 고칩니다. `payload.edited=true`가 붙습니다.\n\n"
+        "- 상대 메시지나 분석 요약 메시지는 `403`(`message_not_editable`)입니다.\n"
+        "- 참여자의 WebSocket으로 `message_updated` 이벤트를 보냅니다."
+    ),
+    responses={404: _NOT_FOUND_RESPONSE, 422: _VALIDATION_ERROR_RESPONSE},
+)
+async def update_message(
+    room_id: Annotated[UUID, Path(description="채팅방 UUID.")],
+    message_id: Annotated[UUID, Path(description="수정할 메시지 UUID.")],
+    body: ChatMessageUpdateRequest,
+    user_id: UUID = Depends(get_current_user),
+):
+    message, participants = await run_in_threadpool(
+        _edit_message, room_id, message_id, user_id, body.content
+    )
+    await hub.broadcast(participants, {
+        "type": "message_updated",
+        "room_id": str(room_id),
+        "message": jsonable_encoder(message),
+    })
+    return message
+
+
+@router.delete(
+    "/rooms/{room_id}/messages/{message_id}",
+    status_code=204,
+    summary="채팅 메시지 삭제",
+    description=(
+        "내가 보낸 일반 텍스트 메시지를 DB에서 지웁니다.\n\n"
+        "- 상대 메시지나 분석 요약 메시지는 `403`(`message_not_editable`)입니다.\n"
+        "- 서버에 삭제 권한(마이그레이션 020)이 없으면 `503`(`message_delete_unavailable`)입니다.\n"
+        "- 참여자의 WebSocket으로 `message_deleted` 이벤트를 보냅니다."
+    ),
+    responses={404: _NOT_FOUND_RESPONSE},
+)
+async def delete_message(
+    room_id: Annotated[UUID, Path(description="채팅방 UUID.")],
+    message_id: Annotated[UUID, Path(description="삭제할 메시지 UUID.")],
+    user_id: UUID = Depends(get_current_user),
+):
+    participants = await run_in_threadpool(_delete_message, room_id, message_id, user_id)
+    await hub.broadcast(participants, {
+        "type": "message_deleted",
+        "room_id": str(room_id),
+        "message_id": str(message_id),
+    })
 
 
 @router.websocket("/ws")

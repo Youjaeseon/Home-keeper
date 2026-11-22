@@ -14,6 +14,9 @@ import {
   acceptQuoteProposal,
   registerProvider,
   cancelQuoteAcceptance,
+  deleteChatMessage,
+  deleteRecord,
+  updateChatMessage,
   completeQuoteRequest,
   ApiError,
   cancelQuoteRequest,
@@ -100,7 +103,9 @@ type Store = {
   sendProposal: (estimateId: string, minPrice: number, maxPrice: number, memo: string) => Promise<string | null>;
   /** 내 화면에서만 숨긴 항목 id (서버 삭제 API가 없는 항목) */
   hidden: string[];
-  removeAnalysis: (id: string) => void;
+  removeAnalysis: (id: string) => Promise<string | null>;
+  editMessage: (roomId: string, messageId: string, text: string) => Promise<string | null>;
+  deleteMessage: (roomId: string, messageId: string) => Promise<string | null>;
   removeEstimate: (id: string) => Promise<string | null>;
   removeProposal: (id: string) => void;
   /** 수락한 업체 제안서: 견적 요청서 id → 업체 제안서 id (서버 accepted_proposal_id) */
@@ -229,6 +234,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       from: m.sender_id === me ? 'me' : 'vendor',
       text: m.content,
       at: Date.parse(m.created_at),
+      edited: !!(m.payload as { edited?: boolean } | null)?.edited,
+      editable: m.sender_id === me && m.message_type === 'text',
     }),
     [me],
   );
@@ -386,7 +393,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               headers: { Authorization: `Bearer ${token}` },
             });
       ws.onmessage = (ev) => {
-        let event: { type?: string; room_id?: string; message?: ChatMessage };
+        let event: { type?: string; room_id?: string; message?: ChatMessage; message_id?: string };
         try {
           event = JSON.parse(String(ev.data));
         } catch {
@@ -401,6 +408,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (event.type === 'message' && event.message) {
           const room = r.threads.find((t) => t.roomId === event.room_id);
           if (loadedRooms.current.has(event.message.room_id)) r.mergeMessages([r.toMessage(event.message, room?.vendorId ?? '')]);
+          void r.refreshThreads().catch(() => null);
+        }
+        // 상대가 메시지를 고치거나 지우면 바로 반영합니다.
+        if (event.type === 'message_updated' && event.message) {
+          const room = r.threads.find((t) => t.roomId === event.room_id);
+          r.mergeMessages([r.toMessage(event.message, room?.vendorId ?? '')]);
+        }
+        if (event.type === 'message_deleted' && event.message_id) {
+          const gone = event.message_id;
+          setMessages((prev) => prev.filter((m) => m.id !== gone));
           void r.refreshThreads().catch(() => null);
         }
       };
@@ -713,9 +730,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return messageOf(e);
       }
     },
-    removeAnalysis(id) {
-      // TODO(integration-gap): GAP-015 기록 삭제 API가 없어 내 화면에서만 숨깁니다.
-      hide(id);
+    async removeAnalysis(id) {
+      try {
+        await deleteRecord(id);
+        setAnalyses((prev) => prev.filter((a) => a.id !== id));
+        void refreshQuotes().catch(() => null);
+        return null;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'record_delete_unavailable') return '아직 서버에서 삭제할 수 없어요. (서버 준비 중)';
+        if (e instanceof ApiError && e.code === 'record_has_active_deal') return '수락했거나 완료한 견적 거래가 있는 분석 기록은 지울 수 없어요.';
+        return messageOf(e);
+      }
+    },
+    async editMessage(roomId, messageId, text) {
+      const t = text.trim();
+      if (!t) return '메시지를 입력해 주세요.';
+      if (isDemo(roomId)) {
+        setDemoMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, text: t, edited: true } : m)));
+        return null;
+      }
+      try {
+        const saved = await updateChatMessage(roomId, messageId, t);
+        const vendorId = messages.find((m) => m.id === messageId)?.vendorId ?? '';
+        mergeMessages([toMessage(saved, vendorId)]);
+        return null;
+      } catch (e) {
+        return messageOf(e);
+      }
+    },
+    async deleteMessage(roomId, messageId) {
+      if (isDemo(roomId)) {
+        setDemoMessages((prev) => prev.filter((m) => m.id !== messageId));
+        return null;
+      }
+      try {
+        await deleteChatMessage(roomId, messageId);
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+        void refreshThreads().catch(() => null);
+        return null;
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 'message_delete_unavailable') return '아직 서버에서 삭제할 수 없어요. (서버 준비 중)';
+        return messageOf(e);
+      }
     },
     async removeEstimate(id) {
       const mine = estimates.find((e) => e.id === id && e.userId === me);
