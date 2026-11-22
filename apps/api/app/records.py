@@ -861,7 +861,6 @@ def analyze_record(
                 raise diagnosis_llm_timeout() from None
             except llm.LlmError:
                 raise diagnosis_llm_failed() from None
-            mark("diagnosis_llm")
 
         uploaded_paths: list[str] = []
         photo_files: list[dict] = []

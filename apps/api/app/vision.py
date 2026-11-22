@@ -231,7 +231,8 @@ def _vision_image(image) -> str:
     from PIL import Image
 
     resized = image.copy()
-    resized.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
+    # 하자 판독에는 768px로 충분하고, 작을수록 비전 LLM 업로드·처리가 빨라집니다.
+    resized.thumbnail((768, 768), Image.Resampling.LANCZOS)
     encoded = BytesIO()
     resized.save(encoded, format="JPEG", quality=85)
     return "data:image/jpeg;base64," + base64.b64encode(encoded.getvalue()).decode("ascii")
@@ -282,6 +283,8 @@ def _observe(image, role: str) -> dict | None:
             system_prompt=VISION_SYSTEM_PROMPT,
             image_data_url=_vision_image(image),
             model=settings.vision_llm_model or settings.llm_model,
+            # 사진 관찰은 단순 작업이라 추론을 낮춰 속도를 줄입니다(프롬프트는 그대로).
+            reasoning_effort="low",
         )
         return _vision_observation(payload)
     except (llm.LlmError, ValueError):
