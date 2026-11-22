@@ -8,7 +8,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 
 import { Platform } from 'react-native';
 
-import { DEMO_ESTIMATES, DEMO_MESSAGES, DEMO_PROPOSALS, DEMO_VENDORS, demoAutoReply, demoProposalsFor, demoRoomId, isDemo } from '@/data/demo';
+import { DEMO_MESSAGES, DEMO_VENDORS, demoAutoReply, demoRoomId, isDemo } from '@/data/demo';
 import { matchRegion, toApiHousing, toUser } from '@/lib/adapters';
 import {
   acceptQuoteProposal,
@@ -137,8 +137,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [hiddenKeys, setHiddenKeys] = useState<string[]>([]);
   // 시연용 가상 데이터(data/demo.ts). 서버에 저장하지 않고 앱 안에서만 바뀝니다.
   const [demoMessages, setDemoMessages] = useState<Message[]>(DEMO_MESSAGES);
-  const [demoSentProposals, setDemoSentProposals] = useState<Proposal[]>([]);
-  const [demoAccepted, setDemoAccepted] = useState<Record<string, string>>({});
   const loadedFor = useRef<string | null>(null);
 
   /** 세션이 생기면 지역 목록과 프로필을 불러옵니다. 프로필 404 → 등록 화면. */
@@ -441,19 +439,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     analyses: analyses.filter((a) => !hiddenKeys.includes(`${me}:${a.id}`)),
     threads: [...threads, ...demoThreads(demoMessages)],
     messages: [...messages, ...demoMessages],
-    // 유저에게는 시연용 견적 요청서·업체 제안서를, 업체에게는 시연용 견적 요청서를 함께 보여 줍니다.
-    estimates: [...estimates, ...DEMO_ESTIMATES],
-    proposals: [
-      ...proposals,
-      ...DEMO_PROPOSALS,
-      ...demoSentProposals,
-      // 요청인의 실제 요청서에는 시연용 가상 업체 제안서를 함께 붙입니다(진행 중·수락 상태만).
-      ...(isProvider
-        ? []
-        : estimates
-            .filter((e) => e.userId === me && e.status !== 'cancelled')
-            .flatMap((e) => demoProposalsFor(e.id, e.defect, e.createdAt))),
-    ],
+    // 견적서·제안서는 서버의 실제 데이터만 보여 줍니다(예시 데이터 제거, Hyeok 결정).
+    estimates,
+    proposals,
     hidden: hiddenKeys.filter((k) => k.startsWith(`${me}:`)).map((k) => k.slice(me.length + 1)),
     async signup(account) {
       const { data, error } = await supabase.auth.signUp({ email: account.loginId, password: account.password });
@@ -678,24 +666,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     async sendProposal(estimateId, minPrice, maxPrice, memo) {
       if (!memo.trim()) return '제안 메모를 입력해 주세요. (작업 범위·방문 가능 일정 등)';
-      if (isDemo(estimateId)) {
-        setDemoSentProposals((prev) => [
-          ...prev,
-          {
-            id: `demo-${uid()}`,
-            estimateId,
-            vendorId: me,
-            vendorName: user?.nickname ?? '내 업체',
-            vendorIntro: user?.intro ?? '',
-            vendorRegion: user?.region ?? '',
-            price: minPrice,
-            priceMax: maxPrice,
-            memo: memo.trim(),
-            createdAt: Date.now(),
-          },
-        ]);
-        return null;
-      }
       try {
         await submitQuoteProposal(estimateId, { min_price: minPrice, max_price: maxPrice, memo: memo.trim() });
         await refreshQuotes();
@@ -706,18 +676,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return messageOf(e);
       }
     },
-    accepted: {
-      ...Object.fromEntries(
-        estimates.filter((e) => e.acceptedProposalId).map((e) => [e.id, e.acceptedProposalId as string]),
-      ),
-      ...demoAccepted,
-    },
+    accepted: Object.fromEntries(
+      estimates.filter((e) => e.acceptedProposalId).map((e) => [e.id, e.acceptedProposalId as string]),
+    ),
     async acceptProposal(estimateId, proposalId) {
-      // 시연용 요청서이거나, 실제 요청서에 붙은 시연용 제안서면 앱 안에서만 수락합니다.
-      if (isDemo(estimateId) || isDemo(proposalId)) {
-        setDemoAccepted((prev) => ({ ...prev, [estimateId]: proposalId }));
-        return null;
-      }
       try {
         await acceptQuoteProposal(estimateId, proposalId);
         await refreshQuotes();
@@ -728,14 +690,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     },
     async cancelAccept(estimateId) {
-      if (demoAccepted[estimateId]) {
-        setDemoAccepted((prev) => {
-          const next = { ...prev };
-          delete next[estimateId];
-          return next;
-        });
-        return null;
-      }
       try {
         await cancelQuoteAcceptance(estimateId);
         await refreshQuotes();
