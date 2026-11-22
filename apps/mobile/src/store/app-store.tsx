@@ -8,6 +8,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 
 import { Platform } from 'react-native';
 
+import { DEMO_ESTIMATES, DEMO_MESSAGES, DEMO_PROPOSALS, DEMO_VENDORS, demoAutoReply, demoProposalsFor, demoRoomId, isDemo } from '@/data/demo';
 import { matchRegion, toApiHousing, toUser } from '@/lib/adapters';
 import {
   acceptQuoteProposal,
@@ -134,6 +135,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [hiddenKeys, setHiddenKeys] = useState<string[]>([]);
+  // 시연용 가상 데이터(data/demo.ts). 서버에 저장하지 않고 앱 안에서만 바뀝니다.
+  const [demoMessages, setDemoMessages] = useState<Message[]>(DEMO_MESSAGES);
+  const [demoSentProposals, setDemoSentProposals] = useState<Proposal[]>([]);
+  const [demoAccepted, setDemoAccepted] = useState<Record<string, string>>({});
   const loadedFor = useRef<string | null>(null);
 
   /** 세션이 생기면 지역 목록과 프로필을 불러옵니다. 프로필 404 → 등록 화면. */
@@ -434,10 +439,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     regions,
     photos,
     analyses: analyses.filter((a) => !hiddenKeys.includes(`${me}:${a.id}`)),
-    threads,
-    messages,
-    estimates,
-    proposals,
+    threads: [...threads, ...demoThreads(demoMessages)],
+    messages: [...messages, ...demoMessages],
+    // 유저에게는 시연용 견적 요청서·업체 제안서를, 업체에게는 시연용 견적 요청서를 함께 보여 줍니다.
+    estimates: [...estimates, ...DEMO_ESTIMATES],
+    proposals: [
+      ...proposals,
+      ...DEMO_PROPOSALS,
+      ...demoSentProposals,
+      // 요청인의 실제 요청서에는 시연용 가상 업체 제안서를 함께 붙입니다(진행 중·수락 상태만).
+      ...(isProvider
+        ? []
+        : estimates
+            .filter((e) => e.userId === me && e.status !== 'cancelled')
+            .flatMap((e) => demoProposalsFor(e.id, e.defect, e.createdAt))),
+    ],
     hidden: hiddenKeys.filter((k) => k.startsWith(`${me}:`)).map((k) => k.slice(me.length + 1)),
     async signup(account) {
       const { data, error } = await supabase.auth.signUp({ email: account.loginId, password: account.password });
@@ -589,6 +605,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     refreshThreads,
     async openRoom({ vendorId, roomId, analysisId }) {
+      if (isDemo(vendorId)) return { roomId: demoRoomId(vendorId) };
       if (roomId && !analysisId) return { roomId };
       try {
         const room = await createChatRoom({ provider_id: vendorId, record_id: analysisId ?? null });
@@ -601,8 +618,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { error: messageOf(e) };
       }
     },
-    loadMessages,
+    async loadMessages(roomId) {
+      if (isDemo(roomId)) return null;
+      return loadMessages(roomId);
+    },
     async sendMessage(roomId, vendorId, text) {
+      if (isDemo(roomId)) {
+        const at = Date.now();
+        setDemoMessages((prev) => [...prev, { id: `demo-${uid()}`, roomId, vendorId, from: 'me', text, at }]);
+        const name = DEMO_VENDORS.find((v) => v.id === vendorId)?.name ?? '업체';
+        setTimeout(() => {
+          setDemoMessages((prev) => [
+            ...prev,
+            { id: `demo-${uid()}`, roomId, vendorId, from: 'vendor', text: demoAutoReply(name), at: Date.now() },
+          ]);
+        }, 1200);
+        return null;
+      }
       try {
         const saved = await sendChatMessage(roomId, { client_message_id: newClientMessageId(), content: text });
         loadedRooms.current.add(roomId);
@@ -646,6 +678,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     async sendProposal(estimateId, minPrice, maxPrice, memo) {
       if (!memo.trim()) return '제안 메모를 입력해 주세요. (작업 범위·방문 가능 일정 등)';
+      if (isDemo(estimateId)) {
+        setDemoSentProposals((prev) => [
+          ...prev,
+          {
+            id: `demo-${uid()}`,
+            estimateId,
+            vendorId: me,
+            vendorName: user?.nickname ?? '내 업체',
+            vendorIntro: user?.intro ?? '',
+            vendorRegion: user?.region ?? '',
+            price: minPrice,
+            priceMax: maxPrice,
+            memo: memo.trim(),
+            createdAt: Date.now(),
+          },
+        ]);
+        return null;
+      }
       try {
         await submitQuoteProposal(estimateId, { min_price: minPrice, max_price: maxPrice, memo: memo.trim() });
         await refreshQuotes();
@@ -656,10 +706,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return messageOf(e);
       }
     },
-    accepted: Object.fromEntries(
-      estimates.filter((e) => e.acceptedProposalId).map((e) => [e.id, e.acceptedProposalId as string]),
-    ),
+    accepted: {
+      ...Object.fromEntries(
+        estimates.filter((e) => e.acceptedProposalId).map((e) => [e.id, e.acceptedProposalId as string]),
+      ),
+      ...demoAccepted,
+    },
     async acceptProposal(estimateId, proposalId) {
+      // 시연용 요청서이거나, 실제 요청서에 붙은 시연용 제안서면 앱 안에서만 수락합니다.
+      if (isDemo(estimateId) || isDemo(proposalId)) {
+        setDemoAccepted((prev) => ({ ...prev, [estimateId]: proposalId }));
+        return null;
+      }
       try {
         await acceptQuoteProposal(estimateId, proposalId);
         await refreshQuotes();
@@ -670,6 +728,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     },
     async cancelAccept(estimateId) {
+      if (demoAccepted[estimateId]) {
+        setDemoAccepted((prev) => {
+          const next = { ...prev };
+          delete next[estimateId];
+          return next;
+        });
+        return null;
+      }
       try {
         await cancelQuoteAcceptance(estimateId);
         await refreshQuotes();
@@ -713,3 +779,11 @@ export function useApp() {
   return ctx;
 }
 
+/** 시연용 대화를 업체별 채팅 목록 한 줄로 묶습니다. */
+function demoThreads(list: Message[]): ChatThread[] {
+  return DEMO_VENDORS.flatMap((v) => {
+    const msgs = list.filter((m) => m.vendorId === v.id);
+    if (msgs.length === 0) return [];
+    return [{ roomId: demoRoomId(v.id), vendorId: v.id, name: v.name, last: msgs[msgs.length - 1].text, unread: 0 }];
+  });
+}
