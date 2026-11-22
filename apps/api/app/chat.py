@@ -625,14 +625,18 @@ async def create_message(
     return message
 
 
-def _own_text_message(conn, room_id: UUID, message_id: UUID, user_id: UUID) -> dict:
+def _own_text_message(
+    conn, room_id: UUID, message_id: UUID, user_id: UUID, *, allow_summary: bool = False
+) -> dict:
     message = conn.execute(
         "SELECT * FROM chat_messages WHERE id = %s AND room_id = %s FOR UPDATE",
         (message_id, room_id),
     ).fetchone()
     if message is None:
         raise not_found("메시지를 찾을 수 없어요.")
-    if message["sender_id"] != user_id or message["message_type"] != "text":
+    # 수정은 일반 메시지만, 삭제는 내가 공유한 분석 요약도 가능합니다.
+    allowed = ("text", "record_summary") if allow_summary else ("text",)
+    if message["sender_id"] != user_id or message["message_type"] not in allowed:
         raise chat_message_not_editable()
     return message
 
@@ -659,7 +663,7 @@ def _delete_message(room_id: UUID, message_id: UUID, user_id: UUID) -> set[UUID]
     try:
         with transaction() as conn:
             room = _room_for_user(conn, room_id, user_id)
-            _own_text_message(conn, room_id, message_id, user_id)
+            _own_text_message(conn, room_id, message_id, user_id, allow_summary=True)
             conn.execute("DELETE FROM chat_messages WHERE id = %s", (message_id,))
     except psycopg.errors.InsufficientPrivilege:
         raise chat_message_delete_unavailable() from None
@@ -699,8 +703,8 @@ async def update_message(
     status_code=204,
     summary="채팅 메시지 삭제",
     description=(
-        "내가 보낸 일반 텍스트 메시지를 DB에서 지웁니다.\n\n"
-        "- 상대 메시지나 분석 요약 메시지는 `403`(`message_not_editable`)입니다.\n"
+        "내가 보낸 일반 텍스트 메시지나 내가 공유한 분석 요약을 DB에서 지웁니다.\n\n"
+        "- 상대 메시지는 `403`(`message_not_editable`)입니다.\n"
         "- 서버에 삭제 권한(마이그레이션 020)이 없으면 `503`(`message_delete_unavailable`)입니다.\n"
         "- 참여자의 WebSocket으로 `message_deleted` 이벤트를 보냅니다."
     ),

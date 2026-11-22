@@ -236,6 +236,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       at: Date.parse(m.created_at),
       edited: !!(m.payload as { edited?: boolean } | null)?.edited,
       editable: m.sender_id === me && m.message_type === 'text',
+      deletable: m.sender_id === me,
     }),
     [me],
   );

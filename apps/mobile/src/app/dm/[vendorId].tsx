@@ -110,11 +110,11 @@ export default function ChatScreen() {
           }
           renderItem={({ item }) => {
             const mine = item.from === 'me';
-            // 서버 메시지는 editable(내 일반 메시지)일 때만, 데모 채팅은 내 메시지면 수정·삭제할 수 있습니다.
-            const canEdit = mine && item.editable !== false;
-            const openMenu = () => canEdit && setMenuFor(item);
+            // 서버 메시지는 deletable(내 메시지)일 때 메뉴를 열고, 수정은 일반 메시지만 됩니다. 데모 채팅은 내 메시지면 둘 다 됩니다.
+            const canDelete = mine && item.deletable !== false;
+            const openMenu = () => canDelete && setMenuFor(item);
             const webMenu =
-              Platform.OS === 'web' && canEdit
+              Platform.OS === 'web' && canDelete
                 ? {
                     onContextMenu: (e: { preventDefault: () => void }) => {
                       e.preventDefault();
@@ -126,7 +126,7 @@ export default function ChatScreen() {
               <Pressable
                 onLongPress={openMenu}
                 delayLongPress={350}
-                disabled={!canEdit}
+                disabled={!canDelete}
                 {...webMenu}
                 style={[s.bubble, mine ? s.mine : s.theirs, editing?.id === item.id && s.editingBubble]}>
                 <Txt variant="body" color={mine ? C.onPrimary : C.text}>
@@ -187,17 +187,20 @@ export default function ChatScreen() {
       <Modal visible={!!menuFor} transparent animationType="fade" onRequestClose={() => setMenuFor(null)}>
         <Pressable style={s.backdrop} onPress={() => setMenuFor(null)}>
           <View style={s.menu}>
-            <Pressable
-              accessibilityRole="button"
-              style={s.menuItem}
-              onPress={() => {
-                if (!menuFor) return;
-                setEditing(menuFor);
-                setText(menuFor.text);
-                setMenuFor(null);
-              }}>
-              <Txt variant="bodyStrong">수정</Txt>
-            </Pressable>
+            {/* 분석 요약은 삭제만 할 수 있어요. */}
+            {menuFor?.editable !== false && (
+              <Pressable
+                accessibilityRole="button"
+                style={s.menuItem}
+                onPress={() => {
+                  if (!menuFor) return;
+                  setEditing(menuFor);
+                  setText(menuFor.text);
+                  setMenuFor(null);
+                }}>
+                <Txt variant="bodyStrong">수정</Txt>
+              </Pressable>
+            )}
             <Pressable
               accessibilityRole="button"
               style={s.menuItem}
