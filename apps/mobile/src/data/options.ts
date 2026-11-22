@@ -1,18 +1,8 @@
 import type { Housing } from '@/types';
 
-// TODO(integration-gap): GAP-004 로그인 전 가입 화면 전용 목록입니다. 로그인 후에는 GET /regions 결과를 씁니다.
-export const REGIONS = [
-  '서울',
-  '인천',
-  '경기 수원',
-  '경기 용인',
-  '경기 성남',
-  '부산',
-  '대구',
-  '대전',
-  '광주',
-  '기타',
-];
+// 로그인 전 가입 화면 전용 목록입니다(GET /regions는 인증 필요). 서버 시드의 시연 지역 용인만 둡니다. (GAP-004)
+// 로그인 후에는 GET /regions 결과를 씁니다. 지역 시드가 늘면 여기에도 추가하세요.
+export const REGIONS = ['경기 용인'];
 
 export const HOUSINGS: Housing[] = ['월세', '전세', '반전세', '자가', '기타'];
 

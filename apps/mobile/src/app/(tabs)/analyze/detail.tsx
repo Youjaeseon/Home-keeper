@@ -18,7 +18,7 @@ import { today } from '@/utils';
 /** 스케치 6: 분석 Page ② — 분석 사진 정보 기입 (장소, 위치, 기타) → 분석 요청 */
 export default function AnalyzeDetailScreen() {
   const { photoId } = useLocalSearchParams<{ photoId: string }>();
-  const { photos, user, saveAnalysis, analysisConsent } = useApp();
+  const { photos, user, saveAnalysis } = useApp();
   const photo = photos.find((p) => p.id === photoId);
 
   const [location, setLocation] = useState(LOCATIONS[0]);
@@ -32,8 +32,8 @@ export default function AnalyzeDetailScreen() {
   const [memo, setMemo] = useState('');
   // 근접 사진(선택). 백엔드는 overview 1장 + closeup 1장까지 받습니다. (GAP-009)
   const [closeupUri, setCloseupUri] = useState<string | null>(null);
-  // 분석 요청마다 외부 AI 사진 전송 동의를 받습니다. 기본값은 가입 시 동의 여부입니다. (GAP-011)
-  const [consent, setConsent] = useState(analysisConsent);
+  // 분석 요청마다 외부 AI 사진 전송 동의를 받습니다. 기본은 동의하지 않음입니다. (GAP-011)
+  const [consent, setConsent] = useState(false);
   const [step, setStep] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 

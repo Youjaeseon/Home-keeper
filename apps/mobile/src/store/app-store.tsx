@@ -55,8 +55,6 @@ type Store = {
   pendingProfile: PendingProfile | null;
   /** GET /regions (로그인 후) */
   regions: Region[];
-  /** 외부 AI 분석 동의 여부. 익명(둘러보기) 세션은 동의하지 않은 것으로 봅니다. */
-  analysisConsent: boolean;
   signup: (account: Account) => Promise<string | null>;
   login: (loginId: string, password: string) => Promise<string | null>;
   loginAsGuest: () => Promise<string | null>;
@@ -428,7 +426,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     needsProfile,
     pendingProfile,
     regions,
-    analysisConsent: !!session && !session.user.is_anonymous,
     photos,
     analyses: analyses.filter((a) => !hiddenKeys.includes(`${me}:${a.id}`)),
     threads,
