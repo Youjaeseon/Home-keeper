@@ -1,43 +1,63 @@
 import { router } from 'expo-router';
-import { ChevronDown, ChevronUp, Pencil, ScanSearch } from 'lucide-react-native';
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ScanSearch } from 'lucide-react-native';
 import { useEffect, useState } from 'react';
-import { Linking, Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
-import { Select } from '@/components/select';
-import { AppBar, Banner, Button, Card, Hero, Screen, Txt } from '@/components/ui';
-import { C, F, R, STROKE } from '@/constants/theme';
-import { HOUSINGS, regionLabel } from '@/data/options';
-import { messageOf } from '@/lib/api';
-import { fetchNews } from '@/services/news';
+import { AppBar, Banner, Card, Chip, Hero, Screen, Txt } from '@/components/ui';
+import { C, F, STROKE } from '@/constants/theme';
+import { CATEGORY_LABELS, regionLabel } from '@/data/options';
+import { messageOf, type SupportCategory } from '@/lib/api';
+import { fetchNews, type NewsFeedItem } from '@/services/news';
 import { useApp } from '@/store/app-store';
+import { pageWindow } from '@/utils';
 
-const PAGE_SIZE = 3;
+const PAGE_SIZE = 5;
+
+const CATEGORY_FILTERS: { value: SupportCategory | null; label: string }[] = [
+  { value: null, label: '전체' },
+  { value: 'monthly_rent_support', label: CATEGORY_LABELS.monthly_rent_support },
+  { value: 'deposit_loan', label: CATEGORY_LABELS.deposit_loan },
+  { value: 'housing_cost', label: CATEGORY_LABELS.housing_cost },
+  { value: 'repair', label: CATEGORY_LABELS.repair },
+  { value: 'brokerage_fee', label: CATEGORY_LABELS.brokerage_fee },
+  { value: 'supply', label: CATEGORY_LABELS.supply },
+  { value: 'other', label: CATEGORY_LABELS.other },
+];
 
 /** 스케치 4: 소식지 — 사용자 정보 맞춤 사업 및 지원 정보 */
 export default function NewsScreen() {
-  const { user, regions, updateUser } = useApp();
+  const { user } = useApp();
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
-  const [visible, setVisible] = useState<Awaited<ReturnType<typeof fetchNews>>['items']>([]);
+  const [visible, setVisible] = useState<NewsFeedItem[]>([]);
   const [total, setTotal] = useState(0);
+  const [category, setCategory] = useState<SupportCategory | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // 서버가 프로필 지역·거주 형태에 맞춰 정렬하므로 조건이 바뀌면 다시 불러옵니다.
   const signedIn = !!user;
   useEffect(() => {
     if (!signedIn) return;
-    fetchNews(page, PAGE_SIZE)
+    fetchNews(page, PAGE_SIZE, category)
       .then((res) => {
         setVisible(res.items);
         setTotal(res.total);
         setError(null);
+        setLoaded(true);
       })
-      .catch((e) => setError(messageOf(e)));
-  }, [page, signedIn, user?.regionId, user?.housing]);
+      .catch((e) => {
+        setError(messageOf(e));
+        setLoaded(true);
+      });
+  }, [page, signedIn, user?.regionId, user?.housing, category]);
 
   if (!user) return null;
   const pageCount = Math.ceil(total / PAGE_SIZE);
+  const pages = pageWindow(page, pageCount);
+  const windowStart = pages[0] ?? 0;
+  const hasPrevious = windowStart > 0;
+  const hasNext = pages.length > 0 && windowStart + pages.length < pageCount;
 
   return (
     <Screen safeTop>
@@ -53,23 +73,42 @@ export default function NewsScreen() {
 
       <View style={s.sectionHead}>
         <Txt variant="title">지원 소식</Txt>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="지역과 거주 형태 수정"
-          hitSlop={10}
-          onPress={() => setEditing(true)}
-          style={({ pressed }) => [s.filter, pressed && { opacity: 0.6 }]}>
-          <Txt variant="caption" muted>
-            {regionLabel(user.region)} · {user.housing}
-          </Txt>
-          <Pencil size={14} color={C.sub} strokeWidth={STROKE} />
-        </Pressable>
+        <Txt variant="caption" muted>
+          {regionLabel(user.region)} · {user.housing}
+        </Txt>
+      </View>
+
+      <View style={s.filterGroup}>
+        <Txt variant="caption" muted>
+          분류
+        </Txt>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.filters}>
+          {CATEGORY_FILTERS.map(({ value, label }) => (
+            <Chip
+              key={label}
+              label={label}
+              active={category === value}
+              onPress={() => {
+                setCategory(value);
+                setPage(0);
+              }}
+            />
+          ))}
+        </ScrollView>
       </View>
 
       <Card style={{ padding: 8, gap: 0 }}>
         {error && (
           <Txt variant="sub" color={C.danger} style={{ padding: 16 }}>
             {error}
+          </Txt>
+        )}
+        {!error && loaded && visible.length === 0 && (
+          <Txt variant="sub" muted style={{ padding: 16 }}>
+            선택한 조건의 지원 소식이 없어요.
           </Txt>
         )}
         {visible.map((item, i) => {
@@ -85,7 +124,15 @@ export default function NewsScreen() {
               <View style={s.itemTop}>
                 <View style={{ flex: 1, gap: 6 }}>
                   <View style={s.status}>
-                    <Txt variant="caption" color={item.status === '마감' ? C.faint : C.text}>
+                    <Txt
+                      variant="caption"
+                      color={
+                        item.status === '마감'
+                          ? C.faint
+                          : item.status === '기한 미확인'
+                            ? C.sub
+                            : C.text
+                      }>
                       {item.status}
                     </Txt>
                   </View>
@@ -93,8 +140,13 @@ export default function NewsScreen() {
                     {item.title}
                   </Txt>
                   <Txt variant="caption" muted>
-                    {item.org}
+                    {item.regions[0]} · {item.org}
                   </Txt>
+                  <View style={s.chips}>
+                    {item.categories.map((category) => (
+                      <Chip key={category} label={CATEGORY_LABELS[category]} />
+                    ))}
+                  </View>
                 </View>
                 <Chevron size={18} color={C.sub} strokeWidth={STROKE} />
               </View>
@@ -114,7 +166,16 @@ export default function NewsScreen() {
       </Card>
 
       <View style={s.pager}>
-        {Array.from({ length: pageCount }, (_, i) => {
+        {hasPrevious && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="이전 페이지"
+            onPress={() => setPage(windowStart - 1)}
+            style={s.dot}>
+            <ChevronLeft size={18} color={C.text} strokeWidth={STROKE} />
+          </Pressable>
+        )}
+        {pages.map((i) => {
           const active = i === page;
           return (
             <Pressable
@@ -129,52 +190,24 @@ export default function NewsScreen() {
             </Pressable>
           );
         })}
-      </View>
-
-      {/* 지역 · 거주 형태 수정 */}
-      <Modal visible={editing} transparent animationType="fade" onRequestClose={() => setEditing(false)}>
-        <Pressable style={s.backdrop} onPress={() => setEditing(false)}>
-          <Pressable style={s.sheet} onPress={() => {}}>
-            <Txt variant="h2">내 조건 수정</Txt>
-            <Select
-              label="거주지역"
-              value={user.region}
-              options={regions.map((r) => r.display_name)}
-              onChange={(region) => {
-                void updateUser({ region });
-                setPage(0);
-              }}
-            />
-            <Select
-              label="거주형태"
-              value={user.housing}
-              options={HOUSINGS}
-              onChange={(housing) => {
-                void updateUser({ housing });
-                setPage(0);
-              }}
-            />
-            <Button title="완료" onPress={() => setEditing(false)} />
+        {hasNext && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="다음 페이지"
+            onPress={() => setPage(windowStart + pages.length)}
+            style={s.dot}>
+            <ChevronRight size={18} color={C.text} strokeWidth={STROKE} />
           </Pressable>
-        </Pressable>
-      </Modal>
+        )}
+      </View>
     </Screen>
   );
 }
 
 const s = StyleSheet.create({
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
-  filter: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  backdrop: { flex: 1, backgroundColor: C.scrim, justifyContent: 'center', padding: 24 },
-  sheet: {
-    backgroundColor: C.card,
-    borderRadius: R.card,
-    padding: 22,
-    gap: 16,
-    width: '100%',
-    maxWidth: 420,
-    alignSelf: 'center',
-  },
+  filterGroup: { gap: 6 },
+  filters: { gap: 8, paddingRight: 8 },
   status: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
@@ -184,6 +217,7 @@ const s = StyleSheet.create({
   },
   item: { padding: 16, gap: 10, borderRadius: 20 },
   itemTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   divider: { borderTopWidth: 1, borderTopColor: C.border, borderRadius: 0 },
   pager: { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingVertical: 4 },
   dot: {

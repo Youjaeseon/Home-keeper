@@ -1,0 +1,30 @@
+name: Sync support programs
+
+"on":
+  schedule:
+    # 04:00 KST (19:00 UTC previous day)
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-support-programs
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Sync Gov24 support programs
+        run: uv run --directory apps/api python -m app.support_sync
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GOV24_API_KEY: ${{ secrets.GOV24_API_KEY }}

@@ -1,3 +1,5 @@
+import type { SupportCategory } from '@/lib/api';
+
 export type Housing = '월세' | '전세' | '반전세' | '자가' | '기타';
 
 /** 회원 유형: 일반 유저 / 견적을 받는 업체 */
@@ -127,7 +129,8 @@ export type NewsItem = {
   summary: string;
   regions: string[]; // '전국' 포함
   housings: Housing[];
-  status: '접수중' | '마감';
+  categories: SupportCategory[];
+  status: '접수중' | '마감' | '상시' | '기한 미확인';
 };
 
 /** 유저가 주변 업체에 보내는 견적서 */

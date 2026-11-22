@@ -7,6 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 HousingType = Literal["monthly_rent", "jeonse", "semi_jeonse", "owned", "other"]
 DeadlineKind = Literal["fixed", "always_open", "unknown"]
 SupportProgramSource = Literal["seed", "gov24_api"]
+SupportCategory = Literal[
+    "monthly_rent_support",
+    "deposit_loan",
+    "housing_cost",
+    "repair",
+    "brokerage_fee",
+    "supply",
+    "other",
+]
 
 
 class HealthResponse(BaseModel):
@@ -652,6 +661,12 @@ class SupportProgramSummary(BaseModel):
             "태그 일치 여부는 참고 정보입니다."
         )
     )
+    categories: list[SupportCategory] = Field(
+        description=(
+            "제목·요약 키워드로 분류한 참고 카테고리. 복수일 수 있으며, "
+            "신청 자격이나 지원 내용을 확정하지 않습니다."
+        )
+    )
     deadline_text: str | None = Field(
         description="공식 원문의 신청기한 문구. 확인하지 못했으면 `null`입니다."
     )
@@ -698,7 +713,9 @@ class SupportProgramListResponse(BaseModel):
     """소식지 목록 페이지 응답."""
 
     items: list[SupportProgramListItem] = Field(description="현재 페이지의 지원 사업 목록.")
-    total: int = Field(description="필터(`status`)를 적용한 전체 지원 사업 수.")
+    total: int = Field(
+        description="필터(`status`, `region_scope`, `region_id`, `category`)를 적용한 전체 지원 사업 수."
+    )
     limit: int = Field(description="요청한 페이지 크기.")
     offset: int = Field(description="요청한 페이지 시작 위치.")
     has_more: bool = Field(description="다음 페이지가 남아 있는지 여부.")

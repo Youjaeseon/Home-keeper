@@ -8,6 +8,7 @@ from app.db import read_transaction
 from app.errors import not_found
 from app.schemas import (
     ErrorResponse,
+    SupportCategory,
     SupportProgramDetail,
     SupportProgramListResponse,
 )
@@ -98,7 +99,9 @@ _VISIBLE_CTE = """
             program.summary,
             program.organization_name,
             program.region_scope,
+            program.region_id,
             program.target_housing_types,
+            program.categories,
             program.deadline_text,
             program.deadline_date,
             program.deadline_kind,
@@ -170,7 +173,11 @@ _ORDER_BY = """
         "- `deadline_kind`로 확정 날짜(`fixed`), 공식 상시·연중(`always_open`), "
         "기한 미확인·모호함(`unknown`)을 구분합니다. 마감 공고도 상세에서 확인할 수 있습니다.\n"
         "- 거주 형태 태그 일치(`housing_type_matched`)는 참고 표시일 뿐 신청 자격을 확정하지 않습니다.\n"
-        "- `total`은 `status` 필터를 적용한 전체 수이며, `has_more`는 `offset + len(items) < total`입니다. "
+        "- `categories`는 제목·요약 키워드로 분류한 참고 카테고리이며, `category`로 필터할 수 있습니다.\n"
+        "- `region_scope`로 전국(`national`)·지역(`local`)을, `region_id`로 특정 지역 공고만 조회할 수 있습니다. "
+        "프로필 지역·상위 지역 밖의 `region_id`는 빈 목록을 반환합니다.\n"
+        "- `total`은 `status`·`region_scope`·`region_id`·`category` 필터를 적용한 전체 수이며, "
+        "`has_more`는 `offset + len(items) < total`입니다. "
         "`offset`이 `total` 이상이면 빈 `items`와 정확한 `total`을 반환합니다.\n"
         "- 프로필이 없으면 `404`를 반환합니다. DB 오류를 빈 목록으로 숨기지 않습니다."
     ),
@@ -184,6 +191,18 @@ def list_support_programs(
     ] = "all",
     limit: Annotated[int, Query(ge=1, le=50, description="페이지 크기(기본 5, 최대 50).")] = 5,
     offset: Annotated[int, Query(ge=0, description="페이지 시작 위치(0부터).")] = 0,
+    region_scope: Annotated[
+        Literal["national", "local"] | None,
+        Query(description="`national`은 전국, `local`은 지역 공고만 조회."),
+    ] = None,
+    region_id: Annotated[
+        UUID | None,
+        Query(description="특정 지역 UUID. 프로필 지역·상위 지역 밖이면 빈 목록."),
+    ] = None,
+    category: Annotated[
+        SupportCategory | None,
+        Query(description="카테고리 필터. 생략하면 모든 카테고리를 조회합니다."),
+    ] = None,
     owner_id: UUID = Depends(get_current_user),
 ):
     with read_transaction() as conn:
@@ -196,15 +215,45 @@ def list_support_programs(
 
         total = conn.execute(
             _VISIBLE_CTE
-            + " SELECT count(*) AS total FROM visible WHERE (%s = 'all' OR is_closed = false)",
-            (profile["region_id"], profile["housing_type"], status),
+            + " SELECT count(*) AS total FROM visible"
+            + " WHERE (%s = 'all' OR is_closed = false)"
+            + " AND (%s::text IS NULL OR region_scope = %s)"
+            + " AND (%s::uuid IS NULL OR region_id = %s)"
+            + " AND (%s::text IS NULL OR %s = ANY(categories))",
+            (
+                profile["region_id"],
+                profile["housing_type"],
+                status,
+                region_scope,
+                region_scope,
+                region_id,
+                region_id,
+                category,
+                category,
+            ),
         ).fetchone()["total"]
         items = conn.execute(
             _VISIBLE_CTE
-            + " SELECT * FROM visible WHERE (%s = 'all' OR is_closed = false)"
+            + " SELECT * FROM visible"
+            + " WHERE (%s = 'all' OR is_closed = false)"
+            + " AND (%s::text IS NULL OR region_scope = %s)"
+            + " AND (%s::uuid IS NULL OR region_id = %s)"
+            + " AND (%s::text IS NULL OR %s = ANY(categories))"
             + _ORDER_BY
             + " LIMIT %s OFFSET %s",
-            (profile["region_id"], profile["housing_type"], status, limit, offset),
+            (
+                profile["region_id"],
+                profile["housing_type"],
+                status,
+                region_scope,
+                region_scope,
+                region_id,
+                region_id,
+                category,
+                category,
+                limit,
+                offset,
+            ),
         ).fetchall()
 
     return {
@@ -244,6 +293,7 @@ def get_support_program(
                 program.organization_name,
                 program.region_scope,
                 program.target_housing_types,
+                program.categories,
                 program.support_target,
                 program.support_content,
                 program.selection_criteria,

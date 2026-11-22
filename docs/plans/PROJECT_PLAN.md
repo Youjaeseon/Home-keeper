@@ -227,7 +227,7 @@ Expo에서 사진(1~2장)과 위치·재질·선택 증상 메모를 `POST /reco
 
 ## 2~4단계 확정 설계 (구현 예정)
 
-2단계로 분석 전 지역 확인(`records.region_id` 스냅샷, `012`)과 소식지 목록 페이지네이션(`limit`/`offset`, `total`/`has_more`)을 구현했다. 3단계로 업체 평점·상세·별점순 추천, `ProfileOut.provider_id`, 요청인/업체 홈 분기, 업체 목록·상세 화면을 구현했다. 4단계로 사진 비공개 Storage·단기 Signed URL과 견적 요청서·제안서·1건 수락 매칭을 구현했다. 소식지 보조금24 주기 동기화만 확정 설계로 남아 있다. 매칭은 지역·특화 분야가 맞는 업체에 1:N으로 공개하고 제안서 중 1건만 수락한다. 근거는 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md), [ADR 0003](../adr/0003-open-quote-request-and-proposal-matching.md)를 따른다.
+2단계로 분석 전 지역 확인(`records.region_id` 스냅샷, `012`)과 소식지 목록 페이지네이션(`limit`/`offset`, `total`/`has_more`)을 구현했다. 3단계로 업체 평점·상세·별점순 추천, `ProfileOut.provider_id`, 요청인/업체 홈 분기, 업체 목록·상세 화면을 구현했다. 4단계로 사진 비공개 Storage·단기 Signed URL과 견적 요청서·제안서·1건 수락 매칭을 구현했다. 소식지 보조금24 주기 동기화는 GitHub Actions 워크플로로 추가했고 secrets 등록이 남아 있다. 매칭은 지역·특화 분야가 맞는 업체에 1:N으로 공개하고 제안서 중 1건만 수락한다. 근거는 [ADR 0002](../adr/0002-private-storage-for-defect-photos.md), [ADR 0003](../adr/0003-open-quote-request-and-proposal-matching.md)를 따른다.
 
 ## 다음에 결정할 사항
 

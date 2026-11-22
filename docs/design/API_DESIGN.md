@@ -81,9 +81,9 @@
 
 ## 소식지 목록 페이지네이션 (`GET /support-programs`, 구현 완료)
 
-- **쿼리**: `status`(`all` | `active`, 기본 `all`), `limit`(1~50, 기본 5), `offset`(0 이상, 기본 0)
+- **쿼리**: `status`(`all` | `active`, 기본 `all`), `region_scope`(`national` | `local`, 선택), `region_id`(선택, 프로필 지역·상위 지역 UUID), `category`(선택, 아래 카테고리 키), `limit`(1~50, 기본 5), `offset`(0 이상, 기본 0)
 - **응답**: `items`, `total`, `limit`, `offset`, `has_more`
-- `total`은 `status` 필터를 적용한 전체 수이고 `has_more = (offset + len(items)) < total`이다.
+- `total`은 `status`·`region_scope`·`region_id`·`category` 필터를 적용한 전체 수이고 `has_more = (offset + len(items)) < total`이다.
 - `REPEATABLE READ` 트랜잭션에서 같은 `visible` CTE로 total과 페이지를 각각 조회하므로, `offset >= total`이어도 빈 `items`와 정확한 `total`, `has_more=false`를 반환한다.
 - 기존 정렬(`is_closed ASC`, `housing_type_matched DESC`, 확정 마감일 오름차순, `source_checked_at DESC`, `title ASC`, `id ASC`)과 시드 중복 제거 규칙은 유지한다.
 
@@ -253,16 +253,18 @@
 
 ## 소식지 조회 (`GET /support-programs`, 구현 완료)
 
-`GET /support-programs`는 로그인 사용자의 프로필 `region_id`와 `housing_type`을 기준으로, 해당 지역·상위 지역(예: 용인시 → 경기도)·전국 공고를 반환한다. 별도 `region_id` 쿼리로 다른 지역을 조회하지 않는다.
+`GET /support-programs`는 로그인 사용자의 프로필 `region_id`와 `housing_type`을 기준으로, 해당 지역·상위 지역(예: 용인시 → 경기도)·전국 공고를 반환한다. `region_id` 필터는 이 가시 범위 안에서만 동작하며, 다른 지역 ID를 보내면 빈 목록을 반환한다.
 
 - `status=all`(기본)은 마감 공고를 포함하고, `status=active`는 마감되지 않은 공고만 반환한다.
+- `region_scope`로 전국(`national`)·지역(`local`)을 나누고, `region_id`로 프로필 지역·상위 지역 중 하나를 지정한다. 예: 용인시 사용자는 `전국`·`경기도`·`경기도 용인시`로 필터할 수 있다. 모바일 소식지 화면은 프로필 지역 기준으로 고정하고 지역 선택 UI를 두지 않는다.
 - 정렬: **진행 중(`is_closed=false`) 먼저 → 거주 형태 태그 일치(`housing_type_matched=true`) 우선 → 확정 마감일이 이른 순 → 출처 확인 시각 최신순**. 마감 공고는 하단에 배치한다.
 - `housing_type_matched`는 사용자의 거주 형태가 공고 태그와 겹치는지만 표시한다. 태그 일치는 실제 신청 자격을 확정하지 않는다.
+- `categories`는 제목·요약 키워드로 분류한 참고 카테고리다. `monthly_rent_support`(월세), `deposit_loan`(보증금·대출), `housing_cost`(주거비), `repair`(수리·개선), `brokerage_fee`(중개비), `supply`(입주·공급), `other`(기타) 중 복수일 수 있으며, `category` 쿼리로 필터한다. 카테고리도 신청 자격을 확정하지 않는다.
 - 검증 시드와 같은 제목(끝의 `사업` 제외)·기관·지역의 보조금24 API 행은 목록에서 시드로 대체해 중복 표시하지 않는다. API 행 자체는 상세 ID로 조회할 수 있다.
 - `deadline_kind`로 신청기한 상태를 구분한다.
-  - `fixed`: 명확히 해석한 날짜가 있고 `deadline_date`가 채워짐
-  - `always_open`: 공식 원문이 상시·연중 신청임
-  - `unknown`: 원문이 없거나 복수 날짜·범위·조건부 등으로 모호함
+  - `fixed`: 명확히 해석한 날짜가 있고 `deadline_date`가 채워짐. 보조금24 `기간설정`의 단일 기간 또는 명확한 단일 날짜만 해당한다.
+  - `always_open`: 보조금24 `상시신청` 또는 공식 원문이 상시·연중 신청임
+  - `unknown`: 원문이 없거나 `접수기관별상이`·복수 날짜·범위·조건부 등으로 모호함
 - `is_closed`는 `deadline_kind="fixed"`이고 `deadline_date`가 **한국 시간 기준 오늘보다 이전**일 때만 `true`다. 마감일 당일은 아직 마감이 아니며, 상시·기한 불명은 `false`다.
 - 프로필이 없으면 `404`, 결과가 없으면 `200`과 빈 배열을 반환한다. DB 오류를 빈 목록으로 대체하지 않는다.
 
@@ -278,6 +280,7 @@
     "region_scope": "local",
     "region_name": "경기도 용인시",
     "target_housing_types": ["monthly_rent", "jeonse"],
+    "categories": ["brokerage_fee"],
     "housing_type_matched": true,
     "deadline_text": "2026-01-01 00:00 ~ 2026-12-31 00:00",
     "deadline_date": "2026-12-31",
@@ -309,6 +312,7 @@
   "region_scope": "national",
   "region_name": "전국",
   "target_housing_types": ["monthly_rent"],
+  "categories": ["monthly_rent_support"],
   "support_target": "19세~34세 독립거주 무주택 청년 중 ...",
   "support_content": "월세로 거주하는 청년을 대상으로 ...",
   "selection_criteria": null,

@@ -367,6 +367,7 @@ def test_support_program_schema_and_seeded_programs(admin):
         "region_scope",
         "region_id",
         "target_housing_types",
+        "categories",
         "support_target",
         "support_content",
         "selection_criteria",
@@ -395,6 +396,24 @@ def test_support_program_schema_and_seeded_programs(admin):
         "SELECT count(*) AS count FROM support_programs WHERE source = 'seed'"
     ).fetchone()["count"]
     assert seeded == 4
+    seed_categories = {
+        row["external_id"]: row["categories"]
+        for row in admin.execute(
+            "SELECT external_id, categories FROM support_programs WHERE source = 'seed'"
+        ).fetchall()
+    }
+    assert seed_categories["seed:gov24-youth-monthly-rent-2026"] == [
+        "monthly_rent_support"
+    ]
+    assert seed_categories["seed:gyeonggi-independent-youth-housing-2026"] == [
+        "deposit_loan"
+    ]
+    assert seed_categories["seed:yongin-youth-brokerage-fee-2026"] == [
+        "brokerage_fee"
+    ]
+    assert seed_categories["seed:yongin-youth-monthly-rent-2026"] == [
+        "monthly_rent_support"
+    ]
     assert admin.execute(
         "SELECT count(*) AS count FROM support_programs WHERE detail_url !~* '^https?://'"
     ).fetchone()["count"] == 0

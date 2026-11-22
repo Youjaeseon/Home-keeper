@@ -1,4 +1,15 @@
+import type { SupportCategory } from '@/lib/api';
 import type { Housing } from '@/types';
+
+export const CATEGORY_LABELS: Record<SupportCategory, string> = {
+  monthly_rent_support: '월세',
+  deposit_loan: '보증금·대출',
+  housing_cost: '주거비',
+  repair: '수리·개선',
+  brokerage_fee: '중개비',
+  supply: '입주·공급',
+  other: '기타',
+};
 
 // TODO(integration-gap): GAP-004 로그인 전 가입 화면 전용 목록입니다. 로그인 후에는 GET /regions 결과를 씁니다.
 export const REGIONS = [

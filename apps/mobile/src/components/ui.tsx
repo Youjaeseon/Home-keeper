@@ -238,13 +238,31 @@ export function Notice({ children, icon: IconCmp, tone = 'soft' }: { children: R
   );
 }
 
-export function Chip({ label, active }: { label: string; active?: boolean }) {
+export function Chip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active?: boolean;
+  onPress?: () => void;
+}) {
+  const chipStyle = [s.chip, active && { backgroundColor: C.primary }];
+  const content = (
+    <Txt variant="caption" color={active ? C.onPrimary : C.primary}>
+      {label}
+    </Txt>
+  );
+  if (!onPress) return <View style={chipStyle}>{content}</View>;
   return (
-    <View style={[s.chip, active && { backgroundColor: C.primary }]}>
-      <Txt variant="caption" color={active ? C.onPrimary : C.primary}>
-        {label}
-      </Txt>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!active }}
+      hitSlop={6}
+      onPress={onPress}
+      style={({ pressed }) => [...chipStyle, pressed && { opacity: 0.7 }]}>
+      {content}
+    </Pressable>
   );
 }
 
