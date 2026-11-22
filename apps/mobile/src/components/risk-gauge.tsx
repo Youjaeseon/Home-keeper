@@ -6,7 +6,7 @@ import { Txt } from '@/components/ui';
 import { C, riskColor, riskLabel } from '@/constants/theme';
 import type { DefectRegion } from '@/types';
 
-/** 위험도 원형 게이지. 색은 위험도 구간(낮음·주의·높음)으로만 바뀝니다. */
+/** 심각도 원형 게이지. 색은 심각도 구간(낮음·주의·높음)으로만 바뀝니다. */
 export function RiskGauge({ risk, size = 148 }: { risk: number; size?: number }) {
   const stroke = 16;
   const r = (size - stroke) / 2;
@@ -30,7 +30,7 @@ export function RiskGauge({ risk, size = 148 }: { risk: number; size?: number })
         />
       </Svg>
       <Txt variant="caption" muted>
-        위험도
+        심각도
       </Txt>
       <Txt variant="display" color={color} style={{ fontSize: 34, lineHeight: 40 }}>
         {risk}%
@@ -43,8 +43,8 @@ export function RiskGauge({ risk, size = 148 }: { risk: number; size?: number })
 }
 
 /**
- * 원형 사진 + 사진 테두리를 감싸는 위험도 링.
- * 링이 채워진 길이 = 위험도(%), 색은 위험도 구간(낮음·주의·높음)을 따릅니다.
+ * 원형 사진 + 사진 테두리를 감싸는 심각도 링.
+ * 링이 채워진 길이 = 심각도(%), 색은 심각도 구간(낮음·주의·높음)을 따릅니다.
  */
 export function RiskPhotoRing({
   uri,
@@ -65,7 +65,7 @@ export function RiskPhotoRing({
   const r = (size - stroke) / 2;
   const c = size / 2;
   const color = riskColor(risk);
-  // 12시 방향에서 시계 방향으로 위험도 퍼센트만큼만 채웁니다 (100% = 한 바퀴).
+  // 12시 방향에서 시계 방향으로 심각도 퍼센트만큼만 채웁니다 (100% = 한 바퀴).
   const pct = Math.max(0, Math.min(100, risk));
   const angle = (pct / 100) * 2 * Math.PI;
   const ex = c + r * Math.sin(angle);
@@ -74,7 +74,7 @@ export function RiskPhotoRing({
 
   return (
     <View
-      accessibilityLabel={`위험도 ${risk}%, ${riskLabel(risk)}`}
+      accessibilityLabel={`심각도 ${risk}%, ${riskLabel(risk)}`}
       style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', alignSelf: 'center' }}>
       <Svg width={size} height={size} style={{ position: 'absolute' }}>
         <Circle cx={c} cy={c} r={r} stroke={C.border} strokeWidth={stroke} fill="none" />

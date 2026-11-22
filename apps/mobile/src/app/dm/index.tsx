@@ -14,14 +14,14 @@ type Tab = 'messages' | 'quotes';
 /** 제안 가격 선택지 (만원) */
 const PRICES = [5, 6, 7, 8, 9, 10];
 
-/** 채팅 목록 — 상단 탭: 메시지 | 제안서(유저) 또는 견적서(업체) */
+/** 채팅 목록 — 상단 탭: 메시지 | 업체 제안서(유저) 또는 견적 요청서(업체) */
 export default function DmListScreen() {
   const params = useLocalSearchParams<{ tab?: string }>();
   const { user } = useApp();
   const [tab, setTab] = useState<Tab>(params.tab === 'quotes' ? 'quotes' : 'messages');
   const TABS: { key: Tab; label: string }[] = [
     { key: 'messages', label: '메시지' },
-    { key: 'quotes', label: user?.role === '업체' ? '견적서' : '제안서' },
+    { key: 'quotes', label: user?.role === '업체' ? '견적 요청서' : '업체 제안서' },
   ];
 
   return (
@@ -98,7 +98,7 @@ function Messages() {
   );
 }
 
-/** 유저: 받은 제안서 (견적서별로 묶음) / 업체: 받은 견적서와 보낸 제안서. (GET /quote-requests, GET /quote-requests/{id}) */
+/** 유저: 받은 업체 제안서 (견적 요청서별로 묶음) / 업체: 받은 견적 요청서와 보낸 업체 제안서. (GET /quote-requests, GET /quote-requests/{id}) */
 function Quotes() {
   const {
     user,
@@ -126,12 +126,12 @@ function Quotes() {
   return (
     <>
       <Hero
-        title={vendor ? '받은 견적서' : '받은 제안서'}
-        subtitle={vendor ? '견적서를 확인하고 제안서를 보내 보세요.' : '업체가 보낸 제안서를 비교해 보세요.'}
+        title={vendor ? '받은 견적 요청서' : '받은 업체 제안서'}
+        subtitle={vendor ? '견적 요청서를 확인하고 업체 제안서를 보내 보세요.' : '받은 업체 제안서를 비교해 보세요.'}
       />
       {!vendor && own.length === 0 && (
         <Txt variant="sub" muted>
-          분석 결과 화면에서 견적서를 보내면 여기에 제안서가 도착해요.
+          분석 결과 화면에서 견적 요청서를 보내면 여기에 업체 제안서가 도착해요.
         </Txt>
       )}
       {list.map((e) => {
@@ -142,18 +142,18 @@ function Quotes() {
             <EstimateSummary e={e} showSender={vendor} onDelete={() => void removeEstimate(e.id).then(alertIf)} />
             {vendor ? (
               mine ? (
-                <ProposalBox p={mine} title="보낸 제안서" onDelete={() => removeProposal(mine.id)} />
+                <ProposalBox p={mine} title="보낸 업체 제안서" onDelete={() => removeProposal(mine.id)} />
               ) : (
                 <ProposalForm estimateId={e.id} />
               )
             ) : related.length === 0 ? (
               <Txt variant="sub" muted>
-                아직 받은 제안서가 없어요.
+                아직 받은 업체 제안서가 없어요.
               </Txt>
             ) : (
               <>
                 <Txt variant="label" muted>
-                  제안서 {related.length}건
+                  업체 제안서 {related.length}건
                 </Txt>
                 {related.map((p) => (
                   <ProposalBox
@@ -182,7 +182,7 @@ function EstimateSummary({ e, showSender, onDelete }: { e: Estimate; showSender:
         <View style={{ flex: 1, gap: 6 }}>
           <View style={{ flexDirection: 'row', gap: 6 }}>
             <Chip label={e.defect} active />
-            <Chip label={`위험도 ${e.risk}%`} />
+            <Chip label={`심각도 ${e.risk}%`} />
           </View>
           <Txt variant="bodyStrong">
             {e.location} · {e.position}
@@ -194,7 +194,7 @@ function EstimateSummary({ e, showSender, onDelete }: { e: Estimate; showSender:
           )}
         </View>
         <View style={{ alignSelf: 'flex-start' }}>
-          <DeleteButton label="견적서" onDelete={onDelete} />
+          <DeleteButton label="견적 요청서" onDelete={onDelete} />
         </View>
       </View>
       {e.memo !== '' && (
@@ -220,19 +220,19 @@ function ProposalBox({
   title?: string;
   chat?: boolean;
   onDelete: () => void;
-  /** 유저가 받은 제안서일 때: 수락 전 / 이 제안서를 수락함 / 다른 제안서를 수락해서 마감됨 */
+  /** 유저가 받은 업체 제안서일 때: 수락 전 / 이 업체 제안서를 수락함 / 다른 업체 제안서를 수락해서 마감됨 */
   accept?: AcceptState;
   onAccept?: () => void;
 }) {
   const [asking, setAsking] = useState(false);
   const closed = accept === 'closed';
-  // 다른 제안서를 수락하면 서서히 흐려집니다.
+  // 다른 업체 제안서를 수락하면 서서히 흐려집니다.
   const [fade] = useState(() => new Animated.Value(closed ? 0.3 : 1));
   useEffect(() => {
     Animated.timing(fade, { toValue: closed ? 0.3 : 1, duration: 450, useNativeDriver: true }).start();
   }, [closed, fade]);
 
-  // 받은 제안서를 누르면 그 업체와의 채팅으로 이동합니다(수락 전에도 POST /chat/rooms로 채팅 가능).
+  // 받은 업체 제안서를 누르면 그 업체와의 채팅으로 이동합니다(수락 전에도 POST /chat/rooms로 채팅 가능).
   const openChat = () => {
     router.push({ pathname: '/dm/[vendorId]', params: { vendorId: p.vendorId, name: p.vendorName } });
   };
@@ -259,7 +259,7 @@ function ProposalBox({
           <Txt variant="title" color={C.primary}>
             {p.priceMax && p.priceMax !== p.price ? `${p.price}~${p.priceMax}만원` : `${p.price}만원`}
           </Txt>
-          <DeleteButton label="제안서" onDelete={onDelete} />
+          <DeleteButton label="업체 제안서" onDelete={onDelete} />
         </View>
         {p.memo !== '' && (
           <Txt variant="sub" color={C.text}>
@@ -269,7 +269,7 @@ function ProposalBox({
         {asking && (
           <View style={s.ask}>
             <Txt variant="sub" color={C.text} style={{ fontFamily: F.semibold }}>
-              수락하면 다른 제안서는 받을 수 없어요.
+              수락하면 다른 업체 제안서는 받을 수 없어요.
             </Txt>
             <View style={{ flexDirection: 'row', gap: 8 }}>
               <Pressable
@@ -330,7 +330,7 @@ function ProposalBox({
   );
 }
 
-/** 업체용: 제안서 작성 (업체 정보는 MY에서 자동으로, 가격 5~10만원, 추가 메모) */
+/** 업체용: 업체 제안서 작성 (업체 정보는 MY에서 자동으로, 가격 5~10만원, 추가 메모) */
 function ProposalForm({ estimateId }: { estimateId: string }) {
   const { user, sendProposal } = useApp();
   const [price, setPrice] = useState(PRICES[0]);
@@ -341,13 +341,13 @@ function ProposalForm({ estimateId }: { estimateId: string }) {
     setBusy(true);
     const err = await sendProposal(estimateId, price, memo.trim());
     setBusy(false);
-    if (err) showAlert('제안서를 보내지 못했습니다', err);
+    if (err) showAlert('업체 제안서를 보내지 못했습니다', err);
   };
 
   return (
     <View style={s.proposal}>
       <Txt variant="label" color={C.primary}>
-        제안서 작성
+        업체 제안서 작성
       </Txt>
       <View style={{ gap: 2 }}>
         <Txt variant="bodyStrong">{user.nickname}</Txt>
@@ -384,7 +384,7 @@ function ProposalForm({ estimateId }: { estimateId: string }) {
         multiline
         style={{ minHeight: 76, paddingTop: 14, textAlignVertical: 'top' }}
       />
-      <Button title="제안서 보내기" icon={Send} onPress={onSend} loading={busy} />
+      <Button title="업체 제안서 보내기" icon={Send} onPress={onSend} loading={busy} />
     </View>
   );
 }

@@ -43,10 +43,10 @@ export default function ChatScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId, roomParam, analysisId]);
 
-  // 분석 결과에서 들어오면 견적서 내용을 미리 채워 둡니다.
+  // 분석 결과에서 들어오면 견적 요청서 내용을 미리 채워 둡니다.
   const [text, setText] = useState(
     analysis
-      ? `[견적서]\n하자: ${analysis.defect}\nAI 위험도: ${analysis.risk}%\n장소: ${analysis.location}\n위치: ${analysis.position}\n\n위 내용으로 견적 부탁드립니다.`
+      ? `[견적 요청서]\n하자: ${analysis.defect}\nAI 심각도: ${analysis.risk}%\n장소: ${analysis.location}\n위치: ${analysis.position}\n\n위 내용으로 견적 부탁드립니다.`
       : '',
   );
   const listRef = useRef<FlatList>(null);

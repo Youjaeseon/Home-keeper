@@ -36,7 +36,7 @@ const ACTION_LABEL = {
   provider_consult: '업체 상담',
 } as const;
 
-/** 스케치 7: 분석 결과 — 손상 위치 원, 위험도, 원인, 해결방안, 재발방지, 업체 A~D */
+/** 스케치 7: 분석 결과 — 손상 위치 원, 심각도, 원인, 해결방안, 재발방지, 업체 A~D */
 export default function AnalyzeResultScreen() {
   const { analysisId } = useLocalSearchParams<{ analysisId: string }>();
   const { analyses, user, estimates, sendEstimate, loadAnalysis } = useApp();
@@ -159,15 +159,15 @@ export default function AnalyzeResultScreen() {
     setSending(true);
     const err = await sendEstimate(r, memo.trim());
     setSending(false);
-    if (err) showAlert('견적서를 보내지 못했습니다', err);
+    if (err) showAlert('견적 요청서를 보내지 못했습니다', err);
   };
 
   return (
     <Screen>
-      {/* 원형 사진 + 테두리 위험도 링 (사진 위 손상 위치 원은 표시하지 않음) */}
+      {/* 원형 사진 + 테두리 심각도 링 (사진 위 손상 위치 원은 표시하지 않음) */}
       <RiskPhotoRing uri={r.photoUri} risk={r.risk} />
 
-      {/* 위험도 글씨 정리 */}
+      {/* 심각도 글씨 정리 */}
       <Card style={{ alignItems: 'center', gap: 12 }}>
         <View style={{ flexDirection: 'row', gap: 6 }}>
           <Chip label={r.defect} active />
@@ -176,7 +176,7 @@ export default function AnalyzeResultScreen() {
         </View>
         <View style={s.riskRow}>
           <Txt variant="label" muted>
-            위험도
+            심각도
           </Txt>
           <Txt variant="display" color={color} style={{ fontSize: 34, lineHeight: 40 }}>
             {r.risk}%
@@ -381,23 +381,23 @@ export default function AnalyzeResultScreen() {
         </Notice>
       </View>
 
-      {/* 견적서: 주변 업체 회원에게 한 번에 보내기 (유저 회원만) */}
+      {/* 견적 요청서: 주변 업체 회원에게 한 번에 보내기 (유저 회원만) */}
       {user?.role !== '업체' && (
         <Card>
-          <CardHeader icon={FileText} title="견적서" />
+          <CardHeader icon={FileText} title="견적 요청서" />
           <View style={s.quote}>
             <Image source={{ uri: r.photoUri }} style={s.quotePhoto} contentFit="cover" />
             <View style={{ flex: 1, gap: 6 }}>
-              <QuoteRow label="AI 위험도" value={`${r.defect} · ${r.risk}% (${riskLabel(r.risk)})`} />
+              <QuoteRow label="AI 심각도" value={`${r.defect} · ${r.risk}% (${riskLabel(r.risk)})`} />
               <QuoteRow label="장소" value={r.location} />
               <QuoteRow label="위치" value={r.position} />
             </View>
           </View>
           {sent ? (
             <>
-              <Notice icon={CircleCheck}>주변 업체에 견적서를 보냈어요. 제안서가 오면 채팅의 제안서 탭에서 볼 수 있어요.</Notice>
+              <Notice icon={CircleCheck}>주변 업체에 견적 요청서를 보냈어요. 업체 제안서가 오면 채팅의 업체 제안서 탭에서 볼 수 있어요.</Notice>
               <Button
-                title="받은 제안서 보기"
+                title="받은 업체 제안서 보기"
                 variant="outline"
                 onPress={() => router.push({ pathname: '/dm', params: { tab: 'quotes' } })}
               />

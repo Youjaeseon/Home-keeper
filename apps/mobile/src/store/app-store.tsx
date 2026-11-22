@@ -71,9 +71,9 @@ type Store = {
   threads: ChatThread[];
   /** 불러온 채팅방 메시지 (GET /chat/rooms/{id}/messages + WebSocket) */
   messages: Message[];
-  /** 견적 요청서 (GET /quote-requests). 화면 이름은 '견적서' */
+  /** 견적 요청서 (GET /quote-requests). 화면 이름은 '견적 요청서' */
   estimates: Estimate[];
-  /** 업체 제안서 (GET /quote-requests/{id}의 proposals). 화면 이름은 '제안서' */
+  /** 업체 제안서 (GET /quote-requests/{id}의 proposals). 화면 이름은 '업체 제안서' */
   proposals: Proposal[];
   addPhoto: (uri: string) => Photo;
   removePhoto: (id: string) => void;
@@ -89,14 +89,14 @@ type Store = {
   refreshQuotes: () => Promise<void>;
   /** 유저 → 주변 업체: 견적 요청서 전송 (POST /quote-requests) */
   sendEstimate: (analysis: AnalysisResult, memo: string) => Promise<string | null>;
-  /** 업체 → 유저: 제안서 전송 (POST /quote-requests/{id}/proposals) */
+  /** 업체 → 유저: 업체 제안서 전송 (POST /quote-requests/{id}/proposals) */
   sendProposal: (estimateId: string, price: number, memo: string) => Promise<string | null>;
   /** 내 화면에서만 숨긴 항목 id (서버 삭제 API가 없는 항목) */
   hidden: string[];
   removeAnalysis: (id: string) => void;
   removeEstimate: (id: string) => Promise<string | null>;
   removeProposal: (id: string) => void;
-  /** 수락한 제안서: 견적서 id → 제안서 id (서버 accepted_proposal_id) */
+  /** 수락한 업체 제안서: 견적 요청서 id → 업체 제안서 id (서버 accepted_proposal_id) */
   accepted: Record<string, string>;
   acceptProposal: (estimateId: string, proposalId: string) => Promise<string | null>;
 };
@@ -331,7 +331,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           vendorId: isProvider ? me : p.provider.provider_id,
           vendorName: p.provider.name,
           vendorIntro: p.provider.description ?? '',
-          // TODO(integration-gap): GAP-017 제안서 응답에 업체 지역이 없습니다.
+          // TODO(integration-gap): GAP-017 업체 제안서 응답에 업체 지역이 없습니다.
           vendorRegion: '',
           price: Math.round(p.min_price / 10000),
           priceMax: Math.round(p.max_price / 10000),
@@ -589,7 +589,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await refreshQuotes();
         return null;
       } catch (e) {
-        if (e instanceof ApiError && e.code === 'request_already_open') return '이 분석 결과로 이미 진행 중인 견적서가 있어요.';
+        if (e instanceof ApiError && e.code === 'request_already_open') return '이 분석 결과로 이미 진행 중인 견적 요청서가 있어요.';
         if (e instanceof ApiError && e.code === 'diagnosis_required') return '진단 결과가 바뀌었어요. 분석을 다시 확인해 주세요.';
         return messageOf(e);
       }
@@ -601,8 +601,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await refreshQuotes();
         return null;
       } catch (e) {
-        if (e instanceof ApiError && e.code === 'proposal_already_exists') return '이미 이 견적서에 제안서를 보냈어요.';
-        if (e instanceof ApiError && e.code === 'request_not_open') return '이미 마감된 견적서예요.';
+        if (e instanceof ApiError && e.code === 'proposal_already_exists') return '이미 이 견적 요청서에 업체 제안서를 보냈어요.';
+        if (e instanceof ApiError && e.code === 'request_not_open') return '이미 마감된 견적 요청서예요.';
         return messageOf(e);
       }
     },
@@ -615,7 +615,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await refreshQuotes();
         return null;
       } catch (e) {
-        if (e instanceof ApiError && e.code === 'request_not_open') return '이미 마감되었거나 취소된 견적서예요.';
+        if (e instanceof ApiError && e.code === 'request_not_open') return '이미 마감되었거나 취소된 견적 요청서예요.';
         return messageOf(e);
       }
     },
@@ -638,7 +638,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return null;
     },
     removeProposal(id) {
-      // TODO(integration-gap): GAP-015 제안서 삭제·철회 API가 없어 내 화면에서만 숨깁니다.
+      // TODO(integration-gap): GAP-015 업체 제안서 삭제·철회 API가 없어 내 화면에서만 숨깁니다.
       hide(id);
     },
   };

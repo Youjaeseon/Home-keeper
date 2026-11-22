@@ -36,7 +36,7 @@ export default function ProfileScreen() {
           <Chip label={user.role} active={vendor} />
         </View>
         <Txt variant="sub" muted>
-          {vendor ? `${user.region} · 견적서를 받는 업체` : `${user.region} · ${user.housing}`}
+          {vendor ? `${user.region} · 견적 요청서를 받는 업체` : `${user.region} · ${user.housing}`}
         </Txt>
       </View>
 
@@ -84,7 +84,7 @@ export default function ProfileScreen() {
                 </Txt>
                 <Txt variant="caption" muted>
                   {a.occurredAt}
-                  {a.needsRetake ? ' · 재촬영 필요' : ` · 위험도 ${a.risk}%`}
+                  {a.needsRetake ? ' · 재촬영 필요' : ` · 심각도 ${a.risk}%`}
                 </Txt>
               </View>
               <DeleteButton label="분석 기록" onDelete={() => removeAnalysis(a.id)} />

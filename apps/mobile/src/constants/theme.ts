@@ -3,7 +3,7 @@
  * 마스코트 이미지에서 뽑은 3색이 기본입니다.
  *   크림 #F8E6D1 (배경) · 초록 #4F8457 (캐릭터 몸, 주요 버튼) · 갈색 #68412E (눈·콧수염·스패너, 글씨)
  * 그림자 없이 납작하게, 모서리는 크게 둥글게 씁니다.
- * 위험도 3색은 분석 결과의 위험도 게이지에만 씁니다.
+ * 심각도 3색은 분석 결과의 심각도 게이지에만 씁니다.
  */
 export const C = {
   bg: '#F8E6D1', // 전체 배경 (캐릭터 배경 크림)
@@ -19,7 +19,7 @@ export const C = {
   border: '#EFD7BD',
   field: '#FBEEDF',
   scrim: 'rgba(104,65,46,0.42)', // 모달 뒤 어둡게
-  // 위험도 게이지 전용
+  // 심각도 게이지 전용
   riskLow: '#4F8457',
   riskMid: '#D8962C',
   riskHigh: '#C4533A',
@@ -47,7 +47,7 @@ export const STROKE = 2.2;
 /** 웹에서 볼 때 모바일 폭으로 고정 */
 export const MAX_W = 520;
 
-/** 위험도 구간은 백엔드 severity_level 기준(low < 40 ≤ medium < 70 ≤ high)과 맞춥니다. */
+/** 심각도 구간은 백엔드 severity_level 기준(low < 40 ≤ medium < 70 ≤ high)과 맞춥니다. */
 export function riskColor(risk: number) {
   return risk >= 70 ? C.riskHigh : risk >= 40 ? C.riskMid : C.riskLow;
 }

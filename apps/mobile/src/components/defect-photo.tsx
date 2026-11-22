@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 import { C, R } from '@/constants/theme';
 import type { DefectRegion } from '@/types';
 
-/** 스케치의 빨간 원: 사진 위에 손상 위치를 표시합니다. 원 색은 위험도 게이지 색을 따릅니다. */
+/** 스케치의 빨간 원: 사진 위에 손상 위치를 표시합니다. 원 색은 심각도 게이지 색을 따릅니다. */
 export function DefectPhoto({
   uri,
   region,
@@ -16,7 +16,7 @@ export function DefectPhoto({
   region?: DefectRegion | null;
   size?: number;
   color?: string;
-  /** true면 원형으로 자르고 테두리를 없앱니다 (위험도 링 안에 넣을 때) */
+  /** true면 원형으로 자르고 테두리를 없앱니다 (심각도 링 안에 넣을 때) */
   round?: boolean;
 }) {
   return (

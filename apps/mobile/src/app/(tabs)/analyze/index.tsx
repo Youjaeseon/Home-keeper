@@ -48,7 +48,7 @@ export default function AnalyzePickScreen() {
   return (
     <Screen safeTop>
       <AppBar title="AI 분석" />
-      <Hero title={'어디가\n문제인가요?'} subtitle="하자 부위를 찍거나 고르면 AI가 유형과 위험도를 분석해요." />
+      <Hero title={'어디가\n문제인가요?'} subtitle="하자 부위를 찍거나 고르면 AI가 유형과 심각도를 분석해요." />
 
       <View style={s.grid}>
         <Pressable
