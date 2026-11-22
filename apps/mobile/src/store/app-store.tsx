@@ -541,18 +541,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
         const detail = await getRecord(id);
         const old = analysesRef.current.find((a) => a.id === id);
-        // 자가 거주자는 임대인 요청문을 만들지 않습니다.
-        const tenant = housing !== '자가' && housing !== '기타' && !isProvider;
-        const draft = tenant && detail.diagnosis ? await landlordDraft(id) : null;
-        const result = toAnalysisResult(detail, {
+        const meta = {
           housing,
           occurredAt: old?.occurredAt ?? new Date().toLocaleDateString('ko-KR'),
           createdAt: old?.createdAt ?? Date.now(),
           photoUri: old?.photoUri,
-          landlordDraft: draft,
-        });
+        };
+        const put = (next: AnalysisResult) =>
+          setAnalyses((prev) => (prev.some((a) => a.id === id) ? prev.map((a) => (a.id === id ? next : a)) : [next, ...prev]));
+        const result = toAnalysisResult(detail, meta);
         if (!result) return '아직 진단 결과가 없는 기록입니다.';
-        setAnalyses((prev) => (prev.some((a) => a.id === id) ? prev.map((a) => (a.id === id ? result : a)) : [result, ...prev]));
+        // 결과를 먼저 보여 주고, 임대인 요청문(모델 호출이라 느릴 수 있음)은 받은 뒤에 채웁니다.
+        put(result);
+        // 자가 거주자는 임대인 요청문을 만들지 않습니다.
+        const tenant = housing !== '자가' && housing !== '기타' && !isProvider;
+        if (tenant) {
+          void landlordDraft(id).then((draft) => {
+            if (!draft) return;
+            const withDraft = toAnalysisResult(detail, { ...meta, landlordDraft: draft });
+            if (withDraft) put(withDraft);
+          });
+        }
         return null;
       } catch (e) {
         return messageOf(e);

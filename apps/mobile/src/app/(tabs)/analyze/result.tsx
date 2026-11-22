@@ -172,7 +172,7 @@ export default function AnalyzeResultScreen() {
         <View style={{ flexDirection: 'row', gap: 6 }}>
           <Chip label={r.defect} active />
           <Chip label={r.location} />
-          <Chip label={r.position} />
+          {!!r.position && <Chip label={r.position} />}
         </View>
         <View style={s.riskRow}>
           <Txt variant="label" muted>
@@ -390,7 +390,7 @@ export default function AnalyzeResultScreen() {
             <View style={{ flex: 1, gap: 6 }}>
               <QuoteRow label="AI 심각도" value={`${r.defect} · ${r.risk}% (${riskLabel(r.risk)})`} />
               <QuoteRow label="장소" value={r.location} />
-              <QuoteRow label="위치" value={r.position} />
+              {!!r.position && <QuoteRow label="위치" value={r.position} />}
             </View>
           </View>
           {sent ? (
