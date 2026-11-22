@@ -30,9 +30,23 @@ export function toVendor(p: ProviderSummary, index: number): Vendor {
 export async function fetchVendors(regionId: string, workTypeId?: string | null, regionName?: string | null) {
   // 경기도 용인시는 실제 업체 데이터셋만 보여 줍니다(테스트·가상 업체 숨김). 다른 지역은 기존 그대로.
   if (usesRealVendors(regionName)) {
-    const types = await getWorkTypes().catch(() => [] as WorkType[]);
+    const [types, registered] = await Promise.all([
+      getWorkTypes().catch(() => [] as WorkType[]),
+      getProviders({ regionId }).catch(() => null),
+    ]);
     const ids = Object.fromEntries(types.map((t) => [t.name, t.work_type_id]));
-    return { vendors: realVendorsFor(ids), isSample: false };
+    // 같은 이름으로 앱에 '업체' 가입한 계정이 있으면 그 계정과 채팅할 수 있게 연결합니다. (예: JP누수)
+    const key = (name: string) => name.replace(/\s/g, '').toLowerCase();
+    const accounts = new Map(
+      (registered && !registered.is_sample ? registered.providers : [])
+        .filter((p) => p.chat_available)
+        .map((p) => [key(p.name), p.provider_id]),
+    );
+    const vendors = realVendorsFor(ids).map((v) => {
+      const providerId = accounts.get(key(v.name));
+      return providerId ? { ...v, id: providerId, chatAvailable: true } : v;
+    });
+    return { vendors, isSample: false };
   }
   const res = await getProviders({ regionId, workTypeId }).catch(() => null);
   const real = res && !res.is_sample ? res.providers.map(toVendor) : [];
