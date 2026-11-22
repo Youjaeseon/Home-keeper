@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "Career Pair",
-    "slug": "career-pair",
+    "name": "Home Keeper",
+    "slug": "home-keeper",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "careerpair",
-    "userInterfaceStyle": "automatic",
+    "icon": "./assets/images/mascot.png",
+    "scheme": "homekeeper",
+    "userInterfaceStyle": "light",
     "ios": {
       "icon": "./assets/expo.icon"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#F8E6D1",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -20,24 +20,25 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "output": "server",
-      "favicon": "./assets/images/favicon.png"
+      "output": "single",
+      "favicon": "./assets/images/mascot.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#F8E6D1",
+          "image": "./assets/images/mascot.png",
+          "imageWidth": 160
         }
       ],
       "expo-sqlite",
       [
         "expo-image-picker",
         {
-          "photosPermission": "하자 사진을 선택하려면 사진 보관함 접근이 필요합니다."
+          "photosPermission": "하자 사진을 선택하려면 사진 보관함 접근이 필요합니다.",
+          "cameraPermission": "하자 사진을 촬영하려면 카메라 접근이 필요합니다."
         }
       ]
     ],
