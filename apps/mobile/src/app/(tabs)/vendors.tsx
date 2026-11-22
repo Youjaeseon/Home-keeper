@@ -6,7 +6,6 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 import { AppBar, Card, Chip, Hero, Notice, Screen, Txt } from '@/components/ui';
 import { C, STROKE } from '@/constants/theme';
 import { messageOf } from '@/lib/api';
-import { usesRealVendors } from '@/data/yongin-vendors';
 import { fetchVendors } from '@/services/vendors';
 import { useApp } from '@/store/app-store';
 import type { Vendor } from '@/types';
@@ -35,9 +34,6 @@ export default function VendorsScreen() {
       <Hero title="업체 모음" subtitle={`${user?.region ?? ''} 업체 중 직접 해결이 어려울 때 견적을 문의해 보세요.`} />
       {isSample && <Notice icon={Info}>이 지역에 등록된 업체가 없어 시연용 샘플 업체를 보여 드려요. 실제 업체가 아닙니다.</Notice>}
       {error && <Notice icon={Info}>{error}</Notice>}
-      {usesRealVendors(user?.region) && vendors.length === 0 && !error && (
-        <Notice icon={Info}>용인시 실제 업체 정보를 준비하고 있어요.</Notice>
-      )}
 
       {vendors.map((v) => (
         <Pressable

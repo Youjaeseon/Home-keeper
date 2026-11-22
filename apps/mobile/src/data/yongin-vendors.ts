@@ -22,8 +22,12 @@ export type RealVendorEntry = {
 
 export const YONGIN_VENDORS: RealVendorEntry[] = [];
 
-/** 이 지역에 실제 업체 데이터셋을 쓰는지 (지금은 경기도 용인시만) */
-export const usesRealVendors = (regionName: string | null | undefined) => !!regionName && regionName.includes('용인');
+/**
+ * 이 지역에 실제 업체 데이터셋을 쓰는지 (지금은 경기도 용인시만).
+ * 데이터가 비어 있으면 기존처럼 테스트·가상 업체를 그대로 보여 줍니다.
+ */
+export const usesRealVendors = (regionName: string | null | undefined) =>
+  YONGIN_VENDORS.length > 0 && !!regionName && regionName.includes('용인');
 
 /** workTypeIds: 작업 종류 이름 → 서버 work_type_id (분석 결과의 '추천' 표시에 씀) */
 export function realVendorsFor(workTypeIds: Record<string, string> = {}): Vendor[] {
