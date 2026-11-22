@@ -94,7 +94,7 @@
 - **요청 (`multipart/form-data`)**:
   - `photos`: 이미지 파일 1~2장 (첫 번째 필수, 두 번째 선택)
   - `photo_roles`: 각 사진의 역할 (`overview` | `closeup`). 사진 수와 같아야 하며 서로 달라야 한다.
-  - `external_analysis_consent`: 외부 사진 전송(Meta SAM·비전 LLM) 동의 여부 (`boolean`, 생략 시 `true`). 명시적 `false`면 외부 전송을 하지 않는다.
+  - `external_analysis_consent`: 외부 사진 전송(Meta SAM·비전 LLM) 동의 여부 (`boolean`, 생략 시 `false`). 명시적 `true`일 때만 외부로 전송한다.
   - `location`: 하자 발견 위치 (필수 문자열, 공백만 불가)
   - `material`: 표면 재질 (필수 문자열, 공백만 불가)
   - `symptoms`: 선택 증상 메모 (`string | null`)

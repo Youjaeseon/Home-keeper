@@ -388,3 +388,20 @@ def test_concurrent_analyze_does_not_mix_inputs_and_diagnosis(
     assert locations[winner_index] in detail["diagnosis"]["diagnosis"]["observations"]
     assert detail["input_revision"] == 1
     assert detail["diagnosis"]["is_current"] is True
+
+
+def test_omitted_external_consent_defaults_to_no_consent(
+    client, user_factory, token_for, record_factory
+):
+    user_id = user_factory()
+    token = token_for(user_id)
+    record_id = record_factory(user_id)["record_id"]
+
+    response = client.post(
+        f"/records/{record_id}/analyze",
+        headers=auth_headers(token),
+        data={"photo_roles": ["overview"], "location": "욕실 창가", "material": "실리콘"},
+        files=[("photos", ("overview.png", PNG_1X1, "image/png"))],
+    )
+    assert response.status_code == 200, response.text
+    assert "외부 분석 동의가 없어" in response.json()["photo_analysis"]["notice"]

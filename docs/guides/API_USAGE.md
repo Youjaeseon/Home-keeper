@@ -128,7 +128,7 @@ curl -s http://127.0.0.1:8000/records \
 
 ## 사진·위치·재질 일괄 분석
 
-`POST /records/{record_id}/analyze`는 multipart/form-data로 사진 1~2장, 사진 역할, 위치, 재질, 선택 증상 메모, 선택 분석 지역(`region_id`), 외부 분석 동의 여부(생략 시 `true`)를 받습니다. `region_id`를 생략하면 기존 기록의 지역, 그것도 없으면 프로필 거주 지역을 스냅샷으로 저장하고, 지역이 실제로 바뀌면 `input_revision`이 증가합니다. `YOLO_MODEL_PATH` 설정 시 YOLO 탐지를 수행하고, 동의와 `MODEL_API_KEY`가 있으면 Meta SAM 3.1로 분할합니다. YOLO가 탐지하지 못했거나 실행할 수 없는 사진만 동의와 `LLM_API_KEY`가 있을 때 비전 LLM이 독립 관찰합니다. 두 모델 경로가 모두 미설정이면 샘플 모드입니다. `YOLO_MODEL_PATH`만 켜고 `LLM_API_KEY`가 없으면 `503`(`llm_unavailable`)입니다.
+`POST /records/{record_id}/analyze`는 multipart/form-data로 사진 1~2장, 사진 역할, 위치, 재질, 선택 증상 메모, 선택 분석 지역(`region_id`), 외부 분석 동의 여부(생략 시 `false`)를 받습니다. `region_id`를 생략하면 기존 기록의 지역, 그것도 없으면 프로필 거주 지역을 스냅샷으로 저장하고, 지역이 실제로 바뀌면 `input_revision`이 증가합니다. `YOLO_MODEL_PATH` 설정 시 YOLO 탐지를 수행하고, 동의와 `MODEL_API_KEY`가 있으면 Meta SAM 3.1로 분할합니다. YOLO가 탐지하지 못했거나 실행할 수 없는 사진만 동의와 `LLM_API_KEY`가 있을 때 비전 LLM이 독립 관찰합니다. 두 모델 경로가 모두 미설정이면 샘플 모드입니다. `YOLO_MODEL_PATH`만 켜고 `LLM_API_KEY`가 없으면 `503`(`llm_unavailable`)입니다.
 
 ```bash
 curl -s -X POST "http://127.0.0.1:8000/records/$RECORD_ID/analyze"   -H "Authorization: Bearer $ACCESS_TOKEN"   -F "photos=@/path/to/overview.jpg;type=image/jpeg"   -F "photo_roles=overview"   -F "external_analysis_consent=false"   -F "location=안방 창틀 아래"   -F "material=실리콘"   -F "symptoms=닦아도 검은 얼룩이 다시 생겨요"

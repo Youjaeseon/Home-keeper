@@ -708,8 +708,8 @@ def analyze_record(
     ] = None,
     external_analysis_consent: Annotated[
         bool,
-        Form(description="외부 사진 전송(Meta SAM·비전 LLM) 동의 여부. 생략하면 `true`이며, 명시적 `false`일 때만 외부 전송을 건너뜁니다."),
-    ] = True,
+        Form(description="외부 사진 전송(Meta SAM·비전 LLM) 동의 여부. 생략하면 `false`이며, 명시적 `true`일 때만 사진을 외부 모델로 보냅니다."),
+    ] = False,
     owner_id: UUID = Depends(get_current_user),
 ):
     try:
