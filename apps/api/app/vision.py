@@ -11,7 +11,9 @@ from dataclasses import asdict
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
+from typing import Callable
 
 import httpx
 from fastapi import UploadFile
@@ -21,6 +23,8 @@ from app.config import get_settings
 from app.errors import ApiError, invalid_request
 
 _model_lock = Lock()
+# SAM segmentation runs here so the diagnosis LLM call does not wait for it.
+_sam_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="sam")
 
 # Official defect vocabulary. Unknown model labels are kept verbatim.
 LABEL_ALIASES = {
@@ -298,7 +302,31 @@ def _aggregate_source(photos: list[dict]) -> str:
 
 
 def analyze_photos(photos: list[UploadFile], roles: list[str], consent: bool) -> dict:
+    result, finish = start_photo_analysis(photos, roles, consent)
+    return finish()
+
+
+def _apply_masks(detections: list[dict], masks: dict, status: str) -> None:
+    for detection in detections:
+        mask = masks.get(detection["object_id"])
+        if mask is not None:
+            ratio = mask.pop("_area_ratio", None)
+            if ratio is not None:
+                detection["area_ratio"] = ratio
+        detection["mask"] = mask
+        detection["segmentation_status"] = "completed" if mask else status
+
+
+def start_photo_analysis(
+    photos: list[UploadFile], roles: list[str], consent: bool
+) -> tuple[dict, Callable[[], dict]]:
+    """YOLO/vision now; SAM segmentation in the background.
+
+    Returns the photo analysis (YOLO box ratios for now) and finish(), which
+    waits for SAM, applies masks and precise area ratios, and returns the same dict.
+    """
     settings = get_settings()
+    pending: list[tuple[dict, list[dict], object]] = []
     if settings.yolo_model_path and not settings.llm_api_key:
         raise ApiError(
             503,
@@ -323,30 +351,24 @@ def analyze_photos(photos: list[UploadFile], roles: list[str], consent: bool) ->
                     yolo_failed = True
 
             if detections:
-                status = "skipped_no_consent" if not consent else "unavailable"
-                masks = {}
-                if consent and settings.model_api_key:
-                    try:
-                        masks = asyncio.run(_segment(image, detections))
-                        status = "no_mask"
-                    except Exception:
-                        # Preserve local detections when the external service fails.
-                        status = "failed"
-                for detection in detections:
-                    mask = masks.get(detection["object_id"])
-                    if mask is not None:
-                        ratio = mask.pop("_area_ratio", None)
-                        if ratio is not None:
-                            detection["area_ratio"] = ratio
-                    detection["mask"] = mask
-                    detection["segmentation_status"] = "completed" if mask else status
-                results.append({
+                entry = {
                     "role": role,
                     "status": "analyzed",
-                    "source": "yolo_sam" if masks else "yolo",
+                    "source": "yolo",
                     "detections": detections,
                     "vision_observation": None,
-                })
+                }
+                results.append(entry)
+                if consent and settings.model_api_key:
+                    future = _sam_pool.submit(
+                        lambda img, dets: asyncio.run(_segment(img, dets)),
+                        image.copy(),
+                        detections,
+                    )
+                    pending.append((entry, detections, future))
+                else:
+                    status = "skipped_no_consent" if not consent else "unavailable"
+                    _apply_masks(detections, {}, status)
             elif vision_allowed:
                 observation = _observe(image, role)
                 unreadable = observation is None or observation["unreadable_reason"] is not None
@@ -384,7 +406,7 @@ def analyze_photos(photos: list[UploadFile], roles: list[str], consent: bool) ->
                 })
 
     source = _aggregate_source(results)
-    return {
+    analysis = {
         "applied": source != "sample",
         "source": source,
         "notice": (
@@ -394,3 +416,22 @@ def analyze_photos(photos: list[UploadFile], roles: list[str], consent: bool) ->
         ),
         "photos": results,
     }
+
+    def finish() -> dict:
+        for entry, detections, future in pending:
+            masks: dict = {}
+            status = "no_mask"
+            try:
+                masks = future.result(timeout=settings.sam_timeout_seconds + 5)
+            except Exception:
+                # Preserve local detections when the external service fails.
+                status = "failed"
+            _apply_masks(detections, masks, status)
+            if masks:
+                entry["source"] = "yolo_sam"
+        pending.clear()
+        analysis["source"] = _aggregate_source(results)
+        analysis["applied"] = analysis["source"] != "sample"
+        return analysis
+
+    return analysis, finish

@@ -52,7 +52,7 @@ _RETRY_DELAY_SECONDS = 1.5
 def _post_chat(payload: dict) -> httpx.Response:
     settings = get_settings()
     effort = getattr(settings, "llm_reasoning_effort", None)
-    if effort:
+    if effort and "reasoning_effort" not in payload:
         payload = {**payload, "reasoning_effort": effort}
     for attempt in range(2):
         started = time.perf_counter()
@@ -130,6 +130,7 @@ def generate_json(
     system_prompt: str,
     image_data_url: str | None = None,
     model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> dict:
     """One structured JSON completion; photo input is optional.
 
@@ -154,6 +155,7 @@ def generate_json(
         ],
         "temperature": 0.2,
         "response_format": {"type": "json_object"},
+        **({"reasoning_effort": reasoning_effort} if reasoning_effort else {}),
     })
 
     try:

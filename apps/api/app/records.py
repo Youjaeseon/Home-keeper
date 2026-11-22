@@ -30,7 +30,7 @@ from app.sample_analysis import (
     build_sample_analysis,
 )
 from app.sample_questions import SOURCE, build_sample_decision
-from app.vision import analyze_photos
+from app.vision import start_photo_analysis
 from app.schemas import (
     AnalyzeResponse,
     ConflictErrorResponse,
@@ -826,21 +826,32 @@ def analyze_record(
             photo_analysis = sample.photo_analysis
             diagnosis_result = sample.diagnosis
         else:
-            photo_analysis = analyze_photos(
+            # SAM 분할은 백그라운드에서 돌고, 진단 LLM은 YOLO 결과로 바로 시작합니다.
+            # 위험도는 SAM이 끝난 뒤 정확한 면적으로 계산합니다.
+            photo_analysis, finish_photos = start_photo_analysis(
                 photos, photo_roles, external_analysis_consent
             )
             mark("photo_analysis")
             work_types = diagnosis.load_work_types()
             mark("db_work_types")
+            inputs = {
+                "location": location,
+                "material": material,
+                "symptoms": symptoms,
+                "photo_observations": photo_analysis,
+            }
             try:
-                diagnosis_result = diagnosis.generate_diagnosis(
-                    {
-                        "location": location,
-                        "material": material,
-                        "symptoms": symptoms,
-                        "photo_observations": photo_analysis,
-                    },
-                    work_types,
+                payload = diagnosis.request_diagnosis(inputs, work_types)
+                mark("diagnosis_llm")
+                photo_analysis = finish_photos()
+                mark("sam_wait")
+                diagnosis_result = diagnosis.normalize_diagnosis(
+                    payload,
+                    work_types=work_types,
+                    photo_analysis=photo_analysis,
+                    symptoms=symptoms,
+                    location=location,
+                    material=material,
                 )
             except llm.LlmUnavailable:
                 raise diagnosis_llm_unavailable() from None

@@ -456,10 +456,21 @@ def load_work_types() -> list[dict]:
         ]
 
 
-def generate_diagnosis(record: dict, work_types: list[dict]) -> dict:
-    payload = llm.generate_json(
-        build_prompt(record, work_types), system_prompt=SYSTEM_PROMPT
+# 진단 호출의 추론 강도 (Hyeok 결정: 속도 우선 low). 모델이 거부하면 llm이 빼고 다시 요청합니다.
+DIAGNOSIS_REASONING_EFFORT = "low"
+
+
+def request_diagnosis(record: dict, work_types: list[dict]) -> dict:
+    """Raw diagnosis payload from the model (validated later by normalize_diagnosis)."""
+    return llm.generate_json(
+        build_prompt(record, work_types),
+        system_prompt=SYSTEM_PROMPT,
+        reasoning_effort=DIAGNOSIS_REASONING_EFFORT,
     )
+
+
+def generate_diagnosis(record: dict, work_types: list[dict]) -> dict:
+    payload = request_diagnosis(record, work_types)
     return normalize_diagnosis(
         payload,
         work_types=work_types,
