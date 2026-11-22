@@ -77,7 +77,9 @@ export default function DmListScreen() {
 
 /** 메시지 탭: GET /chat/rooms (상대 이름, 최근 메시지, 미읽음 수) */
 function Messages() {
-  const { threads, refreshThreads, user } = useApp();
+  const { threads: allThreads, refreshThreads, user } = useApp();
+  // 메시지가 하나도 없는 방(메시지를 모두 지운 방 등)은 목록에서 숨깁니다. 업체에 다시 문의하면 같은 방이 열려요.
+  const threads = allThreads.filter((t) => !!t.last);
   useEffect(() => {
     void refreshThreads().catch(() => null);
   }, [refreshThreads]);
