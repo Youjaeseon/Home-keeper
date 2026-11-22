@@ -3,6 +3,7 @@ import { type ComponentRef, type ComponentType, type ReactNode, useEffect, useRe
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -59,19 +60,34 @@ export function Screen({
   children,
   safeTop,
   scrollKey,
+  onRefresh,
 }: {
   children: ReactNode;
   safeTop?: boolean;
   scrollKey?: string;
+  /** 있으면 아래로 당겨서 새로고침합니다. 끝날 때까지 로딩 표시가 돕니다. */
+  onRefresh?: () => Promise<unknown>;
 }) {
   const insets = useSafeAreaInsets();
   const ref = useRef<ComponentRef<typeof ScrollView>>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const pull = onRefresh
+    ? () => {
+        setRefreshing(true);
+        void onRefresh()
+          .catch(() => null)
+          .finally(() => setRefreshing(false));
+      }
+    : undefined;
   useEffect(() => {
     ref.current?.scrollTo({ y: 0, animated: false });
   }, [scrollKey]);
   return (
     <ScrollView
       ref={ref}
+      refreshControl={
+        pull ? <RefreshControl refreshing={refreshing} onRefresh={pull} tintColor={C.primary} colors={[C.primary]} /> : undefined
+      }
       automaticallyAdjustKeyboardInsets
       style={s.root}
       contentContainerStyle={{ flexGrow: 1, paddingBottom: 32, paddingTop: safeTop ? insets.top : 0 }}

@@ -25,19 +25,23 @@ export default function VendorsScreen() {
   const [isSample, setIsSample] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [field, setField] = useState<string | null>(null);
+  const load = () =>
+    user?.regionId
+      ? fetchVendors(user.regionId, null, user.region)
+          .then((res) => {
+            setVendors(res.vendors);
+            setIsSample(res.isSample);
+            setError(null);
+          })
+          .catch((e) => setError(messageOf(e)))
+      : Promise.resolve();
   useEffect(() => {
-    if (!user?.regionId) return;
-    fetchVendors(user.regionId, null, user.region)
-      .then((res) => {
-        setVendors(res.vendors);
-        setIsSample(res.isSample);
-        setError(null);
-      })
-      .catch((e) => setError(messageOf(e)));
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.regionId, user?.region]);
 
   return (
-    <Screen safeTop>
+    <Screen safeTop onRefresh={load}>
       <AppBar title="업체 목록" />
       <Hero
         title="업체 모음"

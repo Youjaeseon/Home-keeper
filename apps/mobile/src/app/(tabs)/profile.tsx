@@ -13,7 +13,7 @@ import { useApp } from '@/store/app-store';
 
 /** 스케치 3: 사용자 정보 — 회원 유형(유저/업체), 별명, 거주지역, 거주형태 */
 export default function ProfileScreen() {
-  const { user, regions, updateUser, logout, analyses, removeAnalysis } = useApp();
+  const { user, regions, updateUser, logout, analyses, removeAnalysis, refreshAnalyses } = useApp();
   const [nickname, setNickname] = useState(user?.nickname ?? '');
   const [savedNickname, setSavedNickname] = useState(user?.nickname ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export default function ProfileScreen() {
   const vendor = user.role === '업체';
 
   return (
-    <Screen safeTop>
+    <Screen safeTop onRefresh={refreshAnalyses}>
       <AppBar title="프로필" />
 
       <View style={s.profile}>

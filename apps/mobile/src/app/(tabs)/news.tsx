@@ -47,6 +47,18 @@ export default function NewsScreen() {
 
   // 서버가 프로필 지역·거주 형태에 맞춰 정렬하므로 조건이 바뀌면 다시 불러옵니다.
   const signedIn = !!user;
+  const load = () =>
+    fetchNews(page, PAGE_SIZE, category)
+      .then((res) => {
+        setVisible(res.items);
+        setTotal(res.total);
+        setError(null);
+        setLoaded(true);
+      })
+      .catch((e) => {
+        setError(messageOf(e));
+        setLoaded(true);
+      });
   useEffect(() => {
     if (!signedIn) return;
     fetchNews(page, PAGE_SIZE, category)
@@ -70,7 +82,7 @@ export default function NewsScreen() {
   const hasNext = pages.length > 0 && windowStart + pages.length < pageCount;
 
   return (
-    <Screen safeTop>
+    <Screen safeTop onRefresh={load}>
       <AppBar title="소식지" />
       <Hero title={`${user.nickname}님을 위한,\n맞춤 소식이에요.`} />
 

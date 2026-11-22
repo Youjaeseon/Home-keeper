@@ -22,7 +22,7 @@ const parseWon = (text: string) => {
 /** 채팅 목록 — 상단 탭: 메시지 | 업체 제안서(유저) 또는 견적 요청서(업체) */
 export default function DmListScreen() {
   const params = useLocalSearchParams<{ tab?: string }>();
-  const { user, unreadChats, newQuotes } = useApp();
+  const { user, unreadChats, newQuotes, refreshThreads, refreshQuotes } = useApp();
   const [tab, setTab] = useState<Tab>(params.tab === 'quotes' ? 'quotes' : 'messages');
   const badgeOf = (key: Tab) => (key === 'messages' ? unreadChats : newQuotes);
   const TABS: { key: Tab; label: string }[] = [
@@ -36,7 +36,7 @@ export default function DmListScreen() {
   const noHistory = !router.canGoBack();
 
   return (
-    <Screen>
+    <Screen onRefresh={() => Promise.all([refreshThreads(), refreshQuotes()])}>
       {noHistory && (
         <Stack.Screen
           options={{
