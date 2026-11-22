@@ -587,6 +587,76 @@ def test_cancel_accept_reopens_request_and_proposals(
     assert other.json()["accepted_proposal_id"] == proposal_ids[1]
 
 
+def test_complete_closes_accepted_request(
+    client, admin, user_factory, token_for, record_factory
+):
+    region_id = _region(admin)
+    work_type_id = _work_type(admin, f"거래 완료 작업 {uuid4().hex[:8]}")
+    requester_id = user_factory()
+    requester_token = token_for(requester_id)
+    _profile(client, requester_token, region_id)
+    record_id = _ready_record(
+        client,
+        admin,
+        requester_id,
+        requester_token,
+        record_factory,
+        region_id=region_id,
+        work_type_id=work_type_id,
+    )
+    request_id = _create_request(client, requester_token, record_id).json()["request_id"]
+    provider_user = user_factory()
+    _provider(
+        admin,
+        "거래 완료 업체",
+        region_id=region_id,
+        work_types=[work_type_id],
+        account_user_id=provider_user,
+    )
+    proposal = client.post(
+        f"/quote-requests/{request_id}/proposals",
+        headers=auth_headers(token_for(provider_user)),
+        json={"min_price": 1000, "max_price": 2000, "memo": "완료 제안"},
+    )
+    assert proposal.status_code == 200, proposal.text
+
+    not_accepted = client.post(
+        f"/quote-requests/{request_id}/complete", headers=auth_headers(requester_token)
+    )
+    assert not_accepted.status_code == 409
+    assert not_accepted.json()["code"] == "request_not_accepted"
+
+    accepted = client.post(
+        f"/quote-requests/{request_id}/proposals/{proposal.json()['proposal_id']}/accept",
+        headers=auth_headers(requester_token),
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    other_user = client.post(
+        f"/quote-requests/{request_id}/complete",
+        headers=auth_headers(token_for(user_factory())),
+    )
+    assert other_user.status_code == 404
+
+    completed = client.post(
+        f"/quote-requests/{request_id}/complete", headers=auth_headers(requester_token)
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "completed"
+
+    vendor_list = client.get("/quote-requests", headers=auth_headers(token_for(provider_user)))
+    assert vendor_list.status_code == 200
+    assert [item["status"] for item in vendor_list.json() if item["request_id"] == request_id] == [
+        "completed"
+    ]
+
+    for path in ("cancel-accept", "complete", "cancel"):
+        again = client.post(
+            f"/quote-requests/{request_id}/{path}", headers=auth_headers(requester_token)
+        )
+        assert again.status_code == 409, path
+
+
 def test_concurrent_accept_has_one_winner(
     client, admin, user_factory, token_for, record_factory
 ):

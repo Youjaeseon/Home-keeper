@@ -545,7 +545,7 @@ class QuoteRequestSummary(BaseModel):
         description="AI 심각도 단계. 판단 보류면 `undetermined`입니다."
     )
     suspected_types: list[str] = Field(description="AI가 의심한 하자 유형 목록.")
-    status: Literal["open", "accepted", "cancelled"] = Field(
+    status: Literal["open", "accepted", "cancelled", "completed"] = Field(
         description="요청서 상태. `open`은 진행 중, `accepted`는 수락 완료, `cancelled`는 취소입니다."
     )
     accepted_proposal_id: UUID | None = Field(

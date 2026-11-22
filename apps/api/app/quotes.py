@@ -8,6 +8,7 @@ only their own. Photo paths are signed on read through the private bucket.
 from typing import Annotated
 from uuid import UUID
 
+import psycopg
 from fastapi import APIRouter, Body, Depends, Path
 from psycopg.types.json import Jsonb
 
@@ -23,6 +24,7 @@ from app.errors import (
     proposal_already_exists,
     proposal_not_pending,
     diagnosis_required,
+    quote_completion_unavailable,
 )
 from app.schemas import (
     ErrorResponse,
@@ -626,6 +628,47 @@ def cancel_quote_acceptance(
             """,
             (request_id,),
         )
+
+    with read_transaction() as conn:
+        return _detail(conn, request_id, owner_id)
+
+
+@router.post(
+    "/quote-requests/{request_id}/complete",
+    response_model=QuoteRequestDetailOut,
+    summary="거래 완료 처리",
+    description=(
+        "요청인이 수락한 거래를 완료로 마감합니다. 완료된 요청서는 다시 수락·수락 취소·취소할 수 없습니다.\n\n"
+        "- 요청서 소유자만 호출할 수 있으며, 수락 상태가 아니면 `409`(`request_not_accepted`)입니다.\n"
+        "- 서버에 완료 상태(마이그레이션 019)가 적용되지 않았으면 `503`(`quote_completion_unavailable`)입니다."
+    ),
+    responses={
+        404: _NOT_FOUND_RESPONSE,
+        409: _CONFLICT_RESPONSE,
+        422: _VALIDATION_RESPONSE,
+        503: {"model": ErrorResponse, "description": "완료 상태 미적용"},
+    },
+)
+def complete_quote_request(
+    request_id: Annotated[UUID, Path(description="완료 처리할 견적 요청서 UUID.")],
+    owner_id: UUID = Depends(get_current_user),
+):
+    try:
+        with transaction() as conn:
+            request = conn.execute(
+                "SELECT * FROM quote_requests WHERE id = %s AND requester_id = %s FOR UPDATE",
+                (request_id, owner_id),
+            ).fetchone()
+            if request is None:
+                raise not_found("견적 요청서를 찾을 수 없습니다.")
+            if request["status"] != "accepted":
+                raise request_not_accepted()
+            conn.execute(
+                "UPDATE quote_requests SET status = 'completed', updated_at = now() WHERE id = %s",
+                (request_id,),
+            )
+    except psycopg.errors.CheckViolation:
+        raise quote_completion_unavailable() from None
 
     with read_transaction() as conn:
         return _detail(conn, request_id, owner_id)
