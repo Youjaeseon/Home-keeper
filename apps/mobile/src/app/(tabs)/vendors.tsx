@@ -74,11 +74,6 @@ export default function VendorsScreen() {
                   {v.phone}
                 </Txt>
               </View>
-              {v.realListing && (
-                <Txt variant="caption" muted>
-                  누르면 전화 연결 · 출처 확인 {v.realListing.checkedAt}
-                </Txt>
-              )}
             </View>
             <ChevronRight size={20} color={C.faint} strokeWidth={STROKE} />
           </Card>
