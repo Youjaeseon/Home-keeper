@@ -73,7 +73,7 @@ export default function VendorsScreen() {
                 style={[s.filter, on && s.filterOn]}
               >
                 <Txt variant="label" color={on ? C.onPrimary : C.text}>
-                  {f.label}
+                  {f.label} {f.key ? vendors.filter((v) => v.specialties.includes(f.key as string)).length : vendors.length}
                 </Txt>
               </Pressable>
             );
