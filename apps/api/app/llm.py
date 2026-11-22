@@ -48,6 +48,9 @@ _RETRY_DELAY_SECONDS = 1.5
 
 def _post_chat(payload: dict) -> httpx.Response:
     settings = get_settings()
+    effort = getattr(settings, "llm_reasoning_effort", None)
+    if effort:
+        payload = {**payload, "reasoning_effort": effort}
     for attempt in range(2):
         try:
             response = httpx.post(
@@ -62,6 +65,10 @@ def _post_chat(payload: dict) -> httpx.Response:
             raise LlmError from exc
         if response.status_code in _RETRY_STATUSES and attempt == 0:
             time.sleep(_RETRY_DELAY_SECONDS)
+            continue
+        # Some models reject reasoning_effort; retry once without it instead of failing.
+        if response.status_code == 400 and "reasoning_effort" in payload and attempt == 0:
+            payload = {key: value for key, value in payload.items() if key != "reasoning_effort"}
             continue
         break
     if response.status_code == 429:

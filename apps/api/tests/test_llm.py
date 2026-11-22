@@ -130,3 +130,21 @@ def test_brief_high_demand_is_retried_once(monkeypatch):
     monkeypatch.setattr("app.llm.time.sleep", lambda _seconds: None)
     assert llm.generate_text("x") == "초안"
     assert len(calls) == 2
+
+
+def test_reasoning_effort_is_sent_and_dropped_when_rejected(monkeypatch):
+    payloads = []
+    responses = [
+        _Response(400, {}),
+        _Response(200, {"choices": [{"message": {"content": "초안"}}]}),
+    ]
+
+    def fake_post(*_args, json, **_kwargs):
+        payloads.append(json)
+        return responses[len(payloads) - 1]
+
+    monkeypatch.setattr("app.llm.get_settings", lambda: _settings(llm_reasoning_effort="low"))
+    monkeypatch.setattr("app.llm.httpx.post", fake_post)
+    assert llm.generate_text("x") == "초안"
+    assert payloads[0]["reasoning_effort"] == "low"
+    assert "reasoning_effort" not in payloads[1]
