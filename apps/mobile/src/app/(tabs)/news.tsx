@@ -7,7 +7,7 @@ import { Select } from '@/components/select';
 import { AppBar, Banner, Button, Card, Hero, Screen, Txt } from '@/components/ui';
 import { C, F, R, STROKE } from '@/constants/theme';
 import { HOUSINGS, regionLabel } from '@/data/options';
-import { messageOf } from '@/lib/api';
+import { getSupportProgram, messageOf, type SupportProgramDetail } from '@/lib/api';
 import { fetchNews } from '@/services/news';
 import { useApp } from '@/store/app-store';
 
@@ -22,6 +22,16 @@ export default function NewsScreen() {
   const [visible, setVisible] = useState<Awaited<ReturnType<typeof fetchNews>>['items']>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // 펼친 공고의 상세(GET /support-programs/{id})를 한 번만 불러 둡니다. (GAP-030)
+  const [details, setDetails] = useState<Record<string, SupportProgramDetail | string>>({});
+
+  const toggle = (id: string, open: boolean) => {
+    setOpenId(open ? null : id);
+    if (open || details[id]) return;
+    getSupportProgram(id)
+      .then((d) => setDetails((prev) => ({ ...prev, [id]: d })))
+      .catch((e) => setDetails((prev) => ({ ...prev, [id]: messageOf(e) })));
+  };
 
   // 서버가 프로필 지역·거주 형태에 맞춰 정렬하므로 조건이 바뀌면 다시 불러옵니다.
   const signedIn = !!user;
@@ -80,7 +90,7 @@ export default function NewsScreen() {
               key={item.id}
               accessibilityRole="button"
               accessibilityState={{ expanded: open }}
-              onPress={() => setOpenId(open ? null : item.id)}
+              onPress={() => toggle(item.id, open)}
               style={({ pressed }) => [s.item, i > 0 && s.divider, pressed && { opacity: 0.7 }]}>
               <View style={s.itemTop}>
                 <View style={{ flex: 1, gap: 6 }}>
@@ -103,6 +113,7 @@ export default function NewsScreen() {
                   {item.summary}
                 </Txt>
               )}
+              {open && <ProgramDetail detail={details[item.id]} />}
               {open && !!item.url && (
                 <Txt variant="caption" color={C.primary} onPress={() => Linking.openURL(item.url)}>
                   공고 원문 보기
@@ -159,6 +170,49 @@ export default function NewsScreen() {
         </Pressable>
       </Modal>
     </Screen>
+  );
+}
+
+function ProgramDetail({ detail }: { detail: SupportProgramDetail | string | undefined }) {
+  if (detail === undefined) {
+    return (
+      <Txt variant="caption" muted>
+        상세 정보를 불러오는 중...
+      </Txt>
+    );
+  }
+  if (typeof detail === 'string') {
+    return (
+      <Txt variant="caption" color={C.danger}>
+        {detail}
+      </Txt>
+    );
+  }
+  const rows: [string, string | null][] = [
+    ['지원 대상', detail.support_target],
+    ['지원 내용', detail.support_content],
+    ['선정 기준', detail.selection_criteria],
+    ['신청 방법', detail.apply_method],
+    ['마감', detail.deadline_text],
+  ];
+  return (
+    <View style={{ gap: 8 }}>
+      {rows
+        .filter(([, v]) => !!v)
+        .map(([k, v]) => (
+          <View key={k} style={{ gap: 2 }}>
+            <Txt variant="label" muted>
+              {k}
+            </Txt>
+            <Txt variant="sub" color={C.text}>
+              {v}
+            </Txt>
+          </View>
+        ))}
+      <Txt variant="caption" muted>
+        출처: {detail.source_attribution} (확인 {detail.source_checked_at.slice(0, 10)})
+      </Txt>
+    </View>
   );
 }
 
