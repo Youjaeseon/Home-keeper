@@ -21,3 +21,15 @@ export function isValidDate(s: string) {
   const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   return d.getMonth() === Number(m[2]) - 1 && d.getTime() <= Date.now();
 }
+
+/** 현재 페이지가 속한 5개 블록의 페이지 번호를 반환합니다. */
+export function pageWindow(page: number, pageCount: number) {
+  const size = 5;
+  if (pageCount <= 0) return [];
+  const safePage = Math.max(0, Math.min(page, pageCount - 1));
+  const start = Math.floor(safePage / size) * size;
+  return Array.from(
+    { length: Math.min(size, pageCount - start) },
+    (_, i) => start + i,
+  );
+}

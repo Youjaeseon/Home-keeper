@@ -1,4 +1,15 @@
+import type { SupportCategory } from '@/lib/api';
 import type { Housing } from '@/types';
+
+export const CATEGORY_LABELS: Record<SupportCategory, string> = {
+  monthly_rent_support: '월세',
+  deposit_loan: '보증금·대출',
+  housing_cost: '주거비',
+  repair: '수리·개선',
+  brokerage_fee: '중개비',
+  supply: '입주·공급',
+  other: '기타',
+};
 
 // 가입 화면은 공개 GET /regions 목록을 쓰고, 이 값은 서버에 닿지 못할 때의 기본값입니다. (GAP-004)
 export const REGIONS = ['경기 용인'];

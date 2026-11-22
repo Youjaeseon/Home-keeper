@@ -310,6 +310,14 @@ export type AnalyzeInput = {
 
 export type DeadlineKind = 'fixed' | 'always_open' | 'unknown';
 export type SupportProgramSource = 'seed' | 'gov24_api';
+export type SupportCategory =
+  | 'monthly_rent_support'
+  | 'deposit_loan'
+  | 'housing_cost'
+  | 'repair'
+  | 'brokerage_fee'
+  | 'supply'
+  | 'other';
 
 export type SupportProgramListItem = {
   id: string;
@@ -319,6 +327,7 @@ export type SupportProgramListItem = {
   region_scope: 'national' | 'local';
   region_name: string;
   target_housing_types: HousingType[];
+  categories: SupportCategory[];
   deadline_text: string | null;
   deadline_date: string | null;
   deadline_kind: DeadlineKind;
@@ -349,6 +358,7 @@ export type SupportProgramListResponse = {
 
 export type SupportProgramQuery = {
   status?: 'all' | 'active';
+  category?: SupportCategory;
   limit?: number;
   offset?: number;
 };
@@ -495,6 +505,7 @@ export function regenerateDiagnosis(
 
 export function getSupportPrograms({
   status = 'all',
+  category,
   limit = 5,
   offset = 0,
 }: SupportProgramQuery = {}): Promise<SupportProgramListResponse> {
@@ -503,6 +514,7 @@ export function getSupportPrograms({
     limit: String(limit),
     offset: String(offset),
   });
+  if (category) params.set('category', category);
   return apiRequest<SupportProgramListResponse>(`/support-programs?${params}`);
 }
 

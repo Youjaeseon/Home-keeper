@@ -55,7 +55,7 @@
 
 - 가입 화면에 회원 유형(유저/업체)을 되살렸습니다. 업체는 업체명·연락처·소개·활동지역을 입력하고 `POST /me/provider`로 업체 정보(providers)와 활동 지역이 등록되며 프로필 역할이 `provider`가 됩니다.
 - 업체 회원의 채팅 두 번째 칸 이름은 `견적서`이며, 활동지역 유저들이 보낸 견적 요청서를 모두 받아 업체 제안서를 보냅니다(일반 유저는 `업체 제안서`).
-- 공유 DB에 `apps/api/migrations/016_provider_self_registration.sql`(런타임 역할에 providers INSERT/UPDATE, provider_regions·provider_work_types INSERT/DELETE 권한)을 관리자 연결로 적용해야 동작합니다. 적용 전에는 업체 가입 시 `503 provider_registration_unavailable` 안내가 나옵니다. 팀 동의가 필요합니다.
+- 공유 DB에 `apps/api/migrations/018_provider_self_registration.sql`(팀원 브랜치와 동일 내용, 런타임 역할에 providers INSERT/UPDATE, provider_regions·provider_work_types INSERT/DELETE 권한)을 관리자 연결로 적용해야 동작합니다. 적용 전에는 업체 가입 시 `503 provider_registration_unavailable` 안내가 나옵니다. 팀 동의가 필요합니다.
 
 ### 웹 데모 실화면 점검 (2026-11-22, 390×844)
 

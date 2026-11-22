@@ -1,16 +1,16 @@
 import logging
-import os
 import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from scalar_fastapi import add_scalar_reference
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.chat import router as chat_router
+from app.config import get_settings
 from app.diagnosis import router as diagnosis_router
 from app.drafts import router as drafts_router
 from app.docs_auth import router as docs_auth_router
@@ -39,7 +39,7 @@ _API_DESCRIPTION = """
 - `GET /records`는 본인 소유 기록을 최근 수정 순으로 요약해 반환합니다. 분석 당시 지역 스냅샷(`region_id`, `region_name`)을 함께 표시하며 다른 사용자의 기록은 포함하지 않습니다.
 
 ### 주거 지원 사업 소식지
-- `GET /support-programs`는 로그인 사용자의 프로필 지역·상위 지역·전국 공고를 `limit`(기본 5, 최대 50)·`offset` 페이지로 반환합니다. 거주 형태 태그가 일치하는 공고를 우선 표시하며, 태그 일치는 신청 자격을 확정하지 않습니다.
+- `GET /support-programs`는 로그인 사용자의 프로필 지역·상위 지역·전국 공고를 `limit`(기본 5, 최대 50)·`offset` 페이지로 반환합니다. `region_scope`·`region_id`로 지역을, `category`로 참고 카테고리를 필터하며, 거주 형태 태그가 일치하는 공고를 우선 표시합니다. 태그 일치는 신청 자격을 확정하지 않습니다.
 - 마감일이 확정된 공고는 한국 시간 기준 마감일 다음 날부터 `is_closed=true`가 되고 목록 하단에 배치됩니다. 상시·기한 불명은 `deadline_kind`로 구분합니다.
 - `GET /support-programs/{program_id}`는 공식 원문 링크, 지원 대상·내용·신청 방법, 출처와 출처 확인 시점을 반환합니다.
 
@@ -127,19 +127,13 @@ app = FastAPI(
     docs_url=None,
     redoc_url=None,
 )
-# Browser clients (Expo Web) need CORS. Native apps are unaffected.
-# CORS_ALLOW_ORIGINS is a comma-separated list; defaults to local Expo Web dev origins.
-_DEFAULT_CORS_ORIGINS = "http://localhost:8081,http://localhost:8082,http://localhost:19006"
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        origin.strip()
-        for origin in os.environ.get("CORS_ALLOW_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",")
-        if origin.strip()
-    ],
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
-)
+if cors_origins := get_settings().cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(cors_origins),
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.on_event("startup")

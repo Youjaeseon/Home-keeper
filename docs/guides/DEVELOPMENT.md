@@ -118,6 +118,7 @@ npm run mobile    # Expo 개발 서버
 | `SUPABASE_STORAGE_BUCKET` | 아니오 | 하자 사진 비공개 버킷 이름. 기본 `defect-photos` |
 | `SUPABASE_STORAGE_KEY` | Storage 사용 시 | 서버 전용 Storage 키. 없으면 `SUPABASE_SERVICE_ROLE_KEY`, 둘 다 없으면 업로드·서명을 생략합니다 |
 | `STORAGE_SIGNED_URL_TTL_SECONDS` | 아니오 | Signed URL 만료 시간(초). 기본 300 |
+| `CORS_ORIGINS` | 웹에서 앱 실행 시 | 쉼표로 구분한 허용 Origin. 예: `http://localhost:8081,http://127.0.0.1:8081`. 비우면 CORS 미들웨어를 붙이지 않습니다 |
 
 `apps/api/.env`는 커밋하지 않습니다.
 
@@ -201,7 +202,7 @@ psql postgresql://localhost:5432/career_pair \
 
 IPv4 네트워크에서는 대시보드 **Connect → Session pooler**의 호스트와 5432 포트를 사용합니다. 전용 역할의 풀러 사용자 이름은 `career_pair_runtime.<project-ref>`이며 `sslmode=require`를 붙입니다. 호스트의 `aws-0`/`aws-1` 부분은 프로젝트 연결 정보에 맞춰야 합니다. [공식 연결 문서](https://supabase.com/docs/guides/database/connecting-to-postgres)를 참고하세요.
 
-현재 개발 환경은 **Home Keeper** (`lprqztpobrlhetbjkcks`, Sydney)에 연결되어 있습니다. 2026-11-20에 Supabase 플러그인으로 006–010을 적용했으며, 마이그레이션 001–010이 모두 적용된 상태입니다. `011_chat_read_state.sql`–`015_quote_requests_and_proposals.sql`은 로컬 테스트 DB에서 검증했으며 Home Keeper에는 아직 적용하지 않았습니다. `records.material`, 프로필·지원 사업·채팅 테이블과 런타임 계정의 조회, 새 테이블 4개의 RLS 정책을 실제 DB에서 확인했습니다. 지원 사업 4건과 작업 종류 4건의 시드도 확인했습니다. 인증은 ES256/JWKS를 사용하므로 `SUPABASE_JWT_SECRET`은 비워 둡니다. API와 모바일의 Supabase URL을 맞췄으며, 모바일 publishable key로 Auth health·settings 응답 200을 확인했습니다. 모바일 API 주소는 우선 `http://127.0.0.1:8000`으로 설정했습니다. 실제 기기에서는 Mac LAN IP로 변경해야 합니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
+현재 개발 환경은 **Home Keeper - Seoul** (`qgowepgrbdqtqgglxfza`, Seoul)에 연결되어 있습니다. 2026-11-22에 마이그레이션 001–015와 기본 시드를 적용하고, API·모바일 `.env`의 Supabase URL과 공개 키를 서울 프로젝트로 전환했습니다. DB는 `aws-0-ap-northeast-2.pooler.supabase.com:5432`의 전용 `career_pair_runtime` 로그인으로 연결하며 `sslmode=require`를 사용합니다. 런타임 테이블 조회와 ES256/JWKS·Auth settings 응답을 확인했습니다. 이메일 가입 확인은 꺼져 있습니다. 시드니 계정·기록은 복사하지 않았으므로 서울 계정으로 로그인해야 합니다. 비공개 `defect-photos` 버킷에 서버 키로 테스트 사진을 업로드하고, 앱이 생성한 5분 Signed URL로 다운로드한 뒤 삭제했습니다. 실제 사용자 로그인부터 분석·견적까지의 전체 흐름은 미검증입니다. 인증용 `SUPABASE_JWT_SECRET`은 비워 둡니다. 관리자 연결 비밀번호는 설정하지 않았으며, 로컬 DB를 가리키던 `MIGRATION_DATABASE_URL`도 비웠습니다. 이후 서울 마이그레이션은 Supabase 플러그인을 쓰거나 관리자 연결을 별도로 설정해야 합니다. 모바일의 `EXPO_PUBLIC_API_URL`은 이번 전환에서 변경하지 않았습니다. API·Expo를 재시작해야 새 환경변수가 반영됩니다. 실제 Supabase에 테스트 스위트의 `TEST_ADMIN_DATABASE_URL`을 지정하지 마세요.
 
 ## 테스트
 
@@ -244,7 +245,7 @@ Expo Router 타입 생성 후 통과했습니다. 모바일은 `profile.role`에
 - 2단계: 분석 지역 스냅샷·소식지 페이지네이션 — 구현 완료
 - 3단계: 업체 상세·평점·별점순 추천·Role 분기 — 구현 완료
 - 4단계: 비공개 Storage 사진·견적 요청서·제안서·1건 수락 — 구현 완료
-- 남은 운영 항목: Home Keeper DB에 `011`–`015` 적용, Storage 비공개 버킷·서버 키 설정, 소식지 보조금24 주기 동기화
+- 남은 운영 항목: Home Keeper DB에 `011`–`017` 적용, Storage 비공개 버킷·서버 키 설정, GitHub Actions `DATABASE_URL`·`GOV24_API_KEY` secret 등록
 
 ## 소식지 시드·보조금24 동기화
 
@@ -269,14 +270,30 @@ DATABASE_URL='postgresql://career_pair_runtime:...@localhost:5432/career_pair' \
 ```
 
 - `GOV24_API_KEY`가 없으면 동기화만 건너뛰고 기존 시드/DB는 그대로 유지합니다. 목록·상세 API는 외부 API를 호출하지 않으므로 계속 동작합니다.
-- 공식 데이터: [행정안전부_대한민국 공공서비스(혜택) 정보](https://www.data.go.kr/data/15113968/openapi.do), `GET https://api.odcloud.kr/api/gov24/v3/serviceList`. 공식 문서 기준 `page`·`perPage`·`returnType`·`serviceKey`와 서비스ID·서비스명·소관기관·지원대상·지원내용·신청기한·상세조회URL 등의 필드를 사용합니다.
+- 공식 데이터: [행정안전부_대한민국 공공서비스(혜택) 정보](https://www.data.go.kr/data/15113968/openapi.do), `GET https://api.odcloud.kr/api/gov24/v3/serviceList`. `page`·`perPage`·`returnType`·`serviceKey`와 서비스ID·서비스명·소관기관·지원대상·지원내용·신청기한·신청기한유형·상세조회URL 등의 필드를 사용합니다.
 - 이용 조건: 공식 페이지의 이용허락범위는 **제한 없음**으로 확인했습니다. 동기화 행의 `source_attribution`은 `행정안전부 대한민국 공공서비스(혜택) 정보 · 공공데이터포털`입니다.
-- 동기화는 모든 페이지를 먼저 수집하고 전체 건수를 검증한 뒤 한 트랜잭션에서 주거 관련 행만 upsert합니다. 타임아웃·인증 오류·잘못된 응답·페이지 중간 실패 시 기존 행과 시드를 삭제하거나 덮어쓰지 않습니다. 삭제 권한·삭제 API는 없습니다.
+- 동기화는 `perPage=1000`으로 모든 페이지를 먼저 수집하고 전체 건수를 검증한 뒤 한 트랜잭션에서 주거 관련 행만 upsert합니다. 타임아웃·인증 오류·잘못된 응답·페이지 중간 실패 시 기존 행과 시드를 삭제하거나 덮어쓰지 않습니다. 삭제 권한·삭제 API는 없습니다.
 - 지역은 `소관기관명`이 등록 지역 표시명과 정확히 일치할 때만, 거주 형태는 원문에 명시된 경우만 태그합니다. 모호한 지역·자격·마감은 추론하지 않고 `unknown`으로 남기거나 저장하지 않습니다. 서비스명에 주거 관련 키워드가 있는 사업만 동기화합니다.
+- 마감은 `신청기한유형`을 우선합니다. `상시신청`은 `always_open`, `기간설정`은 단일 `YYYY.MM.DD~YYYY.MM.DD` 구간의 종료일만 `fixed`, `접수기관별상이`와 모호한 `직접입력`은 `unknown`입니다. 카테고리는 제목·요약 키워드로 `monthly_rent_support`·`deposit_loan`·`housing_cost`·`repair`·`brokerage_fee`·`supply`·`other` 중 하나 이상을 붙입니다.
 - 검증 시드와 같은 제목(끝의 `사업` 제외)·기관·지역의 API 행은 목록에서 시드로 대체해 같은 공고가 두 번 보이지 않게 합니다.
 - 시드 출처와 확인 시점(2026-11-20):
   - [복지로 청년월세 지원사업](https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00004661)
   - [경기청년포털 자립준비청년 주거비 지원사업](https://youth.gg.go.kr/gg/intro/youth-policy-educational-testing.do?articleNo=9010&mode=view)
   - [용인청년포털 부동산 중개보수 감면](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026021000000000000055001)
   - [용인청년포털 청년월세 지원](https://youth.yongin.go.kr/web/main/youthPolicy/view?bizId=A2026032300000000000061001)
-- 실제 `GOV24_API_KEY`로 `serviceList` **10,891건**을 조회하고, 주거 제목 필터·지역 확정 후 **41건을 로컬 개발 DB에 upsert**하는 것까지 확인했습니다. Home Keeper에도 `support_programs` 마이그레이션과 시드 4건을 적용했으며, 실제 Supabase 대상 보조금24 동기화는 아직 실행하지 않았습니다. 운영 응답의 주거 키워드·지역·기한 해석은 첫 실동기화 결과를 계속 점검해야 합니다.
+- 실제 `GOV24_API_KEY`로 `serviceList` **10,893건**을 `perPage=1000`(11회)으로 조회하고, 주거 제목 필터·수도권 지역 확정 후 **144건을 로컬 테스트 DB에 upsert**하는 것까지 확인했습니다. `신청기한유형` 분류와 카테고리 저장, 목록 API의 `category` 필터도 검증했습니다. 실제 Supabase 대상 보조금24 동기화는 마이그레이션 `017` 적용 후 실행해야 하며, 운영 응답의 주거 키워드·지역·기한 해석은 첫 실동기화 결과를 계속 점검해야 합니다.
+
+### 지역 데이터 시드
+
+`016_regions_seoul_metro.sql`이 수도권 3 시·도와 하위 67개 시·군·구(서울 25구, 경기 31 시·군, 인천 9구 2군)를 넣습니다. `name`은 SQL·테스트용 슬러그이고 화면에는 `display_name`만 쓰므로, 지역을 추가할 때는 같은 `WITH seed ... ON CONFLICT (name) DO NOTHING` 패턴으로 `016` 뒤에 새 마이그레이션을 붙입니다.
+
+`display_name`은 `시·도 + 공백 + 시·군·구`(`경기도 용인시`) 꼴을 지켜야 합니다. `app/support_sync.py`의 `_resolve_region`이 `소관기관명`을 `display_name` 전체, 마지막 토큰, `...청`과 정확히 비교하기 때문에 형식이 달라지면 보조금24 지자체 공고가 매칭되지 않고 조용히 스킵됩니다. 시·도 행은 `parent_id`가 `NULL`, 하위 행은 시·도 행을 가리키며, 지원사업 조회는 이 부모 관계로 상위 지역 공고까지 노출합니다.
+
+### 주기 동기화
+
+`.github/workflows/sync-support-programs.yml`이 매일 04:00 KST(19:00 UTC)에 보조금24 동기화를 실행하고, Actions 탭에서 수동 실행도 지원합니다. 저장소 Secrets에 다음 두 값을 등록해야 합니다.
+
+- `DATABASE_URL`: `support_programs` SELECT/INSERT/UPDATE 권한이 있는 런타임 역할 연결 문자열
+- `GOV24_API_KEY`: 공공데이터포털 서비스 키
+
+워크플로는 마이그레이션을 적용하지 않습니다. `017` 적용 전에는 `categories` 컬럼이 없어 실패하므로, 마이그레이션을 먼저 적용한 뒤 활성화합니다. 서버 cron을 쓰는 배포 환경이라면 같은 명령(`uv run --directory apps/api python -m app.support_sync`)을 하루 1회 실행하면 됩니다.

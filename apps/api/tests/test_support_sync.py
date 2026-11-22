@@ -7,6 +7,7 @@ from app import support_sync
 from app.support_sync import (
     Gov24Error,
     RegionRow,
+    _categories,
     build_gov24_program,
     classify_deadline,
     fetch_gov24_programs,
@@ -65,6 +66,39 @@ def test_classify_deadline_only_accepts_clear_deadlines():
     assert classify_deadline(None) == ("unknown", None)
 
 
+def test_classify_deadline_uses_gov24_deadline_type():
+    assert classify_deadline("상시신청", "상시신청") == ("always_open", None)
+    assert classify_deadline("2026.05.04~2026.05.20", "기간설정") == (
+        "fixed",
+        date(2026, 5, 20),
+    )
+    assert classify_deadline(
+        "2026.05.04~2026.05.20, 2026.09.01~2026.09.30", "기간설정"
+    ) == ("unknown", None)
+    assert classify_deadline("2026.12.31까지", "접수기관별상이") == (
+        "unknown",
+        None,
+    )
+    assert classify_deadline("2026.12.31까지", "직접입력") == (
+        "fixed",
+        date(2026, 12, 31),
+    )
+    assert classify_deadline(
+        "2026-01-01 00:00 ~ 2026-12-31 00:00", "직접입력"
+    ) == ("fixed", date(2026, 12, 31))
+
+
+def test_categories_use_title_and_summary_keywords():
+    assert _categories({"서비스명": "청년월세 지원"}) == ("monthly_rent_support",)
+    assert _categories({"서비스명": "버팀목전세자금대출"}) == ("deposit_loan",)
+    assert _categories({"서비스명": "부동산 중개보수 감면"}) == ("brokerage_fee",)
+    assert _categories({"서비스명": "농촌취약계층주거개선"}) == ("repair",)
+    assert _categories(
+        {"서비스명": "월세자금보증", "서비스목적요약": "보증"}
+    ) == ("monthly_rent_support", "deposit_loan")
+    assert _categories({"서비스명": "청년 정책"}) == ("other",)
+
+
 def test_build_gov24_program_resolves_only_explicit_regions():
     regions = [
         RegionRow(uuid4(), "yongin", "경기도 용인시"),
@@ -75,6 +109,7 @@ def test_build_gov24_program_resolves_only_explicit_regions():
     assert national.region_scope == "national"
     assert national.region_id is None
     assert national.target_housing_types == ("monthly_rent",)
+    assert national.categories == ("monthly_rent_support", "housing_cost")
     assert national.deadline_kind == "fixed"
     assert national.deadline_date == date(2026, 6, 30)
 
@@ -283,8 +318,8 @@ def test_sync_upserts_complete_housing_pages_and_is_idempotent(admin):
             for row in admin.execute(
                 """
                 SELECT external_id, region_scope, region_id, target_housing_types,
-                       deadline_kind, deadline_text, source, source_checked_at,
-                       synced_at
+                       categories, deadline_kind, deadline_text, source,
+                       source_checked_at, synced_at
                 FROM support_programs
                 WHERE external_id LIKE 'test-gov24-%'
                 """
@@ -300,6 +335,10 @@ def test_sync_upserts_complete_housing_pages_and_is_idempotent(admin):
     assert rows["test-gov24-national"]["region_scope"] == "national"
     assert rows["test-gov24-national"]["region_id"] is None
     assert rows["test-gov24-national"]["target_housing_types"] == ["monthly_rent"]
+    assert rows["test-gov24-national"]["categories"] == [
+        "monthly_rent_support",
+        "housing_cost",
+    ]
     assert rows["test-gov24-national"]["deadline_kind"] == "fixed"
     assert rows["test-gov24-national"]["source"] == "gov24_api"
     assert rows["test-gov24-national"]["source_checked_at"]

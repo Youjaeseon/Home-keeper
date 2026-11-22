@@ -109,12 +109,7 @@ def _signed_url(storage_path: str) -> tuple[str, datetime]:
     signed = payload.get("signedURL") or payload.get("signedUrl")
     if not isinstance(signed, str) or not signed:
         raise ApiError(503, "storage_unavailable", _MISSING_KEY_MESSAGE)
-    if signed.startswith("http"):
-        url = signed
-    else:
-        # Supabase returns a path relative to the Storage API ("/object/sign/..."), so keep /storage/v1.
-        path = signed if signed.startswith("/storage/v1") else f"/storage/v1/{signed.lstrip('/')}"
-        url = f"{settings.supabase_url}{path}"
+    url = signed if signed.startswith("http") else f"{settings.supabase_url}/storage/v1/{signed.lstrip('/')}"
     expires_at = datetime.now(timezone.utc) + timedelta(
         seconds=settings.storage_signed_url_ttl_seconds
     )
