@@ -250,6 +250,42 @@ export default function AnalyzeResultScreen() {
       {/* 업체는 필요할 때만 */}
       <View style={{ gap: 12, marginTop: 8 }}>
         <Txt variant="title">직접 해결이 어렵다면</Txt>
+        {/* 견적 요청서: 주변 업체 회원에게 한 번에 보내기 (유저 회원만) */}
+        {user?.role !== '업체' && (
+          <Card>
+            <CardHeader icon={FileText} title="견적 요청서" />
+            <View style={s.quote}>
+              <Image source={{ uri: r.photoUri }} style={s.quotePhoto} contentFit="cover" />
+              <View style={{ flex: 1, gap: 6 }}>
+                <QuoteRow label="AI 심각도" value={`${r.defect} · ${r.risk}% (${riskLabel(r.risk)})`} />
+                <QuoteRow label="장소" value={r.location} />
+                {!!r.position && <QuoteRow label="위치" value={r.position} />}
+              </View>
+            </View>
+            {sent ? (
+              <>
+                <Notice icon={CircleCheck}>주변 업체에 견적 요청서를 보냈어요. 업체 제안서가 오면 채팅의 업체 제안서 탭에서 볼 수 있어요.</Notice>
+                <Button
+                  title="받은 업체 제안서 보기"
+                  variant="outline"
+                  onPress={() => router.push({ pathname: '/dm', params: { tab: 'quotes' } })}
+                />
+              </>
+            ) : (
+              <>
+                <Field
+                  label="추가 메모"
+                  value={memo}
+                  onChangeText={setMemo}
+                  placeholder="예: 평일 저녁 방문 가능해요"
+                  multiline
+                  style={{ minHeight: 76, paddingTop: 14, textAlignVertical: 'top' }}
+                />
+                <Button title="주변 업체에 전송" icon={Send} onPress={onSendEstimate} loading={sending} />
+              </>
+            )}
+          </Card>
+        )}
         {vendors.map((v) => {
           const fit = fits(v);
           return (
@@ -302,43 +338,6 @@ export default function AnalyzeResultScreen() {
             : '업체를 누르면 분석 결과를 첨부해 견적을 문의할 수 있어요.'}
         </Notice>
       </View>
-
-      {/* 견적 요청서: 주변 업체 회원에게 한 번에 보내기 (유저 회원만) */}
-      {user?.role !== '업체' && (
-        <Card>
-          <CardHeader icon={FileText} title="견적 요청서" />
-          <View style={s.quote}>
-            <Image source={{ uri: r.photoUri }} style={s.quotePhoto} contentFit="cover" />
-            <View style={{ flex: 1, gap: 6 }}>
-              <QuoteRow label="AI 심각도" value={`${r.defect} · ${r.risk}% (${riskLabel(r.risk)})`} />
-              <QuoteRow label="장소" value={r.location} />
-              {!!r.position && <QuoteRow label="위치" value={r.position} />}
-            </View>
-          </View>
-          {sent ? (
-            <>
-              <Notice icon={CircleCheck}>주변 업체에 견적 요청서를 보냈어요. 업체 제안서가 오면 채팅의 업체 제안서 탭에서 볼 수 있어요.</Notice>
-              <Button
-                title="받은 업체 제안서 보기"
-                variant="outline"
-                onPress={() => router.push({ pathname: '/dm', params: { tab: 'quotes' } })}
-              />
-            </>
-          ) : (
-            <>
-              <Field
-                label="추가 메모"
-                value={memo}
-                onChangeText={setMemo}
-                placeholder="예: 평일 저녁 방문 가능해요"
-                multiline
-                style={{ minHeight: 76, paddingTop: 14, textAlignVertical: 'top' }}
-              />
-              <Button title="주변 업체에 전송" icon={Send} onPress={onSendEstimate} loading={sending} />
-            </>
-          )}
-        </Card>
-      )}
     </Screen>
   );
 }
