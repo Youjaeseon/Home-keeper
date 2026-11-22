@@ -6,7 +6,7 @@
 
 현재 코드에 구현된 API는 기록 생성·조회·수정(`POST /records`, `GET /records/{record_id}`, `PATCH /records/{record_id}`), 내 기록 목록(`GET /records`), 사진·위치·재질 일괄 분석(`POST /records/{record_id}/analyze`), 구조화 진단 생성·재생성(`POST /records/{record_id}/diagnosis`), 프로필(`GET/PUT /me/profile`), 지역 목록(`GET /regions`), 주거 지원 사업 소식지(`GET /support-programs`, `GET /support-programs/{program_id}`), 요청문 생성·기본 양식(`POST /records/{record_id}/drafts/{kind}`, `GET /records/{record_id}/drafts/{kind}/template`), 작업 종류·업체 검색·상세(`GET /work-types`, `GET /providers`, `GET /providers/{provider_id}`), 견적 요청서·제안서(`POST/GET /quote-requests`, `GET /quote-requests/{request_id}`, `POST .../proposals`, `.../accept`, `.../cancel`), 1:1 채팅(`GET/POST /chat/rooms`, `GET/POST /chat/rooms/{room_id}/messages`, `POST /chat/rooms/{room_id}/read`, WebSocket `/chat/ws`)이다. 이미 구현된 `POST/PUT /records/{record_id}/messages`와 `POST /records/{record_id}/next-question`은 분석 채팅창 제거에 따라 **현재 MVP 미사용(보류/레거시)** 상태이며, 문서 하단에 참고용으로 분리했다.
 
-사진 관찰과 텍스트 진단은 2단계로 구현했다. 실시간 채팅은 WebSocket과 방별 미읽음 수 표시로 백엔드에 구현했다. 진단 신뢰도 필드는 정의가 정해지지 않아 구현하지 않았다. 요청문 생성은 서버에서 단일 LLM 제공사(OpenAI 호환 Chat Completions)를 사용한다. 실행 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 호출 예시와 구현 메모는 [API 사용 가이드](../guides/API_USAGE.md)를 따른다.
+사진 관찰과 텍스트 진단은 2단계로 구현했다. 실시간 채팅은 WebSocket과 방별 미읽음 수 표시로 백엔드에 구현했다. 진단 신뢰도 필드는 정의가 정해지지 않아 구현하지 않았다. 요청문 생성은 서버에서 Google Gemini API를 사용한다. 실행 절차는 [개발 환경·DB·테스트 가이드](../guides/DEVELOPMENT.md), 호출 예시와 구현 메모는 [API 사용 가이드](../guides/API_USAGE.md)를 따른다.
 
 ## 구현 확정 사항
 
@@ -57,9 +57,9 @@
 
 `input_revision`은 기록 입력의 버전이다. 입력(`location`, `material`, `symptoms`, `region_id`, `photo_observations`) 변경은 버전 증가와 함께 원자적으로 처리하고, 생성 결과는 사용한 입력 버전이 현재 버전과 일치할 때 저장한다. 버전 충돌은 `409`로 반환한다.
 
-## 기본 순서 (요청인 앱 4개 탭 기준)
+## 기본 순서 (요청인 앱 5개 탭 기준)
 
-로그인 후 요청인 앱은 **`소식지` · `분석`(기본 탭) · `채팅` · `내 정보`** 4개 탭을 제공한다.
+로그인 후 요청인 앱은 **`소식` · `분석`(기본 탭) · `채팅` · `업체` · `정보`** 5개 탭을 제공한다. 채팅 탭은 별도 채팅 목록 화면을 연다.
 
 1. 회원가입 후 프로필 저장을 완료하거나 기존 계정으로 로그인한다.
 2. **소식지 탭**: `GET /support-programs`로 사용자 거주 지역 + 전국 주거 지원 사업을 페이지 단위(`limit`, `offset`)로 조회한다. 마감 공고는 `마감` 배지·흐림 처리와 하단 정렬로 표시하고, 카드 클릭 시 `GET /support-programs/{program_id}` 상세 요약과 외부 원문 URL을 연다. *(백엔드 구현 완료, 모바일 화면 후속)*
@@ -68,7 +68,7 @@
    - `자가`가 아닌 거주 형태라면 필요 시 `POST /records/{record_id}/drafts/landlord`로 임대인 점검 요청문을 생성·복사한다.
    - 업체 상담이 필요하면 `GET /providers`로 업체를 조회한 뒤 실제 업체의 `채팅하기`로 `POST /chat/rooms`를 호출해 1:1 채팅방을 열고 하자 분석 요약을 자동 공유한다.
 5. **채팅 탭**: `GET /chat/rooms`로 방별 미읽음 수를 포함한 목록을 보고, `/chat/ws`로 새 메시지를 받으며 `GET/POST /chat/rooms/{room_id}/messages`로 대화를 이어간다. 방에 들어가 이력을 받은 직후 `POST /chat/rooms/{room_id}/read`를 호출한다.
-6. **내 정보 탭**: `GET/PUT /me/profile`로 프로필을 조회·수정하고, `GET /records`로 내 하자 분석 기록 목록을 불러와 과거 기록의 결과 페이지를 다시 연다.
+6. **정보 탭**: `GET/PUT /me/profile`로 프로필을 조회·수정하고, `GET /records`로 내 하자 분석 기록 목록을 불러와 과거 기록의 결과 페이지를 다시 연다.
 
 ## 내 정보와 하자 분석 기록 목록 (`GET /records`, 구현 완료)
 

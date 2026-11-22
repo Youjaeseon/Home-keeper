@@ -21,7 +21,7 @@ apps/
       support_sync.py 보조금24 수동 동기화
       drafts.py    임대인·업체 요청문 생성 및 기본 양식 API
       diagnosis.py 사진 관찰·입력 기반 구조화 진단 생성·재생성 API
-      llm.py       OpenAI 호환 Chat Completions 호출 클라이언트(텍스트·JSON·이미지)
+      llm.py       Google Gemini(OpenAI 호환 Chat Completions) 호출 클라이언트(텍스트·JSON·이미지)
       providers.py 작업 종류·업체 검색 API
       chat.py      요청인–업체 1:1 채팅 REST API
       sample_questions.py 시연용 질문 규칙과 결정 함수
@@ -108,8 +108,8 @@ npm run mobile    # Expo 개발 서버
 | `SUPABASE_JWT_ISSUER` | 아니오 | 기본 `SUPABASE_URL + /auth/v1`. 로컬 Supabase 등에서 재정의 |
 | `GOV24_API_KEY` | 아니오 | 소식지(공공데이터포털 보조금24 Open API) 수동 동기화용 인증키. 미설정 시 검증 시드로 조회하며 동기화 명령은 건너뜁니다. 서버 환경변수로만 사용 |
 | `LLM_API_KEY` | 사진·진단·요청문 모델 사용 시 | 서버 전용 모델 API 키. 미설정 시 진단은 `503`(`llm_unavailable`)이고 요청문 기본 양식 API는 계속 동작합니다. `YOLO_MODEL_PATH`만 설정하고 이 키가 없으면 일괄 분석도 `503`입니다 |
-| `LLM_BASE_URL` | 아니오 | 기본 `https://api.openai.com/v1`. OpenAI 호환 Chat Completions 서버 주소 |
-| `LLM_MODEL` | 아니오 | 기본 `gpt-4o-mini` |
+| `LLM_BASE_URL` | 아니오 | 기본 `https://generativelanguage.googleapis.com/v1beta/openai/`. Google Gemini의 OpenAI 호환 Chat Completions 주소 |
+| `LLM_MODEL` | 아니오 | 기본 `gemini-3.5-flash-lite` |
 | `LLM_TIMEOUT_SECONDS` | 아니오 | 기본 20초. 초과하면 `504`(`llm_timeout`)입니다 |
 | `VISION_LLM_MODEL` | 아니오 | YOLO가 읽지 못한 사진을 관찰할 비전 모델. 비어 있으면 `LLM_MODEL`을 사용합니다 |
 | `YOLO_MODEL_PATH` | 아니오 | 서버 로컬 YOLO 탐지 체크포인트 경로. `LLM_API_KEY`와 함께 설정해야 하며, 둘 다 없으면 샘플 모드입니다 |
