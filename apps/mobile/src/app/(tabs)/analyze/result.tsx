@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Camera,
   ChevronRight,
@@ -37,6 +37,9 @@ const ACTION_LABEL = {
 /** 스케치 7: 분석 결과 — 손상 위치 원, 심각도, 원인, 해결방안, 재발방지, 업체 A~D */
 export default function AnalyzeResultScreen() {
   const { analysisId } = useLocalSearchParams<{ analysisId: string }>();
+  // 분석 기록에서 다시 열 때(같은 기록이어도, 분석 탭에 남아 있던 화면이어도) 맨 위부터 보이게 합니다.
+  const [focusCount, setFocusCount] = useState(0);
+  useFocusEffect(useCallback(() => setFocusCount((n) => n + 1), []));
   const { analyses, user, estimates, sendEstimate, loadAnalysis, makeLandlordDraft } = useApp();
   const [memo, setMemo] = useState('');
   const [loading, setLoading] = useState(true);
@@ -153,7 +156,7 @@ export default function AnalyzeResultScreen() {
   };
 
   return (
-    <Screen scrollKey={analysisId}>
+    <Screen scrollKey={`${analysisId}:${focusCount}`}>
       {/* 원형 사진 + 테두리 심각도 링 (사진 위 손상 위치 원은 표시하지 않음) */}
       <RiskPhotoRing uri={r.photoUri} risk={r.risk} />
 

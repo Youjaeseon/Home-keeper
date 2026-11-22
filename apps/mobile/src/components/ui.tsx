@@ -79,8 +79,17 @@ export function Screen({
           .finally(() => setRefreshing(false));
       }
     : undefined;
+  // scrollKey가 바뀌면 맨 위로 갑니다. 내용(사진·업체 목록 등)이 늦게 그려지며 위치가 바뀔 수 있어
+  // 잠깐 동안은 내용 크기가 바뀔 때마다 다시 맨 위로 맞춥니다.
+  const pinTop = useRef(false);
   useEffect(() => {
+    if (scrollKey === undefined) return;
+    pinTop.current = true;
     ref.current?.scrollTo({ y: 0, animated: false });
+    const timer = setTimeout(() => {
+      pinTop.current = false;
+    }, 1200);
+    return () => clearTimeout(timer);
   }, [scrollKey]);
   return (
     <ScrollView
@@ -89,6 +98,9 @@ export function Screen({
         pull ? <RefreshControl refreshing={refreshing} onRefresh={pull} tintColor={C.primary} colors={[C.primary]} /> : undefined
       }
       automaticallyAdjustKeyboardInsets
+      onContentSizeChange={() => {
+        if (pinTop.current) ref.current?.scrollTo({ y: 0, animated: false });
+      }}
       style={s.root}
       contentContainerStyle={{ flexGrow: 1, paddingBottom: 32, paddingTop: safeTop ? insets.top : 0 }}
       keyboardShouldPersistTaps="handled"
