@@ -26,7 +26,7 @@ export default function ProfileScreen() {
   if (!user) return null;
 
   const save = async (patch: Parameters<typeof updateUser>[0]) => setError(await updateUser(patch));
-  // 별명은 우측 상단 '저장' 버튼(또는 키보드 완료)으로 서버에 저장합니다. 최대 8글자.
+  // 별명은 정보 칸 아래 '저장' 버튼(또는 키보드 완료)으로 서버에 저장합니다. 최대 8글자.
   const NICK_MAX = 8;
   const trimmed = nickname.trim();
   const nicknameChanged = trimmed !== user.nickname;
@@ -45,19 +45,7 @@ export default function ProfileScreen() {
 
   return (
     <Screen safeTop onRefresh={refreshAnalyses}>
-      <View style={s.header}>
-        <AppBar title="프로필" />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="프로필 저장"
-          disabled={!nicknameChanged || saving}
-          onPress={() => void saveNickname()}
-          style={({ pressed }) => [s.saveBtn, (!nicknameChanged || saving) && { opacity: 0.45 }, pressed && { opacity: 0.8 }]}>
-          <Txt variant="label" color={C.onPrimary} style={{ fontWeight: '700' }}>
-            {saving ? '저장 중' : '저장'}
-          </Txt>
-        </Pressable>
-      </View>
+      <AppBar title="프로필" />
 
       <View style={s.profile}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -96,6 +84,8 @@ export default function ProfileScreen() {
             {error}
           </Txt>
         )}
+        {/* 별명은 이 버튼으로 서버에 저장합니다(바꿨을 때만 눌림). */}
+        <Button title="저장" onPress={() => void saveNickname()} disabled={!nicknameChanged} loading={saving} />
       </Card>
 
       {analyses.length > 0 && (
@@ -154,8 +144,6 @@ export default function ProfileScreen() {
 }
 
 const s = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  saveBtn: { backgroundColor: C.primary, paddingHorizontal: 18, paddingVertical: 9, borderRadius: 999 },
   profile: { gap: 6, paddingVertical: 12 },
   historyRow: {
     flexDirection: 'row',
