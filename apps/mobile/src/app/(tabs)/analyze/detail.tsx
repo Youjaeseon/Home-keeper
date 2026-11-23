@@ -15,14 +15,17 @@ import { today } from '@/utils';
 
 /** 스케치 6: 분석 Page ② — 분석 사진 정보 기입 (장소, 위치, 기타) → 분석 요청 */
 export default function AnalyzeDetailScreen() {
-  const { photoId } = useLocalSearchParams<{ photoId: string }>();
+  // 샘플 사진에서 오면 장소·위치·재질이 미리 채워져 옵니다.
+  const params = useLocalSearchParams<{ photoId: string; location?: string; position?: string; material?: string }>();
+  const { photoId } = params;
+  const preset = (value: string | undefined, list: string[]) => (value && list.includes(value) ? value : list[0]);
   const { photos, user, saveAnalysis } = useApp();
   const photo = photos.find((p) => p.id === photoId);
 
-  const [location, setLocation] = useState(LOCATIONS[0]);
-  const [position, setPosition] = useState(POSITIONS[0]);
+  const [location, setLocation] = useState(preset(params.location, LOCATIONS));
+  const [position, setPosition] = useState(preset(params.position, POSITIONS));
   // 백엔드 analyze는 재질(material)이 필수입니다. (GAP-006)
-  const [material, setMaterial] = useState(MATERIALS[0]);
+  const [material, setMaterial] = useState(preset(params.material, MATERIALS));
   // '기타'를 고르면 직접 입력합니다. (GAP-006, GAP-013)
   const [customLocation, setCustomLocation] = useState('');
   const [customPosition, setCustomPosition] = useState('');
