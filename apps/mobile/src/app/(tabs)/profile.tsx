@@ -17,6 +17,7 @@ export default function ProfileScreen() {
   const [nickname, setNickname] = useState(user?.nickname ?? '');
   const [savedNickname, setSavedNickname] = useState(user?.nickname ?? '');
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   // 서버에 저장된 닉네임이 바뀌면 입력칸도 맞춥니다.
   if ((user?.nickname ?? '') !== savedNickname) {
     setSavedNickname(user?.nickname ?? '');
@@ -25,12 +26,38 @@ export default function ProfileScreen() {
   if (!user) return null;
 
   const save = async (patch: Parameters<typeof updateUser>[0]) => setError(await updateUser(patch));
+  // 별명은 우측 상단 '저장' 버튼(또는 키보드 완료)으로 서버에 저장합니다. 최대 8글자.
+  const NICK_MAX = 8;
+  const trimmed = nickname.trim();
+  const nicknameChanged = trimmed !== user.nickname;
+  const saveNickname = async () => {
+    if (!nicknameChanged || saving) return;
+    if (!trimmed) return setError('별명을 입력해 주세요.');
+    if (trimmed.length > NICK_MAX) return setError(`별명은 최대 ${NICK_MAX}글자까지 쓸 수 있어요.`);
+    setSaving(true);
+    const err = await updateUser({ nickname: trimmed });
+    setSaving(false);
+    setError(err);
+    if (!err) showAlert('저장했어요', '프로필이 저장됐어요.');
+  };
 
   const vendor = user.role === '업체';
 
   return (
     <Screen safeTop onRefresh={refreshAnalyses}>
-      <AppBar title="프로필" />
+      <View style={s.header}>
+        <AppBar title="프로필" />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="프로필 저장"
+          disabled={!nicknameChanged || saving}
+          onPress={() => void saveNickname()}
+          style={({ pressed }) => [s.saveBtn, (!nicknameChanged || saving) && { opacity: 0.45 }, pressed && { opacity: 0.8 }]}>
+          <Txt variant="label" color={C.onPrimary} style={{ fontWeight: '700' }}>
+            {saving ? '저장 중' : '저장'}
+          </Txt>
+        </Pressable>
+      </View>
 
       <View style={s.profile}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -49,8 +76,8 @@ export default function ProfileScreen() {
           label={vendor ? '업체명' : '별명'}
           value={nickname}
           onChangeText={setNickname}
-          onEndEditing={() => nickname.trim() !== user.nickname && save({ nickname })}
-          onSubmitEditing={() => nickname.trim() !== user.nickname && save({ nickname })}
+          maxLength={NICK_MAX}
+          onSubmitEditing={() => void saveNickname()}
         />
         <RegionSelect
           label={vendor ? '활동지역' : '거주지역'}
@@ -127,6 +154,8 @@ export default function ProfileScreen() {
 }
 
 const s = StyleSheet.create({
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  saveBtn: { backgroundColor: C.primary, paddingHorizontal: 18, paddingVertical: 9, borderRadius: 999 },
   profile: { gap: 6, paddingVertical: 12 },
   historyRow: {
     flexDirection: 'row',
