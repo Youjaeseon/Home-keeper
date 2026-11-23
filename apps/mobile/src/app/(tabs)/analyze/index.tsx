@@ -1,16 +1,67 @@
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
-import { Camera, CircleCheck, Images } from 'lucide-react-native';
+import { Camera, CircleCheck, Images, Sparkles } from 'lucide-react-native';
 import { useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Image as RNImage, Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
-import { AppBar, Button, Card, Hero, Screen, Txt } from '@/components/ui';
+import { AppBar, Button, Card, CardHeader, Hero, Screen, Txt } from '@/components/ui';
 import { C, MAX_W, R, STROKE } from '@/constants/theme';
 import { useApp } from '@/store/app-store';
 import { showAlert } from '@/lib/alert';
 
 const GAP = 10;
+
+type SamplePreset = {
+  key: string;
+  label: string;
+  source: number;
+  location: string;
+  position: string;
+  material: string;
+};
+
+const SAMPLES: SamplePreset[] = [
+  {
+    key: 'wall-peel',
+    label: '벽면 벗겨짐',
+    source: require('@/assets/images/samples/wall-peel.jpg'),
+    location: '거실',
+    position: '벽면',
+    material: '페인트',
+  },
+  {
+    key: 'floor-damage',
+    label: '바닥 균열·손상',
+    source: require('@/assets/images/samples/floor-damage.jpg'),
+    location: '거실',
+    position: '바닥',
+    material: '장판',
+  },
+  {
+    key: 'wall-mold',
+    label: '벽면 곰팡이',
+    source: require('@/assets/images/samples/wall-mold.jpg'),
+    location: '욕실',
+    position: '벽면',
+    material: '벽지',
+  },
+];
+
+/** 번들된 정적 이미지를 웹/네이티브 공통 업로드 URI 문자열로 변환합니다. */
+function resolveAssetUri(source: unknown): string | null {
+  if (typeof source === 'string') return source;
+  if (source && typeof source === 'object') {
+    if ('uri' in source && typeof (source as { uri?: unknown }).uri === 'string') {
+      return (source as { uri: string }).uri;
+    }
+    if ('default' in source) return resolveAssetUri((source as { default: unknown }).default);
+  }
+  if (typeof RNImage.resolveAssetSource === 'function') {
+    return RNImage.resolveAssetSource(source as number)?.uri ?? null;
+  }
+  return null;
+}
 
 /** 스케치 5: 분석 Page ① — AI 분석 요청할 사진 촬영 또는 선택 */
 export default function AnalyzePickScreen() {
@@ -45,6 +96,24 @@ export default function AnalyzePickScreen() {
     }
   };
 
+  const pickSample = (sample: SamplePreset) => {
+    const uri = resolveAssetUri(sample.source);
+    if (!uri) {
+      showAlert('샘플 사진을 불러오지 못했습니다', '잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    const photo = addPhoto(uri);
+    router.push({
+      pathname: '/analyze/detail',
+      params: {
+        photoId: photo.id,
+        location: sample.location,
+        position: sample.position,
+        material: sample.material,
+      },
+    });
+  };
+
   return (
     <Screen safeTop>
       <AppBar title="AI 분석" />
@@ -73,6 +142,33 @@ export default function AnalyzePickScreen() {
           </Pressable>
         ))}
       </View>
+
+      <Card style={{ gap: 12 }}>
+        <CardHeader icon={Sparkles} title="샘플 사진으로 바로 체험하기" />
+        <Txt variant="sub" muted>
+          본인 사진이 없어도 1탭으로 AI 하자 분석을 바로 체험할 수 있어요.
+        </Txt>
+        <View style={s.sampleRow}>
+          {SAMPLES.map((sample) => (
+            <Pressable
+              key={sample.key}
+              accessibilityRole="button"
+              accessibilityLabel={`${sample.label} 샘플 사진으로 분석하기`}
+              onPress={() => pickSample(sample)}
+              style={({ pressed }) => [s.sampleItem, pressed && { opacity: 0.8 }]}>
+              <Image source={sample.source} style={s.sampleThumb} contentFit="cover" />
+              <View style={{ gap: 2 }}>
+                <Txt variant="label" numberOfLines={1}>
+                  {sample.label}
+                </Txt>
+                <Txt variant="caption" muted numberOfLines={1}>
+                  {sample.location} · {sample.position}
+                </Txt>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      </Card>
 
       {photos.length === 0 && (
         <Card style={{ gap: 12 }}>
@@ -115,6 +211,20 @@ const s = StyleSheet.create({
     backgroundColor: C.accentCircle,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sampleRow: { flexDirection: 'row', gap: 10 },
+  sampleItem: {
+    flex: 1,
+    gap: 8,
+    backgroundColor: C.field,
+    borderRadius: R.field,
+    padding: 8,
+  },
+  sampleThumb: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    backgroundColor: C.accent,
   },
   backdrop: { flex: 1, backgroundColor: C.scrim, justifyContent: 'flex-end' },
   sheet: {

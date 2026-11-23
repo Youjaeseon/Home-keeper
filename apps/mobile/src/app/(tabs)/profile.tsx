@@ -1,11 +1,11 @@
 import { router } from 'expo-router';
-import { ChevronRight, Clock, LogOut } from 'lucide-react-native';
+import { ChevronRight, Clock, Info, LogIn, LogOut } from 'lucide-react-native';
 import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { RegionSelect } from '@/components/region-select';
 import { Select } from '@/components/select';
-import { AppBar, Button, Card, CardHeader, Chip, DeleteButton, Field, Screen, Txt } from '@/components/ui';
+import { AppBar, Button, Card, CardHeader, Chip, DeleteButton, Field, Notice, Screen, Txt } from '@/components/ui';
 import { C, STROKE } from '@/constants/theme';
 import { HOUSINGS } from '@/data/options';
 import { confirmAlert, showAlert } from '@/lib/alert';
@@ -13,7 +13,8 @@ import { useApp } from '@/store/app-store';
 
 /** 스케치 3: 사용자 정보 — 회원 유형(유저/업체), 별명, 거주지역, 거주형태 */
 export default function ProfileScreen() {
-  const { user, regions, updateUser, logout, analyses, removeAnalysis, refreshAnalyses } = useApp();
+  const { user, isGuest, regions, updateUser, logout, enterAuthScreen, analyses, removeAnalysis, refreshAnalyses } =
+    useApp();
   const [nickname, setNickname] = useState(user?.nickname ?? '');
   const [savedNickname, setSavedNickname] = useState(user?.nickname ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -31,6 +32,12 @@ export default function ProfileScreen() {
   return (
     <Screen safeTop onRefresh={refreshAnalyses}>
       <AppBar title="프로필" />
+
+      {isGuest && (
+        <Notice icon={Info}>
+          로그인 없이 체험 중이에요. 별명·거주지역·거주형태를 바꿔 소식지·업체·분석 안내가 달라지는 것을 바로 확인해 보세요.
+        </Notice>
+      )}
 
       <View style={s.profile}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -112,16 +119,29 @@ export default function ProfileScreen() {
         </Card>
       )}
 
-      <Button
-        title="로그아웃"
-        variant="outline"
-        icon={LogOut}
-        style={{ marginTop: 8 }}
-        onPress={async () => {
-          await logout();
-          router.replace('/');
-        }}
-      />
+      {isGuest ? (
+        <Button
+          title="로그인 / 회원가입하기"
+          variant="outline"
+          icon={LogIn}
+          style={{ marginTop: 8 }}
+          onPress={async () => {
+            await enterAuthScreen();
+            router.replace('/');
+          }}
+        />
+      ) : (
+        <Button
+          title="로그아웃"
+          variant="outline"
+          icon={LogOut}
+          style={{ marginTop: 8 }}
+          onPress={async () => {
+            await logout();
+            router.replace('/');
+          }}
+        />
+      )}
     </Screen>
   );
 }

@@ -1,4 +1,4 @@
-import { File } from 'expo-file-system';
+import { File, Paths } from 'expo-file-system';
 import { Platform } from 'react-native';
 
 import { apiBaseUrl } from './env';
@@ -467,36 +467,59 @@ export async function analyzeRecord(
   input: AnalyzeInput,
 ): Promise<AnalyzeResponse> {
   const form = new FormData();
-  for (const photo of input.photos) {
-    if (Platform.OS === 'web') {
-      const blob = await (await fetch(photo.uri)).blob();
-      form.append('photos', blob, photo.name);
-    } else {
-      // Expo SDK 58's global fetch (expo/fetch) only accepts Blob or File parts,
-      // not React Native's legacy { uri, name, type } objects.
-      form.append('photos', new File(photo.uri) as unknown as Blob);
+  const tempFiles: File[] = [];
+  try {
+    for (let i = 0; i < input.photos.length; i += 1) {
+      const photo = input.photos[i];
+      if (Platform.OS === 'web') {
+        const res = await fetch(photo.uri);
+        if (!res.ok) throw new Error('사진 파일을 불러오지 못했어요.');
+        form.append('photos', await res.blob(), photo.name);
+      } else if (/^https?:\/\//i.test(photo.uri)) {
+        const ext = photo.name.includes('.') ? photo.name.slice(photo.name.lastIndexOf('.')) : '.jpg';
+        const dest = new File(Paths.cache, `upload-${Date.now()}-${i}${ext}`);
+        const downloaded = await File.downloadFileAsync(photo.uri, dest, { idempotent: true });
+        tempFiles.push(downloaded);
+        form.append('photos', downloaded as unknown as Blob);
+      } else if (/^data:/i.test(photo.uri)) {
+        const res = await fetch(photo.uri);
+        if (!res.ok) throw new Error('사진 파일을 불러오지 못했어요.');
+        form.append('photos', await res.blob(), photo.name);
+      } else {
+        // Expo SDK 58's global fetch (expo/fetch) only accepts Blob or File parts,
+        // not React Native's legacy { uri, name, type } objects.
+        form.append('photos', new File(photo.uri) as unknown as Blob);
+      }
+    }
+    for (const photo of input.photos) {
+      form.append('photo_roles', photo.role);
+    }
+    form.append(
+      'external_analysis_consent',
+      input.externalAnalysisConsent ? 'true' : 'false',
+    );
+    form.append('location', input.location.trim());
+    form.append('material', input.material.trim());
+    if (input.symptoms.trim()) {
+      form.append('symptoms', input.symptoms.trim());
+    }
+    if (input.region_id) {
+      form.append('region_id', input.region_id);
+    }
+
+    return await apiRequest<AnalyzeResponse>(`/records/${recordId}/analyze`, {
+      method: 'POST',
+      body: form,
+    });
+  } finally {
+    for (const file of tempFiles) {
+      try {
+        file.delete();
+      } catch {
+        // 임시 캐시 삭제 실패는 무시합니다.
+      }
     }
   }
-  for (const photo of input.photos) {
-    form.append('photo_roles', photo.role);
-  }
-  form.append(
-    'external_analysis_consent',
-    input.externalAnalysisConsent ? 'true' : 'false',
-  );
-  form.append('location', input.location.trim());
-  form.append('material', input.material.trim());
-  if (input.symptoms.trim()) {
-    form.append('symptoms', input.symptoms.trim());
-  }
-  if (input.region_id) {
-    form.append('region_id', input.region_id);
-  }
-
-  return apiRequest<AnalyzeResponse>(`/records/${recordId}/analyze`, {
-    method: 'POST',
-    body: form,
-  });
 }
 
 export function regenerateDiagnosis(

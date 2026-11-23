@@ -31,7 +31,8 @@ export function toDefect(suspected: string[], undetermined: boolean): DefectType
 }
 
 function guessMime(uri: string) {
-  const ext = uri.split('?')[0].split('.').pop()?.toLowerCase();
+  const dataMatch = uri.match(/^data:image\/([a-z0-9+.-]+)[;,]/i);
+  const ext = dataMatch?.[1]?.toLowerCase() ?? uri.split(/[?#]/)[0].split('.').pop()?.toLowerCase();
   if (ext === 'png') return { type: 'image/png', name: 'photo.png' };
   if (ext === 'heic' || ext === 'heif') return { type: `image/${ext}`, name: `photo.${ext}` };
   return { type: 'image/jpeg', name: 'photo.jpg' };

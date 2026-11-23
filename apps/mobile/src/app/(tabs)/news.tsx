@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppBar, Banner, Card, Chip, Hero, Screen, Txt } from '@/components/ui';
-import { C, F, STROKE } from '@/constants/theme';
+import { C, F, R, STROKE } from '@/constants/theme';
 import { CATEGORY_LABELS, regionLabel } from '@/data/options';
 import { getSupportProgram, messageOf, type SupportCategory, type SupportProgramDetail } from '@/lib/api';
 import { fetchNews, type NewsFeedItem } from '@/services/news';
@@ -26,7 +26,7 @@ const CATEGORY_FILTERS: { value: SupportCategory | null; label: string }[] = [
 
 /** 스케치 4: 소식지 — 사용자 정보 맞춤 사업 및 지원 정보 */
 export default function NewsScreen() {
-  const { user } = useApp();
+  const { user, isGuest, enterAuthScreen } = useApp();
   const [page, setPage] = useState(0);
   const [openId, setOpenId] = useState<string | null>(null);
   const [visible, setVisible] = useState<NewsFeedItem[]>([]);
@@ -84,6 +84,31 @@ export default function NewsScreen() {
   return (
     <Screen safeTop onRefresh={load}>
       <AppBar title="소식지" />
+      {isGuest && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="체험 중 안내, 로그인 또는 회원가입으로 전환"
+          onPress={async () => {
+            await enterAuthScreen();
+            router.replace('/');
+          }}
+          style={({ pressed }) => [s.guestBar, pressed && { opacity: 0.8 }]}>
+          <View style={s.guestBadge}>
+            <Txt variant="caption" color={C.onPrimary} style={{ fontFamily: F.bold }}>
+              체험 중
+            </Txt>
+          </View>
+          <Txt variant="caption" color={C.text} style={{ flex: 1 }}>
+            로그인 없이 모든 기능을 체험하고 있어요
+          </Txt>
+          <View style={s.guestAction}>
+            <Txt variant="caption" color={C.primary} style={{ fontFamily: F.bold }}>
+              로그인
+            </Txt>
+            <ChevronRight size={14} color={C.primary} strokeWidth={STROKE} />
+          </View>
+        </Pressable>
+      )}
       <Hero title={`${user.nickname}님을 위한,\n맞춤 소식이에요.`} />
 
       <Banner
@@ -271,6 +296,26 @@ function ProgramDetail({ detail }: { detail: SupportProgramDetail | string | und
 }
 
 const s = StyleSheet.create({
+  guestBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: C.accentSoft,
+    borderRadius: R.field,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  guestBadge: {
+    backgroundColor: C.primary,
+    borderRadius: R.pill,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  guestAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   filterGroup: { gap: 6 },
   filters: { gap: 8, paddingRight: 8 },

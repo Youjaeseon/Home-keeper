@@ -58,6 +58,10 @@ type Store = {
   ready: boolean;
   session: Session | null;
   user: User | null;
+  /** 익명(체험) 로그인 세션인지 */
+  isGuest: boolean;
+  /** 명시적 로그아웃·로그인 화면 전환 시 자동 익명 진입을 막는 플래그 */
+  skipAutoGuest: boolean;
   /** 세션은 있지만 GET /me/profile이 404인 상태 → 프로필 등록 화면 */
   needsProfile: boolean;
   pendingProfile: PendingProfile | null;
@@ -66,6 +70,7 @@ type Store = {
   signup: (account: Account) => Promise<string | null>;
   login: (loginId: string, password: string) => Promise<string | null>;
   loginAsGuest: () => Promise<string | null>;
+  enterAuthScreen: () => Promise<void>;
   logout: () => Promise<void>;
   /** 프로필 최초 등록·재시도 (PUT /me/profile) */
   saveProfile: (input: { nickname: string; regionId: string; housing: Housing }) => Promise<string | null>;
@@ -139,6 +144,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [skipAutoGuest, setSkipAutoGuest] = useState(false);
   const [needsProfile, setNeedsProfile] = useState(false);
   const [pendingProfile, setPendingProfile] = useState<PendingProfile | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
@@ -154,8 +160,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // 견적 탭을 마지막으로 본 시각(ms). 계정별로 AsyncStorage에 저장합니다. null = 아직 불러오는 중
   const [quotesSeenAt, setQuotesSeenAt] = useState<number | null>(null);
   const loadedFor = useRef<string | null>(null);
+  const isGuest = Boolean(session?.user?.is_anonymous);
 
-  /** 세션이 생기면 지역 목록과 프로필을 불러옵니다. 프로필 404 → 등록 화면. */
+  /** 세션이 생기면 지역 목록과 프로필을 불러옵니다. 익명 404면 기본 프로필을 자동 저장하고, 일반 계정은 등록 화면으로 보냅니다. */
   const loadProfile = useCallback(async (next: Session): Promise<string | null> => {
     try {
       const regionList = await getRegions();
@@ -172,6 +179,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setNeedsProfile(false);
       } catch (e) {
         if (e instanceof ApiError && e.status === 404) {
+          if (next.user.is_anonymous) {
+            const defaultRegion =
+              regionList.find((r) => r.display_name.includes('용인') || r.name === 'yongin') ?? regionList[0];
+            if (defaultRegion) {
+              try {
+                const profile = await saveMyProfile({
+                  nickname: '체험 집사',
+                  region_id: defaultRegion.region_id,
+                  address: null,
+                  housing_type: 'monthly_rent',
+                });
+                setUser(toUser(profile, next.user.email ?? '', regionList));
+                setNeedsProfile(false);
+                return null;
+              } catch {
+                // 기본 프로필 자동 저장에 실패한 경우에만 기존 등록 화면으로 폴백합니다.
+              }
+            }
+          }
           setUser(null);
           setNeedsProfile(true);
         } else throw e;
@@ -182,7 +208,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await supabase.auth.signOut();
         return '로그인이 만료되었습니다. 다시 로그인해 주세요.';
       }
-      return messageOf(e);
+      return messageOf(e) || '프로필을 불러오지 못했어요.';
     }
   }, []);
 
@@ -220,10 +246,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [loadProfile]);
 
-  const afterSignIn = async (next: Session) => {
-    loadedFor.current = next.user.id;
-    return loadProfile(next);
-  };
+  const afterSignIn = useCallback(
+    async (next: Session) => {
+      loadedFor.current = next.user.id;
+      return loadProfile(next);
+    },
+    [loadProfile],
+  );
+
+  const loginAsGuest = useCallback(async (): Promise<string | null> => {
+    setSkipAutoGuest(false);
+    // TODO(integration-gap): GAP-001 Supabase 익명 로그인이 켜져 있어야 동작합니다.
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if (error || !data.session) return authError(error?.message ?? '둘러보기를 시작하지 못했습니다.');
+    return afterSignIn(data.session);
+  }, [afterSignIn]);
 
   const me = session?.user.id ?? '';
   const hide = (id: string) => setHiddenKeys((prev) => [...prev, `${me}:${id}`]);
@@ -480,6 +517,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ready,
     session,
     user,
+    isGuest,
+    skipAutoGuest,
     needsProfile,
     pendingProfile,
     regions,
@@ -528,6 +567,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           nextUser.intro = account.intro;
           setUser(nextUser);
           setNeedsProfile(false);
+          setSkipAutoGuest(false);
           return null;
         } catch (e) {
           // 업체 등록에 실패하면 일반 회원으로 바뀌지 않도록 로그아웃하고 이유를 보여 줍니다.
@@ -543,6 +583,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           notice: `'${account.region}'은(는) 아직 서비스 지역이 아니에요. 서버에 등록된 지역에서 다시 골라 주세요.`,
         });
         setNeedsProfile(true);
+        setSkipAutoGuest(false);
         return null;
       }
       try {
@@ -554,26 +595,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
         setUser(toUser(profile, data.session.user.email ?? account.loginId, regionList));
         setNeedsProfile(false);
+        setSkipAutoGuest(false);
         return null;
       } catch (e) {
         // 계정은 이미 만들어졌으므로 다시 가입하지 않고 프로필 저장만 재시도합니다.
         setPendingProfile({ nickname: account.nickname, region: account.region, housing: account.housing, notice: messageOf(e) });
         setNeedsProfile(true);
+        setSkipAutoGuest(false);
         return null;
       }
     },
     async login(loginId, password) {
       const { data, error } = await supabase.auth.signInWithPassword({ email: loginId, password });
       if (error) return authError(error.message);
-      return afterSignIn(data.session);
+      const err = await afterSignIn(data.session);
+      if (!err) setSkipAutoGuest(false);
+      return err;
     },
-    async loginAsGuest() {
-      // TODO(integration-gap): GAP-001 Supabase 익명 로그인이 켜져 있어야 동작합니다.
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error || !data.session) return authError(error?.message ?? '둘러보기를 시작하지 못했습니다.');
-      return afterSignIn(data.session);
+    loginAsGuest,
+    async enterAuthScreen() {
+      setSkipAutoGuest(true);
+      await supabase.auth.signOut();
     },
     async logout() {
+      setSkipAutoGuest(true);
       await supabase.auth.signOut();
     },
     async saveProfile({ nickname, regionId, housing }) {

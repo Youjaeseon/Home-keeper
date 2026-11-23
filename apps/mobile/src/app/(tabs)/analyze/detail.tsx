@@ -13,20 +13,55 @@ import { ANALYSIS_STEPS, analyzeDefect } from '@/services/analyze';
 import { useApp } from '@/store/app-store';
 import { today } from '@/utils';
 
+const OTHER = '기타';
+const LOCATION_ALIASES: Record<string, string> = { 욕실: '화장실' };
+const MATERIAL_ALIASES: Record<string, string> = { 페인트: '도장면(페인트)', 장판: '바닥재' };
+
+function firstParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function initialChoice(
+  raw: string | string[] | undefined,
+  options: readonly string[],
+  aliases?: Record<string, string>,
+): { value: string; custom: string } {
+  const trimmed = firstParam(raw)?.trim();
+  if (!trimmed) return { value: options[0], custom: '' };
+  if (options.includes(trimmed)) return { value: trimmed, custom: '' };
+  const mapped = aliases?.[trimmed];
+  if (mapped && options.includes(mapped)) return { value: mapped, custom: '' };
+  return { value: OTHER, custom: trimmed };
+}
+
 /** 스케치 6: 분석 Page ② — 분석 사진 정보 기입 (장소, 위치, 기타) → 분석 요청 */
 export default function AnalyzeDetailScreen() {
-  const { photoId } = useLocalSearchParams<{ photoId: string }>();
+  const {
+    photoId,
+    location: paramLocation,
+    position: paramPosition,
+    material: paramMaterial,
+  } = useLocalSearchParams<{
+    photoId: string;
+    location?: string | string[];
+    position?: string | string[];
+    material?: string | string[];
+  }>();
   const { photos, user, saveAnalysis } = useApp();
   const photo = photos.find((p) => p.id === photoId);
 
-  const [location, setLocation] = useState(LOCATIONS[0]);
-  const [position, setPosition] = useState(POSITIONS[0]);
+  const initialLocation = initialChoice(paramLocation, LOCATIONS, LOCATION_ALIASES);
+  const initialPosition = initialChoice(paramPosition, POSITIONS);
+  const initialMaterial = initialChoice(paramMaterial, MATERIALS, MATERIAL_ALIASES);
+
+  const [location, setLocation] = useState(initialLocation.value);
+  const [position, setPosition] = useState(initialPosition.value);
   // 백엔드 analyze는 재질(material)이 필수입니다. (GAP-006)
-  const [material, setMaterial] = useState(MATERIALS[0]);
+  const [material, setMaterial] = useState(initialMaterial.value);
   // '기타'를 고르면 직접 입력합니다. (GAP-006, GAP-013)
-  const [customLocation, setCustomLocation] = useState('');
-  const [customPosition, setCustomPosition] = useState('');
-  const [customMaterial, setCustomMaterial] = useState('');
+  const [customLocation, setCustomLocation] = useState(initialLocation.custom);
+  const [customPosition, setCustomPosition] = useState(initialPosition.custom);
+  const [customMaterial, setCustomMaterial] = useState(initialMaterial.custom);
   const [memo, setMemo] = useState('');
   // 분석 요청마다 외부 AI 사진 전송 동의를 받습니다. 기본은 동의하지 않음입니다. (GAP-011)
   const [consent, setConsent] = useState(false);
@@ -42,7 +77,6 @@ export default function AnalyzeDetailScreen() {
     );
   }
 
-  const OTHER = '기타';
   const resolve = (value: string, custom: string) => (value === OTHER ? custom.trim() : value);
 
   const onAnalyze = async () => {

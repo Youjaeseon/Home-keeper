@@ -1,10 +1,11 @@
 import { Redirect, router } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
+import { Sparkles } from 'lucide-react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LogoMark } from '@/components/logo';
-import { Txt } from '@/components/ui';
+import { Button, Txt } from '@/components/ui';
 import { C, F, MAX_W } from '@/constants/theme';
 import { useApp } from '@/store/app-store';
 
@@ -27,17 +28,74 @@ const LOGIN_DESIGN = {
 
 /** 스케치 1: 로그인 — 크림 단색 배경 + 로고 + 흰 둥근 입력칸 + 글씨 버튼 */
 export default function LoginScreen() {
-  const { ready, session, user, needsProfile, login, loginAsGuest } = useApp();
+  const { ready, session, user, needsProfile, skipAutoGuest, login, loginAsGuest } = useApp();
   const { height } = useWindowDimensions();
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'login' | 'guest' | null>(null);
+  const [autoTried, setAutoTried] = useState(false);
+  const mountedRef = useRef(true);
+  const autoStartedRef = useRef(false);
   const d = LOGIN_DESIGN;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const shouldAutoGuest = ready && !session && !skipAutoGuest && !autoTried;
+
+  // 최초 비로그인 접속 시 자동 익명 체험 진입 (로그인 화면을 먼저 보여 주려면 이 블록만 제거하면 됩니다.)
+  useEffect(() => {
+    if (!shouldAutoGuest || autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    void loginAsGuest().then((err) => {
+      if (!mountedRef.current) return;
+      setAutoTried(true);
+      if (err) setError(err);
+    });
+  }, [shouldAutoGuest, loginAsGuest]);
 
   // 세션 복원 결과에 따라 이동합니다. 프로필이 없으면(GET /me/profile 404) 프로필 등록으로 보냅니다.
   if (ready && session && user) return <Redirect href="/news" />;
   if (ready && session && needsProfile) return <Redirect href="/profile-setup" />;
+
+  const preparingGuest = !ready || shouldAutoGuest || (Boolean(session) && !user && !needsProfile && !error);
+
+  const logoBlock = (
+    <View style={[s.logo, { marginTop: height * d.logoTop }]}>
+      <LogoMark size={Math.min(d.logoSize, height * 0.17)} radius={0.24} />
+      {d.tagline !== '' && (
+        <Txt style={[s.taglineChar, { marginTop: 14 }]}>
+          {/* '집'과 '사'만 로고 캐릭터의 초록색으로 */}
+          {[...d.tagline].map((ch, i) => (
+            <Txt key={i} style={s.taglineChar} color={ch === '집' || ch === '사' ? C.primary : C.text}>
+              {ch}
+            </Txt>
+          ))}
+        </Txt>
+      )}
+    </View>
+  );
+
+  if (preparingGuest) {
+    return (
+      <View style={s.root}>
+        <SafeAreaView style={s.safe}>
+          {logoBlock}
+          <View style={s.loadingBox}>
+            <ActivityIndicator size="large" color={C.primary} />
+            <Txt variant="bodyStrong" muted>
+              체험 환경 준비 중...
+            </Txt>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
 
   const onLogin = async () => {
     if (busy) return;
@@ -45,36 +103,30 @@ export default function LoginScreen() {
       setError('ID(이메일)와 PW를 입력해 주세요.');
       return;
     }
-    setBusy(true);
+    setError(null);
+    setBusy('login');
     const err = await login(loginId.trim(), password);
-    setBusy(false);
+    if (!mountedRef.current) return;
+    setBusy(null);
     setError(err);
   };
 
   const onGuest = async () => {
     if (busy) return;
-    setBusy(true);
+    autoStartedRef.current = true;
+    setAutoTried(true);
+    setError(null);
+    setBusy('guest');
     const err = await loginAsGuest();
-    setBusy(false);
+    if (!mountedRef.current) return;
+    setBusy(null);
     setError(err);
   };
 
   return (
     <View style={s.root}>
       <SafeAreaView style={s.safe}>
-        <View style={[s.logo, { marginTop: height * d.logoTop }]}>
-          <LogoMark size={Math.min(d.logoSize, height * 0.17)} radius={0.24} />
-          {d.tagline !== '' && (
-            <Txt style={[s.taglineChar, { marginTop: 14 }]}>
-              {/* '집'과 '사'만 로고 캐릭터의 초록색으로 */}
-              {[...d.tagline].map((ch, i) => (
-                <Txt key={i} style={s.taglineChar} color={ch === '집' || ch === '사' ? C.primary : C.text}>
-                  {ch}
-                </Txt>
-              ))}
-            </Txt>
-          )}
-        </View>
+        {logoBlock}
 
         <View style={s.spacer} />
         <View style={s.form}>
@@ -101,16 +153,14 @@ export default function LoginScreen() {
           </View>
 
           {/* 대회 규정: 심사위원이 로그인 없이 체험할 수 있어야 함 */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="로그인 없이 둘러보기"
-            hitSlop={10}
+          <Button
+            title="로그인 없이 바로 체험하기"
+            icon={Sparkles}
+            loading={busy === 'guest'}
+            disabled={busy !== null}
             onPress={onGuest}
-            style={({ pressed }) => [s.guest, pressed && { opacity: 0.6 }]}>
-            <Txt variant="sub" muted style={{ textDecorationLine: 'underline', fontFamily: F.light }}>
-              로그인 없이 둘러보기
-            </Txt>
-          </Pressable>
+            style={{ marginTop: 12 }}
+          />
         </View>
 
         <View style={{ height: d.formBottom, flexShrink: 1 }} />
@@ -159,7 +209,7 @@ const s = StyleSheet.create({
   safe: { flex: 1, width: '100%', maxWidth: MAX_W, alignSelf: 'center' },
   logo: { alignItems: 'center' },
   taglineChar: { fontFamily: F.bold, fontSize: 22, lineHeight: 26 },
-  guest: { alignItems: 'center', marginTop: 10 },
+  loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, paddingBottom: 80 },
   spacer: { flex: 1, minHeight: 20 },
   form: { marginHorizontal: 32, gap: 12 },
   line: {
