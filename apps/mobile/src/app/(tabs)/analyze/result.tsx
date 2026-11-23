@@ -328,7 +328,7 @@ export default function AnalyzeResultScreen() {
                 <Button
                   title="받은 업체 제안서 보기"
                   variant="outline"
-                  onPress={() => router.push({ pathname: '/dm', params: { tab: 'quotes' } })}
+                  onPress={() => router.push({ pathname: '/chat', params: { tab: 'quotes' } })}
                 />
               </>
             ) : (

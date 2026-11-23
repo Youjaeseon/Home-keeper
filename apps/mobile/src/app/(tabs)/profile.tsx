@@ -1,6 +1,6 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { ChevronRight, Clock, LogOut } from 'lucide-react-native';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { RegionSelect } from '@/components/region-select';
@@ -22,9 +22,31 @@ export default function ProfileScreen() {
     setSavedNickname(user?.nickname ?? '');
     setNickname(user?.nickname ?? '');
   }
+  // 별명은 최대 8글자. 입력칸에서 나가거나(웹 포함) 다른 화면으로 이동하면 자동으로 서버에 저장합니다.
+  const NICK_MAX = 8;
+  const latest = useRef({ nickname, current: user?.nickname ?? '', updateUser });
+  useEffect(() => {
+    latest.current = { nickname, current: user?.nickname ?? '', updateUser };
+  });
+  const flushNickname = useCallback(async () => {
+    const { nickname: value, current, updateUser: update } = latest.current;
+    const next = value.trim();
+    if (!next || next === current) return null;
+    return update({ nickname: next.slice(0, NICK_MAX) });
+  }, []);
+  // 탭을 옮기는 등 이 화면을 벗어날 때 저장합니다.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        void flushNickname();
+      },
+      [flushNickname],
+    ),
+  );
   if (!user) return null;
 
   const save = async (patch: Parameters<typeof updateUser>[0]) => setError(await updateUser(patch));
+  const saveNickname = async () => setError(await flushNickname());
 
   const vendor = user.role === '업체';
 
@@ -49,8 +71,9 @@ export default function ProfileScreen() {
           label={vendor ? '업체명' : '별명'}
           value={nickname}
           onChangeText={setNickname}
-          onEndEditing={() => nickname.trim() !== user.nickname && save({ nickname })}
-          onSubmitEditing={() => nickname.trim() !== user.nickname && save({ nickname })}
+          maxLength={NICK_MAX}
+          onBlur={() => void saveNickname()}
+          onSubmitEditing={() => void saveNickname()}
         />
         <RegionSelect
           label={vendor ? '활동지역' : '거주지역'}

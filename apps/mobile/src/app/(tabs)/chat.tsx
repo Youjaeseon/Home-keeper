@@ -1,6 +1,6 @@
-import { Redirect } from 'expo-router';
+import DmListScreen from '@/app/dm';
 
-/** 채팅 탭 자리. 실제 화면은 채팅 목록(/dm)입니다. */
+/** 하단 '채팅' 탭: 채팅 목록을 탭 화면으로 보여 줘서 하단 탭 바가 함께 보입니다. */
 export default function ChatTab() {
-  return <Redirect href="/dm" />;
+  return <DmListScreen inTab />;
 }

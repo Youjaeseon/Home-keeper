@@ -40,7 +40,8 @@
           "photosPermission": "하자 사진을 선택하려면 사진 보관함 접근이 필요합니다.",
           "cameraPermission": "하자 사진을 촬영하려면 카메라 접근이 필요합니다."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

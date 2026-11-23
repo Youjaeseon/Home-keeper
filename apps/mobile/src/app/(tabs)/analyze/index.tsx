@@ -1,3 +1,4 @@
+import { Asset } from 'expo-asset';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
@@ -8,7 +9,8 @@ import { Modal, Platform, Pressable, StyleSheet, useWindowDimensions, View } fro
 import { AppBar, Button, Card, Hero, Screen, Txt } from '@/components/ui';
 import { C, MAX_W, R, STROKE } from '@/constants/theme';
 import { useApp } from '@/store/app-store';
-import { showAlert } from '@/lib/alert';
+import { SAMPLE_PHOTOS, type SamplePhoto } from '@/data/samples';
+import { confirmAlert, showAlert } from '@/lib/alert';
 
 const GAP = 10;
 
@@ -45,6 +47,24 @@ export default function AnalyzePickScreen() {
     }
   };
 
+  // 샘플 사진: 확인 후 사용자가 고른 사진과 같은 흐름으로 '분석 정보 기입'으로 갑니다(장소·위치·재질 미리 채움).
+  const pickSample = async (sample: SamplePhoto) => {
+    const ok = await confirmAlert('이 샘플 사진으로 분석할까요?', `${sample.label} 사진으로 분석 정보를 입력하는 화면으로 이동해요.`, '분석하기');
+    if (!ok) return;
+    try {
+      // 웹은 번들 주소(http), 네이티브는 기기에 내려받은 파일 경로(file://)를 씁니다. 업로드 코드가 둘 다 처리합니다.
+      const asset = Asset.fromModule(sample.image);
+      await asset.downloadAsync();
+      const photo = addPhoto(asset.localUri ?? asset.uri);
+      router.push({
+        pathname: '/analyze/detail',
+        params: { photoId: photo.id, location: sample.location, position: sample.position, material: sample.material },
+      });
+    } catch {
+      showAlert('샘플 사진을 불러오지 못했습니다', '잠시 후 다시 시도해 주세요.');
+    }
+  };
+
   return (
     <Screen safeTop>
       <AppBar title="AI 분석" />
@@ -61,6 +81,22 @@ export default function AnalyzePickScreen() {
           </View>
           <Txt variant="label">사진 추가</Txt>
         </Pressable>
+
+        {SAMPLE_PHOTOS.map((sample) => (
+          <Pressable
+            key={sample.key}
+            accessibilityRole="button"
+            accessibilityLabel={`${sample.label} 사진으로 분석하기`}
+            onPress={() => void pickSample(sample)}
+            style={({ pressed }) => [s.tile, { width: tile, height: tile }, pressed && { opacity: 0.85 }]}>
+            <Image source={sample.image} style={StyleSheet.absoluteFill} contentFit="cover" />
+            <View style={s.sampleLabel}>
+              <Txt variant="caption" color="#fff" style={{ fontWeight: '700' }}>
+                {sample.label}
+              </Txt>
+            </View>
+          </Pressable>
+        ))}
 
         {photos.map((p, i) => (
           <Pressable
@@ -108,6 +144,15 @@ const s = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: GAP },
   tile: { borderRadius: R.tile, overflow: 'hidden', backgroundColor: C.card },
   addTile: { backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  sampleLabel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingVertical: 6,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
   addCircle: {
     width: 50,
     height: 50,

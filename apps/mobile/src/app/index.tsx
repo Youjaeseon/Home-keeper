@@ -27,7 +27,7 @@ const LOGIN_DESIGN = {
 
 /** 스케치 1: 로그인 — 크림 단색 배경 + 로고 + 흰 둥근 입력칸 + 글씨 버튼 */
 export default function LoginScreen() {
-  const { ready, session, user, needsProfile, login, loginAsGuest } = useApp();
+  const { ready, session, user, needsProfile, login, loginAsDemo } = useApp();
   const { height } = useWindowDimensions();
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
@@ -51,10 +51,10 @@ export default function LoginScreen() {
     setError(err);
   };
 
-  const onGuest = async () => {
+  const onDemo = async () => {
     if (busy) return;
     setBusy(true);
-    const err = await loginAsGuest();
+    const err = await loginAsDemo();
     setBusy(false);
     setError(err);
   };
@@ -100,15 +100,15 @@ export default function LoginScreen() {
             <TextButton title="회원가입" onPress={() => router.push('/signup')} color={C.text} weight={F.semibold} />
           </View>
 
-          {/* 대회 규정: 심사위원이 로그인 없이 체험할 수 있어야 함 */}
+          {/* 대회 규정: 심사위원이 회원가입 없이 체험할 수 있어야 함 → 데모 계정으로 자동 로그인 */}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="로그인 없이 둘러보기"
+            accessibilityLabel="데모 계정으로 둘러보기"
             hitSlop={10}
-            onPress={onGuest}
+            onPress={onDemo}
             style={({ pressed }) => [s.guest, pressed && { opacity: 0.6 }]}>
             <Txt variant="sub" muted style={{ textDecorationLine: 'underline', fontFamily: F.light }}>
-              로그인 없이 둘러보기
+              데모 계정으로 둘러보기
             </Txt>
           </Pressable>
         </View>

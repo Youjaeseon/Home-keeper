@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Send } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
-import { Button, Card, Chip, DeleteButton, Field, Hero, Screen, Txt } from '@/components/ui';
+import { AppBar, Button, Card, Chip, DeleteButton, Field, Hero, Screen, Txt } from '@/components/ui';
 import { C, F, STROKE } from '@/constants/theme';
 import { useApp } from '@/store/app-store';
 import type { Estimate, Proposal } from '@/types';
@@ -20,10 +20,17 @@ const parseWon = (text: string) => {
 };
 
 /** 채팅 목록 — 상단 탭: 메시지 | 업체 제안서(유저) 또는 견적 요청서(업체) */
-export default function DmListScreen() {
+/** inTab: 하단 탭의 '채팅' 화면으로 보일 때(탭 바가 함께 보임). 그 밖에는 스택 화면으로 열립니다. */
+export default function DmListScreen({ inTab = false }: { inTab?: boolean }) {
   const params = useLocalSearchParams<{ tab?: string }>();
   const { user, unreadChats, newQuotes, refreshThreads, refreshQuotes } = useApp();
   const [tab, setTab] = useState<Tab>(params.tab === 'quotes' ? 'quotes' : 'messages');
+  // 다른 화면에서 '견적' 탭으로 열어 달라고 오면(이미 채팅 탭이 열려 있어도) 맞춰 줍니다.
+  const [lastTabParam, setLastTabParam] = useState(params.tab);
+  if (params.tab !== lastTabParam) {
+    setLastTabParam(params.tab);
+    if (params.tab === 'quotes' || params.tab === 'messages') setTab(params.tab);
+  }
   const badgeOf = (key: Tab) => (key === 'messages' ? unreadChats : newQuotes);
   const TABS: { key: Tab; label: string }[] = [
     { key: 'messages', label: '메시지' },
@@ -33,10 +40,11 @@ export default function DmListScreen() {
 
   // 채팅 탭(바로가기)이나 새로고침으로 들어오면 돌아갈 화면 기록이 없어 기본 뒤로 버튼이 사라집니다.
   // 그때만 같은 모양의 '뒤로' 버튼을 직접 달고, 누르면 소식지(홈)로 갑니다.
-  const noHistory = !router.canGoBack();
+  const noHistory = !inTab && !router.canGoBack();
 
   return (
-    <Screen onRefresh={() => Promise.all([refreshThreads(), refreshQuotes()])}>
+    <Screen safeTop={inTab} onRefresh={() => Promise.all([refreshThreads(), refreshQuotes()])}>
+      {inTab && <AppBar title="채팅" />}
       {noHistory && (
         <Stack.Screen
           options={{

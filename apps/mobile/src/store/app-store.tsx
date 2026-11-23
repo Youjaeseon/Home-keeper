@@ -45,6 +45,7 @@ import {
   type QuoteRequestDetail,
   type Region,
 } from '@/lib/api';
+import { demoLoginId, demoPassword } from '@/lib/env';
 import { supabase } from '@/lib/supabase';
 import { splitLocation, toAnalysisResult, toDefect } from '@/services/analyze';
 import type { Account, AnalysisResult, ChatThread, Estimate, Housing, Message, Photo, Proposal, User } from '@/types';
@@ -65,7 +66,8 @@ type Store = {
   regions: Region[];
   signup: (account: Account) => Promise<string | null>;
   login: (loginId: string, password: string) => Promise<string | null>;
-  loginAsGuest: () => Promise<string | null>;
+  /** 데모 계정(EXPO_PUBLIC_DEMO_LOGIN_ID)으로 자동 로그인 */
+  loginAsDemo: () => Promise<string | null>;
   logout: () => Promise<void>;
   /** 프로필 최초 등록·재시도 (PUT /me/profile) */
   saveProfile: (input: { nickname: string; regionId: string; housing: Housing }) => Promise<string | null>;
@@ -567,10 +569,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (error) return authError(error.message);
       return afterSignIn(data.session);
     },
-    async loginAsGuest() {
-      // TODO(integration-gap): GAP-001 Supabase 익명 로그인이 켜져 있어야 동작합니다.
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error || !data.session) return authError(error?.message ?? '둘러보기를 시작하지 못했습니다.');
+    async loginAsDemo() {
+      if (!demoLoginId || !demoPassword) return '데모 계정이 설정되지 않았습니다. 관리자에게 문의해 주세요.';
+      const { data, error } = await supabase.auth.signInWithPassword({ email: demoLoginId, password: demoPassword });
+      if (error) {
+        if (/invalid login credentials/i.test(error.message)) return '데모 계정 정보가 맞지 않습니다. 관리자에게 문의해 주세요.';
+        return authError(error.message);
+      }
       return afterSignIn(data.session);
     },
     async logout() {
