@@ -18,24 +18,32 @@ export default function ProfileScreen() {
   const [savedNickname, setSavedNickname] = useState(user?.nickname ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // 서버에 저장된 닉네임이 바뀌면 입력칸도 맞춥니다.
+  // 거주지역·거주형태도 고른 값을 잠시 들고 있다가 '저장'을 누를 때 함께 저장합니다.
+  const [region, setRegion] = useState(user?.region ?? '');
+  const [housing, setHousing] = useState(user?.housing ?? '월세');
+  const [savedKey, setSavedKey] = useState(`${user?.region}|${user?.housing}`);
+  // 서버에 저장된 값이 바뀌면 입력칸도 맞춥니다.
   if ((user?.nickname ?? '') !== savedNickname) {
     setSavedNickname(user?.nickname ?? '');
     setNickname(user?.nickname ?? '');
   }
+  if (`${user?.region}|${user?.housing}` !== savedKey) {
+    setSavedKey(`${user?.region}|${user?.housing}`);
+    setRegion(user?.region ?? '');
+    setHousing(user?.housing ?? '월세');
+  }
   if (!user) return null;
 
-  const save = async (patch: Parameters<typeof updateUser>[0]) => setError(await updateUser(patch));
-  // 별명은 정보 칸 아래 '저장' 버튼(또는 키보드 완료)으로 서버에 저장합니다. 최대 8글자.
+  // 별명·거주지역·거주형태는 정보 칸 아래 '저장' 버튼(또는 키보드 완료)으로 한 번에 서버에 저장합니다. 별명 최대 8글자.
   const NICK_MAX = 8;
   const trimmed = nickname.trim();
-  const nicknameChanged = trimmed !== user.nickname;
+  const changed = trimmed !== user.nickname || region !== user.region || housing !== user.housing;
   const saveNickname = async () => {
-    if (!nicknameChanged || saving) return;
+    if (!changed || saving) return;
     if (!trimmed) return setError('별명을 입력해 주세요.');
     if (trimmed.length > NICK_MAX) return setError(`별명은 최대 ${NICK_MAX}글자까지 쓸 수 있어요.`);
     setSaving(true);
-    const err = await updateUser({ nickname: trimmed });
+    const err = await updateUser({ nickname: trimmed, region, housing });
     setSaving(false);
     setError(err);
     if (!err) showAlert('저장했어요', '프로필이 저장됐어요.');
@@ -70,22 +78,22 @@ export default function ProfileScreen() {
         <RegionSelect
           label={vendor ? '활동지역' : '거주지역'}
           regions={regions}
-          value={user.region}
-          onChange={(region) => save({ region })}
+          value={region}
+          onChange={setRegion}
         />
         {vendor ? (
           // TODO(integration-gap): GAP-010 업체 소개 수정 API가 없어 표시만 합니다.
           <Field label="업체 소개" value={user.intro ?? ''} editable={false} placeholder="업체 소개는 운영팀이 등록합니다" />
         ) : (
-          <Select label="거주형태" value={user.housing} options={HOUSINGS} onChange={(housing) => save({ housing })} />
+          <Select label="거주형태" value={housing} options={HOUSINGS} onChange={setHousing} />
         )}
         {error && (
           <Txt variant="sub" color={C.danger}>
             {error}
           </Txt>
         )}
-        {/* 별명은 이 버튼으로 서버에 저장합니다(바꿨을 때만 눌림). */}
-        <Button title="저장" onPress={() => void saveNickname()} disabled={!nicknameChanged} loading={saving} />
+        {/* 별명·거주지역·거주형태를 이 버튼으로 서버에 저장합니다(바꾼 것이 있을 때만 눌림). */}
+        <Button title="저장" onPress={() => void saveNickname()} disabled={!changed} loading={saving} />
       </Card>
 
       {analyses.length > 0 && (
