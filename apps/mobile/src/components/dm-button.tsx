@@ -11,7 +11,7 @@ export function DmButton() {
       accessibilityRole="button"
       accessibilityLabel="DM 메시지함"
       hitSlop={8}
-      onPress={() => router.push('/dm')}
+      onPress={() => router.push('/chat')}
       style={({ pressed }) => [
         {
           width: 46,
