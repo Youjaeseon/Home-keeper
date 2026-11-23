@@ -21,12 +21,11 @@ export const SAMPLE_PHOTOS: SamplePhoto[] = [
     material: '타일',
   },
   {
-    // TODO: 균열 샘플 사진(sample-crack.jpg)을 받으면 교체합니다. 지금은 기존 벽면 벗겨짐 사진을 임시로 씁니다.
     key: 'peel',
     label: '샘플 · 벗겨짐',
-    image: require('@/assets/images/samples/wall-peel.jpg'),
-    location: '거실',
-    position: '벽면',
+    image: require('@/assets/images/samples/sample-peel-ceiling.jpg'),
+    location: '화장실',
+    position: '천장',
     material: '도장면(페인트)',
   },
 ];
