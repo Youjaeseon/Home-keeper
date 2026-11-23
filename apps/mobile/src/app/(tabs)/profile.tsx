@@ -1,6 +1,6 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { ChevronRight, Clock, LogOut } from 'lucide-react-native';
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { RegionSelect } from '@/components/region-select';
@@ -17,37 +17,36 @@ export default function ProfileScreen() {
   const [nickname, setNickname] = useState(user?.nickname ?? '');
   const [savedNickname, setSavedNickname] = useState(user?.nickname ?? '');
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  // 거주지역·거주형태도 고른 값을 잠시 들고 있다가 '저장'을 누를 때 함께 저장합니다.
-  const [region, setRegion] = useState(user?.region ?? '');
-  const [housing, setHousing] = useState(user?.housing ?? '월세');
-  const [savedKey, setSavedKey] = useState(`${user?.region}|${user?.housing}`);
-  // 서버에 저장된 값이 바뀌면 입력칸도 맞춥니다.
+  // 서버에 저장된 닉네임이 바뀌면 입력칸도 맞춥니다.
   if ((user?.nickname ?? '') !== savedNickname) {
     setSavedNickname(user?.nickname ?? '');
     setNickname(user?.nickname ?? '');
   }
-  if (`${user?.region}|${user?.housing}` !== savedKey) {
-    setSavedKey(`${user?.region}|${user?.housing}`);
-    setRegion(user?.region ?? '');
-    setHousing(user?.housing ?? '월세');
-  }
+  // 별명은 최대 8글자. 입력칸에서 나가거나(웹 포함) 다른 화면으로 이동하면 자동으로 서버에 저장합니다.
+  const NICK_MAX = 8;
+  const latest = useRef({ nickname, current: user?.nickname ?? '', updateUser });
+  useEffect(() => {
+    latest.current = { nickname, current: user?.nickname ?? '', updateUser };
+  });
+  const flushNickname = useCallback(async () => {
+    const { nickname: value, current, updateUser: update } = latest.current;
+    const next = value.trim();
+    if (!next || next === current) return null;
+    return update({ nickname: next.slice(0, NICK_MAX) });
+  }, []);
+  // 탭을 옮기는 등 이 화면을 벗어날 때 저장합니다.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        void flushNickname();
+      },
+      [flushNickname],
+    ),
+  );
   if (!user) return null;
 
-  // 별명·거주지역·거주형태는 정보 칸 아래 '저장' 버튼(또는 키보드 완료)으로 한 번에 서버에 저장합니다. 별명 최대 8글자.
-  const NICK_MAX = 8;
-  const trimmed = nickname.trim();
-  const changed = trimmed !== user.nickname || region !== user.region || housing !== user.housing;
-  const saveNickname = async () => {
-    if (!changed || saving) return;
-    if (!trimmed) return setError('별명을 입력해 주세요.');
-    if (trimmed.length > NICK_MAX) return setError(`별명은 최대 ${NICK_MAX}글자까지 쓸 수 있어요.`);
-    setSaving(true);
-    const err = await updateUser({ nickname: trimmed, region, housing });
-    setSaving(false);
-    setError(err);
-    if (!err) showAlert('저장했어요', '프로필이 저장됐어요.');
-  };
+  const save = async (patch: Parameters<typeof updateUser>[0]) => setError(await updateUser(patch));
+  const saveNickname = async () => setError(await flushNickname());
 
   const vendor = user.role === '업체';
 
@@ -73,27 +72,26 @@ export default function ProfileScreen() {
           value={nickname}
           onChangeText={setNickname}
           maxLength={NICK_MAX}
+          onBlur={() => void saveNickname()}
           onSubmitEditing={() => void saveNickname()}
         />
         <RegionSelect
           label={vendor ? '활동지역' : '거주지역'}
           regions={regions}
-          value={region}
-          onChange={setRegion}
+          value={user.region}
+          onChange={(region) => save({ region })}
         />
         {vendor ? (
           // TODO(integration-gap): GAP-010 업체 소개 수정 API가 없어 표시만 합니다.
           <Field label="업체 소개" value={user.intro ?? ''} editable={false} placeholder="업체 소개는 운영팀이 등록합니다" />
         ) : (
-          <Select label="거주형태" value={housing} options={HOUSINGS} onChange={setHousing} />
+          <Select label="거주형태" value={user.housing} options={HOUSINGS} onChange={(housing) => save({ housing })} />
         )}
         {error && (
           <Txt variant="sub" color={C.danger}>
             {error}
           </Txt>
         )}
-        {/* 별명·거주지역·거주형태를 이 버튼으로 서버에 저장합니다(바꾼 것이 있을 때만 눌림). */}
-        <Button title="저장" onPress={() => void saveNickname()} disabled={!changed} loading={saving} />
       </Card>
 
       {analyses.length > 0 && (
